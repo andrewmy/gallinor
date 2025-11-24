@@ -39,6 +39,8 @@ composer install
  php app.php videos /path/to/videos [/path2 /path3 ...] [--dry-run] [--check-quality] [--use-cpu] [--overwrite]
 ```
 
+The result files are saved along the originals with the `.optimal.mp4` suffix.
+
 ## Notes
 
 NVENC seems to achieve better visual quality with smaller bitrate. On a selection of complex 1080p videos with source bitrate 16 Mbps, to achieve VMAF score 90+:

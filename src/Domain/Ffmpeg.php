@@ -163,7 +163,9 @@ final readonly class Ffmpeg
         ]);
 
         if (in_array($file->pixFmt, ['yuv420p', 'yuv420p10le'], true)) {
-            //$params[] = '-pix_fmt yuv420p10le';
+            if ($this->activeEncoder !== VideoEncoder::Nvidia) {
+                $params[] = '-pix_fmt yuv420p10le';
+            }
             $params[] = '-profile:v main10';
         } else {
             $params[] = '-pix_fmt ' . escapeshellarg($file->pixFmt);
@@ -212,7 +214,7 @@ final readonly class Ffmpeg
             throw new RuntimeException('VMAF filter is not available in ffmpeg');
         }
 
-        // windows ffmpeg does not support /dev/stdout, need to use a temp file instead
+        // windows ffmpeg vmaf does not support /dev/stdout, need to use a temp file instead
         $vmafLogFile = 'var/vmaf.json';
         $vmafCmd     = sprintf(
             'ffmpeg -hide_banner -loglevel error -i "%s" -i "%s" -lavfi "libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10" -f null -',
