@@ -21,7 +21,6 @@ use function shell_exec;
 use function sprintf;
 use function trim;
 
-use const DIRECTORY_SEPARATOR;
 use const JSON_THROW_ON_ERROR;
 
 final readonly class Ffmpeg
@@ -167,6 +166,7 @@ final readonly class Ffmpeg
             if ($this->activeEncoder !== VideoEncoder::Nvidia) {
                 $params[] = '-pix_fmt yuv420p10le';
             }
+
             $params[] = '-profile:v main10';
         } else {
             $params[] = '-pix_fmt ' . escapeshellarg($file->pixFmt);

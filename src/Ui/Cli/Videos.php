@@ -37,7 +37,7 @@ use function unlink;
 
 use const DIRECTORY_SEPARATOR;
 
-#[AsCommand(name: 'videos')]
+#[AsCommand(name: 'videos', description: 'Re-encode videos to optimal bitrate')]
 final class Videos extends Command
 {
     private Platform $platform;
@@ -54,24 +54,24 @@ final class Videos extends Command
         OutputInterface $output,
         #[Option]
         bool $dryRun = false,
-        #[Option]
-        bool $replaceExisting = false,
-        #[Option]
+        #[Option(description: 'Replace the originals with the encode result')]
+        bool $replaceOriginals = false,
+        #[Option(description: 'Check visual quality with the VMAF score and pick a better bitrate')]
         bool $checkQuality = false,
-        #[Option]
+        #[Option(description: 'Force using the CPU encoder, slow')]
         bool $useCpu = false,
-        #[Option]
+        #[Option(description: 'Overwrite the auxiliary encode results if they exist, otherwise skip encoding the relevant original')]
         bool $overwrite = false,
         #[Argument]
         array $directories = [],
     ): int {
-        $output->writeln(sprintf('<info>Dry Run: %s</info>', $dryRun ? 'Yes' : 'No'));
-        $output->writeln(sprintf('<info>Overwrite: %s</info>', $overwrite ? 'Yes' : 'No'));
+        $output->writeln(sprintf('<info>Dry run: %s</info>', $dryRun ? 'Yes' : 'No'));
+        $output->writeln(sprintf('<info>Overwrite auxiliaries: %s</info>', $overwrite ? 'Yes' : 'No'));
         if (! $dryRun) {
-            $output->writeln(sprintf('<info>Replace Existing: %s</info>', $replaceExisting ? 'Yes' : 'No'));
-            $output->writeln(sprintf('<info>Check Quality: %s</info>', $checkQuality ? 'Yes' : 'No'));
-            if ($replaceExisting && ! $checkQuality) {
-                $output->writeln('<comment>Warning: Replacing existing files without quality check may lead to data loss.</comment>');
+            $output->writeln(sprintf('<info>Replace originals: %s</info>', $replaceOriginals ? 'Yes' : 'No'));
+            $output->writeln(sprintf('<info>Check quality: %s</info>', $checkQuality ? 'Yes' : 'No'));
+            if ($replaceOriginals && ! $checkQuality) {
+                $output->writeln('<comment>Warning: Replacing original files without quality check may lead to data loss.</comment>');
             }
         }
 
@@ -152,7 +152,7 @@ final class Videos extends Command
                     $output,
                     $maxBitrateSpikes,
                     $minVmafScore,
-                    $replaceExisting,
+                    $replaceOriginals,
                     $checkQuality,
                 );
             } catch (Throwable $exception) {
@@ -227,7 +227,7 @@ final class Videos extends Command
                     continue;
                 }
 
-                if (!$overwrite) {
+                if (! $overwrite) {
                     $optimalFilePath = $videoFile->suffixedFilePath('optimal');
                     if (file_exists($optimalFilePath)) {
                         $output->writeln(sprintf('Optimal version already exists (%s), skipping.', $optimalFilePath));
@@ -265,7 +265,7 @@ final class Videos extends Command
         OutputInterface $output,
         float $maxBitrateSpikes,
         float $minVmafScore,
-        bool $replaceExisting,
+        bool $replaceOriginals,
         bool $checkQuality,
     ): int {
         $resultAccepted = true;
@@ -314,7 +314,7 @@ final class Videos extends Command
             $baseBitrate += $file->bitrateStep();
         } while (! $resultAccepted);
 
-        if ($replaceExisting) {
+        if ($replaceOriginals) {
             rename($tempFilePath, $file->path);
             $output->writeln('<info>Replaced original file with optimal version.</info>');
         } else {
@@ -326,7 +326,7 @@ final class Videos extends Command
         $this->logger->info('Processed file', [
             'original_file' => $file->path,
             'original_size_kb' => $file->currentSizeKb,
-            'processed_file' => $replaceExisting ? $file->path : $newFilePath,
+            'processed_file' => $replaceOriginals ? $file->path : $newFilePath,
             'processed_size_kb' => $processedSizeKb,
             'base_bitrate_kbps' => $baseBitrate,
             'vmaf_score' => $checkQuality ? $vmafScore : null,

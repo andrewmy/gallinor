@@ -36,7 +36,13 @@ composer install
 ## Usage
 
 ```shell
- php app.php videos /path/to/videos [/path2 /path3 ...] [--dry-run] [--check-quality] [--use-cpu] [--overwrite]
+ php app.php videos /path/to/videos [/path2 /path3 ...] [--dry-run] [--check-quality]
+```
+
+For the full list of options and their descriptions:
+
+```shell
+php app.php help videos
 ```
 
 The result files are saved along the originals with the `.optimal.mp4` suffix.
