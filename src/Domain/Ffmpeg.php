@@ -9,16 +9,19 @@ use RuntimeException;
 
 use function array_merge;
 use function escapeshellarg;
-use function escapeshellcmd;
+use function file_get_contents;
 use function filesize;
 use function implode;
 use function in_array;
+use function is_array;
+use function is_file;
 use function json_decode;
 use function json_encode;
 use function shell_exec;
 use function sprintf;
 use function trim;
 
+use const DIRECTORY_SEPARATOR;
 use const JSON_THROW_ON_ERROR;
 
 final readonly class Ffmpeg
@@ -31,17 +34,30 @@ final readonly class Ffmpeg
 
     public function __construct(bool $useCpu, private Platform $platform)
     {
-        $ffprobePath = shell_exec('which ffprobe');
-        $ffmpegPath  = shell_exec('which ffmpeg');
+        $which = $this->platform->isWindows() ? 'where.exe' : 'which';
+        $grep  = $this->platform->isWindows() ? 'findstr' : 'grep';
+
+        $ffprobePath = shell_exec($which . ' ffprobe');
+        $ffmpegPath  = shell_exec($which . ' ffmpeg');
         if (empty($ffprobePath) || empty($ffmpegPath)) {
             throw new RuntimeException('ffprobe or ffmpeg not found in system path');
+        }
+
+        if (is_array($ffprobePath)) {
+            $ffprobePath = $ffprobePath[0];
+        }
+
+        if (is_array($ffmpegPath)) {
+            $ffmpegPath = $ffmpegPath[0];
         }
 
         $this->ffprobePath = trim($ffprobePath);
         $this->ffmpegPath  = trim($ffmpegPath);
 
-        $hasAppleToolbox = shell_exec('ffmpeg -hide_banner -encoders | grep hevc_videotoolbox');
-        $hasNvEncoder    = shell_exec('ffmpeg -hide_banner -encoders | grep hevc_nvenc');
+        $hasAppleToolbox = $this->platform->isWindows()
+            ? false
+            : shell_exec('ffmpeg -hide_banner -encoders | grep hevc_videotoolbox');
+        $hasNvEncoder    = shell_exec('ffmpeg -hide_banner -encoders | ' . $grep . ' hevc_nvenc');
 
         if ($useCpu) {
             $this->activeEncoder = VideoEncoder::Cpu;
@@ -54,13 +70,13 @@ final readonly class Ffmpeg
         }
 
         if ($hasNvEncoder) {
-            $temporalAqCheck     = shell_exec('ffmpeg -h encoder=hevc_nvenc 2>&1 | grep temporal');
+            $temporalAqCheck     = shell_exec('ffmpeg -h encoder=hevc_nvenc 2>&1 | ' . $grep . ' temporal');
             $this->hasTemporalAq = ! empty($temporalAqCheck);
         } else {
             $this->hasTemporalAq = false;
         }
 
-        $vmafCheck     = shell_exec('ffmpeg -hide_banner -filters | grep vmaf');
+        $vmafCheck     = shell_exec('ffmpeg -hide_banner -filters | ' . $grep . ' vmaf');
         $this->hasVmaf = ! empty($vmafCheck);
     }
 
@@ -68,8 +84,7 @@ final readonly class Ffmpeg
     public function videoFileFromPath(string $filePath): VideoFile
     {
         $mediaInfoStr = shell_exec(sprintf(
-            '%s -v error -select_streams v:0 -show_entries stream=width,height,bit_rate,pix_fmt,codec_name,color_space,color_primaries,color_transfer,duration -of json "%s"',
-            escapeshellcmd($this->ffprobePath),
+            'ffprobe -v error -select_streams v:0 -show_entries stream=width,height,bit_rate,pix_fmt,codec_name,color_space,color_primaries,color_transfer,duration -of json "%s"',
             $filePath,
         ));
         if ($mediaInfoStr === null) {
@@ -123,10 +138,20 @@ final readonly class Ffmpeg
         string $tempFilePath,
     ): string {
         $params = [
-            escapeshellcmd($this->ffmpegPath),
+            'ffmpeg',
             '-hide_banner',
             '-loglevel error',
             '-stats',
+        ];
+
+        if ($this->activeEncoder === VideoEncoder::Nvidia) {
+            $params = array_merge($params, [
+                '-hwaccel cuda',
+                '-hwaccel_output_format cuda',
+            ]);
+        }
+
+        $params = array_merge($params, [
             sprintf('-i "%s"', $file->path),
             '-c:a copy',
             '-c:v ' . $this->activeEncoder->value,
@@ -135,10 +160,10 @@ final readonly class Ffmpeg
             '-map_metadata 0',
             '-movflags +use_metadata_tags',
             '-y',
-        ];
+        ]);
 
         if (in_array($file->pixFmt, ['yuv420p', 'yuv420p10le'], true)) {
-            $params[] = '-pix_fmt yuv420p10le';
+            //$params[] = '-pix_fmt yuv420p10le';
             $params[] = '-profile:v main10';
         } else {
             $params[] = '-pix_fmt ' . escapeshellarg($file->pixFmt);
@@ -158,8 +183,6 @@ final readonly class Ffmpeg
 
         if ($this->activeEncoder === VideoEncoder::Nvidia) {
             $params = array_merge($params, [
-                '-hwaccel cuda',
-                '-hwaccel_output_format cuda',
                 sprintf('-maxrate:v %dk', $baseBitrate * $maxBitrateSpikes),
                 '-preset p7',
                 '-rc vbr',
@@ -172,8 +195,10 @@ final readonly class Ffmpeg
         } elseif ($this->activeEncoder === VideoEncoder::Apple) {
             $params[] = '-quality quality';
         } elseif ($this->activeEncoder === VideoEncoder::Cpu) {
-            $params[] = '-preset medium';
-            $params[] = sprintf('-x265-params "pools=%s"', $this->platform->nCores);
+            $params = array_merge($params, [
+                '-preset medium',
+                sprintf('-x265-params "pools=%s"', $this->platform->nCores),
+            ]);
         }
 
         $params[] = escapeshellarg($tempFilePath);
@@ -187,29 +212,31 @@ final readonly class Ffmpeg
             throw new RuntimeException('VMAF filter is not available in ffmpeg');
         }
 
-        $vmafCmd = sprintf(
-            '%s -hide_banner -loglevel error -i "%s" -i "%s" -lavfi "libvmaf=log_path=/dev/stdout:log_fmt=json:n_threads=%s:n_subsample=10" -f null -',
-            escapeshellcmd($this->ffmpegPath),
+        // windows ffmpeg does not support /dev/stdout, need to use a temp file instead
+        $vmafLogFile = 'var' . DIRECTORY_SEPARATOR . 'vmaf.json';
+        $vmafCmd     = sprintf(
+            'ffmpeg -hide_banner -loglevel error -i "%s" -i "%s" -lavfi "libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10" -f null -',
             $processedFilePath,
             $originalFilePath,
+            escapeshellarg($vmafLogFile),
             $this->platform->nCores,
         );
 
-        $vmafOutput = shell_exec($vmafCmd);
-        if ($vmafOutput === null) {
+        shell_exec($vmafCmd);
+        if (! is_file($vmafLogFile)) {
             throw new RuntimeException('Failed to execute VMAF command');
         }
 
         try {
-            $vmafJson = json_decode($vmafOutput, true, 512, JSON_THROW_ON_ERROR);
+            $vmafResult = json_decode(file_get_contents($vmafLogFile), true, 512, JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
             throw new RuntimeException('Failed to parse VMAF output: ' . $exception->getMessage());
         }
 
-        if (! isset($vmafJson['pooled_metrics']['vmaf']['harmonic_mean'])) {
+        if (! isset($vmafResult['pooled_metrics']['vmaf']['harmonic_mean'])) {
             throw new RuntimeException('Invalid VMAF output format: no pooled_metrics found');
         }
 
-        return (float) $vmafJson['pooled_metrics']['vmaf']['harmonic_mean'];
+        return (float) $vmafResult['pooled_metrics']['vmaf']['harmonic_mean'];
     }
 }

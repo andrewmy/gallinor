@@ -24,6 +24,8 @@ This is a CLI tool for reducing the size of your video and image gallery while m
   - macOS: Apple Silicon or Intel with VideoToolbox support
   - Windows: NVidia GPU with NVENC support
 - For quality check — VMAF library installed and available in your system PATH
+- On Windows:
+  - PowerShell
 
 ## Installation
 
@@ -34,5 +36,11 @@ composer install
 ## Usage
 
 ```shell
-./app.php videos /path/to/videos [/path2 /path3 ...] [--dry-run] [--check-quality] [--use-cpu]
+ php app.php videos /path/to/videos [/path2 /path3 ...] [--dry-run] [--check-quality] [--use-cpu]
 ```
+
+## Notes
+
+NVENC seems to achieve better visual quality with smaller bitrate. On a selection of complex videos with source bitrate 16 Mbps, to achieve VMAF score 90+:
+- Apple VideoToolbox needed 12-14 Mbps;
+- NVENC needed 10 Mbps.

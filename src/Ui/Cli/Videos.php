@@ -31,11 +31,16 @@ use function filesize;
 use function number_format;
 use function rename;
 use function sprintf;
+use function str_ends_with;
+use function trim;
 use function unlink;
+
+use const DIRECTORY_SEPARATOR;
 
 #[AsCommand(name: 'videos')]
 final class Videos extends Command
 {
+    private Platform $platform;
     private Ffmpeg $ffmpeg;
     private float $maxBitrateOverhead = 1.1;
 
@@ -70,15 +75,15 @@ final class Videos extends Command
         $output->writeln('');
 
         try {
-            $platform     = new Platform();
-            $this->ffmpeg = new Ffmpeg($useCpu, $platform);
+            $this->platform = new Platform();
+            $this->ffmpeg   = new Ffmpeg($useCpu, $this->platform);
         } catch (Throwable $exception) {
             $output->writeln('<error>' . $exception->getMessage() . '</error>');
 
             return self::FAILURE;
         }
 
-        $output->writeln(sprintf('<info>Available cores: %d</info>', $platform->nCores));
+        $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores));
         $output->writeln(sprintf('<info>Using encoder: %s</info>', $this->ffmpeg->activeEncoder->value));
         if ($this->ffmpeg->activeEncoder === VideoEncoder::Nvidia) {
             $output->writeln(sprintf(
@@ -177,6 +182,7 @@ final class Videos extends Command
         $totalSkippedFiles = 0;
 
         foreach ($directories as $directory) {
+            $directory = trim($directory, '"\' ' . DIRECTORY_SEPARATOR);
             $output->writeln(sprintf('Directory: %s', $directory));
             $files = new RecursiveIteratorIterator(
                 new RecursiveDirectoryIterator(directory: $directory, flags: FilesystemIterator::SKIP_DOTS),
@@ -187,7 +193,13 @@ final class Videos extends Command
                     continue;
                 }
 
-                $filePath = $file->getRealPath();
+                $filePath = $file->getPathname();
+                if (str_ends_with($filePath, '.optimal.mp4') || str_ends_with($filePath, '.tmp.mp4')) {
+                    $output->writeln(sprintf('Skipping auxiliary file: %s', $filePath));
+                    $totalSkippedFiles++;
+                    continue;
+                }
+
                 $output->writeln(sprintf("\nFile: %s", $filePath));
 
                 try {
