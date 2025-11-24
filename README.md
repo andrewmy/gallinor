@@ -41,6 +41,6 @@ composer install
 
 ## Notes
 
-NVENC seems to achieve better visual quality with smaller bitrate. On a selection of complex videos with source bitrate 16 Mbps, to achieve VMAF score 90+:
+NVENC seems to achieve better visual quality with smaller bitrate. On a selection of complex 1080p videos with source bitrate 16 Mbps, to achieve VMAF score 90+:
 - Apple VideoToolbox needed 12-14 Mbps;
-- NVENC needed 10 Mbps.
+- NVENC needed 10-12 Mbps.

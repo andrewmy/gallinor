@@ -213,12 +213,12 @@ final readonly class Ffmpeg
         }
 
         // windows ffmpeg does not support /dev/stdout, need to use a temp file instead
-        $vmafLogFile = 'var' . DIRECTORY_SEPARATOR . 'vmaf.json';
+        $vmafLogFile = 'var/vmaf.json';
         $vmafCmd     = sprintf(
             'ffmpeg -hide_banner -loglevel error -i "%s" -i "%s" -lavfi "libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10" -f null -',
             $processedFilePath,
             $originalFilePath,
-            escapeshellarg($vmafLogFile),
+            $vmafLogFile,
             $this->platform->nCores,
         );
 

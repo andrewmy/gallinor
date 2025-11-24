@@ -60,10 +60,13 @@ final class Videos extends Command
         bool $checkQuality = false,
         #[Option]
         bool $useCpu = false,
+        #[Option]
+        bool $overwrite = false,
         #[Argument]
         array $directories = [],
     ): int {
         $output->writeln(sprintf('<info>Dry Run: %s</info>', $dryRun ? 'Yes' : 'No'));
+        $output->writeln(sprintf('<info>Overwrite: %s</info>', $overwrite ? 'Yes' : 'No'));
         if (! $dryRun) {
             $output->writeln(sprintf('<info>Replace Existing: %s</info>', $replaceExisting ? 'Yes' : 'No'));
             $output->writeln(sprintf('<info>Check Quality: %s</info>', $checkQuality ? 'Yes' : 'No'));
@@ -111,6 +114,7 @@ final class Videos extends Command
         [$fileList, $totalSkippedFiles] = $this->gatherFileList(
             directories: $directories,
             output: $output,
+            overwrite: $overwrite,
         );
 
         $totalCurrentSize   = array_reduce(
@@ -177,6 +181,7 @@ final class Videos extends Command
     private function gatherFileList(
         array $directories,
         OutputInterface $output,
+        bool $overwrite,
     ): array {
         $fileList          = [];
         $totalSkippedFiles = 0;
@@ -222,11 +227,13 @@ final class Videos extends Command
                     continue;
                 }
 
-                $optimalFilePath = $videoFile->suffixedFilePath('optimal');
-                if (file_exists($optimalFilePath)) {
-                    $output->writeln(sprintf('Optimal version already exists (%s), skipping.', $optimalFilePath));
-                    $totalSkippedFiles++;
-                    continue;
+                if (!$overwrite) {
+                    $optimalFilePath = $videoFile->suffixedFilePath('optimal');
+                    if (file_exists($optimalFilePath)) {
+                        $output->writeln(sprintf('Optimal version already exists (%s), skipping.', $optimalFilePath));
+                        $totalSkippedFiles++;
+                        continue;
+                    }
                 }
 
                 $fileList[] = $videoFile;
