@@ -152,6 +152,7 @@ final readonly class Ffmpeg
         }
 
         $params = array_merge($params, [
+            '-fflags +genpts',
             sprintf('-i "%s"', $file->path),
             '-c:a copy',
             '-c:v ' . $this->activeEncoder->value,
