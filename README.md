@@ -36,7 +36,7 @@ composer install
 ## Usage
 
 ```shell
- php app.php videos /path/to/videos [/path2 /path3 ...] [--dry-run] [--check-quality] [--use-cpu]
+ php app.php videos /path/to/videos [/path2 /path3 ...] [--dry-run] [--check-quality] [--use-cpu] [--overwrite]
 ```
 
 ## Notes
