@@ -30,6 +30,7 @@ use function file_exists;
 use function filesize;
 use function number_format;
 use function rename;
+use function rtrim;
 use function sprintf;
 use function str_ends_with;
 use function trim;
@@ -187,7 +188,7 @@ final class Videos extends Command
         $totalSkippedFiles = 0;
 
         foreach ($directories as $directory) {
-            $directory = trim($directory, '"\' ' . DIRECTORY_SEPARATOR);
+            $directory = rtrim(trim($directory, '"\' '), DIRECTORY_SEPARATOR);
             $output->writeln(sprintf('Directory: %s', $directory));
             $files = new RecursiveIteratorIterator(
                 new RecursiveDirectoryIterator(directory: $directory, flags: FilesystemIterator::SKIP_DOTS),
