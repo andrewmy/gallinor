@@ -11,6 +11,8 @@ use const DIRECTORY_SEPARATOR;
 
 final readonly class VideoFile
 {
+    public const string OPTIMAL_SUFFIX = 'optimal';
+
     public function __construct(
         public string $path,
         public int $width,

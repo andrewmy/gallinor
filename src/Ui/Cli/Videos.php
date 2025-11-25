@@ -45,8 +45,10 @@ final class Videos extends Command
     private Ffmpeg $ffmpeg;
     private float $maxBitrateOverhead = 1.1;
 
-    public function __construct(private LoggerInterface $logger)
-    {
+    public function __construct(
+        private LoggerInterface $logger,
+        private CliHelper $cliHelper,
+    ) {
         parent::__construct();
     }
 
@@ -145,7 +147,12 @@ final class Videos extends Command
         $i         = 1;
         foreach ($fileList as $file) {
             $output->writeln('');
-            $output->writeln(sprintf('Processing: %s, %d of %d', $file->path, $i, $fileCount));
+            $output->writeln(sprintf(
+                'Processing: %s, %d of %d',
+                $this->cliHelper->link($file->path),
+                $i,
+                $fileCount,
+            ));
 
             try {
                 $totalProcessedSize += $this->processFile(
@@ -189,7 +196,7 @@ final class Videos extends Command
 
         foreach ($directories as $directory) {
             $directory = rtrim(trim($directory, '"\' '), DIRECTORY_SEPARATOR);
-            $output->writeln(sprintf('Directory: %s', $directory));
+            $output->writeln(sprintf('Directory: %s', $this->cliHelper->link($directory)));
             $files = new RecursiveIteratorIterator(
                 new RecursiveDirectoryIterator(directory: $directory, flags: FilesystemIterator::SKIP_DOTS),
             );
@@ -200,8 +207,11 @@ final class Videos extends Command
                 }
 
                 $filePath = $file->getPathname();
-                if (str_ends_with($filePath, '.optimal.mp4') || str_ends_with($filePath, '.tmp.mp4')) {
-                    $output->writeln(sprintf('Skipping auxiliary file: %s', $filePath));
+                if (
+                    str_ends_with($filePath, '.' . VideoFile::OPTIMAL_SUFFIX . '.mp4')
+                    || str_ends_with($filePath, '.tmp.mp4')
+                ) {
+                    $output->writeln(sprintf('Skipping auxiliary file: %s', $this->cliHelper->link($filePath)));
                     $totalSkippedFiles++;
                     continue;
                 }
@@ -229,9 +239,12 @@ final class Videos extends Command
                 }
 
                 if (! $overwrite) {
-                    $optimalFilePath = $videoFile->suffixedFilePath('optimal');
+                    $optimalFilePath = $videoFile->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
                     if (file_exists($optimalFilePath)) {
-                        $output->writeln(sprintf('Optimal version already exists (%s), skipping.', $optimalFilePath));
+                        $output->writeln(sprintf(
+                            'Optimal version already exists (%s), skipping.',
+                            $this->cliHelper->link($optimalFilePath),
+                        ));
                         $totalSkippedFiles++;
                         continue;
                     }
@@ -319,9 +332,12 @@ final class Videos extends Command
             rename($tempFilePath, $file->path);
             $output->writeln('<info>Replaced original file with optimal version.</info>');
         } else {
-            $newFilePath = $file->suffixedFilePath('optimal');
+            $newFilePath = $file->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
             rename($tempFilePath, $newFilePath);
-            $output->writeln(sprintf('<info>Saved optimal file as: %s</info>', $newFilePath));
+            $output->writeln(sprintf(
+                '<info>Saved optimal file as: %s</info>',
+                $this->cliHelper->link($newFilePath),
+            ));
         }
 
         $this->logger->info('Processed file', [
