@@ -80,6 +80,7 @@ final class Videos extends Command
 
         $output->writeln('');
 
+        $startTime = microtime(true);
         try {
             $this->platform = new Platform();
             $this->ffmpeg   = new Ffmpeg($useCpu, $this->platform);
@@ -106,6 +107,8 @@ final class Videos extends Command
 
             return self::FAILURE;
         }
+        $initTime = microtime(true);
+        $output->writeln(sprintf('<info>Init time: %.3fs</info>', $initTime - $startTime));
 
         $output->writeln('');
 
@@ -138,6 +141,8 @@ final class Videos extends Command
             number_format($totalCurrentSize - $totalProjectedSize, thousands_separator: ' '),
             $totalSkippedFiles,
         ));
+        $gatherTime = microtime(true);
+        $output->writeln(sprintf('<info>Gather time: %.3fs</info>', $gatherTime - $initTime));
 
         if ($dryRun) {
             return self::SUCCESS;
@@ -176,6 +181,12 @@ final class Videos extends Command
             number_format($totalProcessedSize, thousands_separator: ' '),
             number_format($totalCurrentSize - $totalProcessedSize, thousands_separator: ' '),
             $totalErroredFiles,
+        ));
+        $processTime = microtime(true);
+        $output->writeln(sprintf(
+            "<info>Process time: %.3fs\nTotal time: %.3fs</info>",
+            $processTime - $gatherTime,
+            $processTime - $startTime,
         ));
 
         return self::SUCCESS;
@@ -216,7 +227,7 @@ final class Videos extends Command
                     continue;
                 }
 
-                $output->writeln(sprintf("\nFile: %s", $filePath));
+                $output->writeln(sprintf("\nFile: %s", $this->cliHelper->link($filePath)));
 
                 try {
                     $videoFile = $this->ffmpeg->videoFileFromPath($filePath);

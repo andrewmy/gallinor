@@ -14,6 +14,8 @@ This is a CLI tool for reducing the size of your video and image gallery while m
 ## Todo
 
 - [ ] Reduce jpg image file sizes
+- [ ] Encoding vs QC time
+- [ ] Nicer progress indication
 
 ## Requirements
 
