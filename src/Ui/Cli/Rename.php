@@ -16,6 +16,7 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Output\OutputInterface;
 
 use function assert;
+use function filesize;
 use function rename;
 use function rtrim;
 use function sprintf;
@@ -43,6 +44,8 @@ final class Rename extends Command
     ): int {
         $output->writeln(sprintf('<info>Dry run: %s</info>', $dryRun ? 'Yes' : 'No'));
 
+        $totalOldSize = 0;
+        $totalNewSize = 0;
         foreach ($directories as $directory) {
             $directory = rtrim(trim($directory, '"\' '), DIRECTORY_SEPARATOR);
             $output->writeln(sprintf("\nDirectory: %s", $this->cliHelper->link($directory)));
@@ -63,11 +66,18 @@ final class Rename extends Command
                     '.mp4',
                     $file->getPathname(),
                 );
+                $oldSize     = filesize($newFilename);
+                $newSize     = filesize($file->getPathname());
                 $output->writeln(sprintf(
-                    'File: %s => %s',
+                    'File: %s (%.1f MB) => %s (%.1f MB)',
                     $this->cliHelper->link($file->getPathname()),
+                    $newSize / 1024 / 1024,
                     $this->cliHelper->link($newFilename),
+                    $oldSize / 1024 / 1024,
                 ));
+
+                $totalOldSize += $oldSize;
+                $totalNewSize += $newSize;
 
                 if ($dryRun) {
                     continue;
@@ -76,6 +86,13 @@ final class Rename extends Command
                 rename($file->getPathname(), $newFilename);
             }
         }
+
+        $output->writeln(sprintf(
+            "\nTotal: %.1f - %.1f = %.1f MB savings",
+            $totalOldSize / 1024 / 1024,
+            $totalNewSize / 1024 / 1024,
+            ($totalOldSize - $totalNewSize) / 1024 / 1024,
+        ));
 
         return self::SUCCESS;
     }

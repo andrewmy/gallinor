@@ -35,20 +35,32 @@ composer install
 
 ## Usage
 
-```shell
- php app.php videos /path/to/videos [/path2 /path3 ...] [--dry-run] [--check-quality]
-```
-
 For the full list of options and their descriptions:
 
 ```shell
 php app.php help videos
 ```
 
+### Crush some vids
+
+```shell
+ php app.php videos /path/to/videos [/path2 /path3 ...] [--dry-run] [--check-quality]
+```
+
 The result files are saved along the originals with the `.optimal.mp4` suffix.
+
+### Rename optimals to replace originals
+
+```shell
+php app.php rename /path/to/videos [/path2 /path3 ...] [--dry-run]
+```
+
+If you ran the `videos` command without `--replace-originals` as you should, after checking the quality, finish the job here.
 
 ## Notes
 
 NVENC seems to achieve better visual quality with smaller bitrate. On a selection of complex 1080p videos with source bitrate 16 Mbps, to achieve VMAF score 90+:
-- Apple VideoToolbox needed 12-14 Mbps;
-- NVENC needed 10-12 Mbps.
+- Apple VideoToolbox needed 12-14 Mbps or fails completely;
+- NVENC needed 8-12 Mbps.
+
+The CPU encoder is very slow and its CRF rate is not really well tested, wear a hard hat and fire up some movie while using it.
