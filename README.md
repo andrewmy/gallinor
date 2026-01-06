@@ -46,7 +46,7 @@ php app.php help videos
 ### Crush some vids
 
 ```shell
- php app.php videos /path/to/videos [/path2 /path3 ...] [--dry-run] [--check-quality]
+ php app.php videos /path/to/videos [/path2 /path3 ...] [--dry-run]
 ```
 
 The result files are saved along the originals with the `.optimal.mp4` suffix.

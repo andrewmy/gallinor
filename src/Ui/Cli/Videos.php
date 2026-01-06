@@ -58,8 +58,6 @@ final class Videos extends Command
         OutputInterface $output,
         #[Option]
         bool $dryRun = false,
-        #[Option(description: 'Check visual quality with the VMAF score and pick a better bitrate')]
-        bool $checkQuality = false,
         #[Option(description: 'Force using the CPU encoder, slow')]
         bool $useCpu = false,
         #[Option(description: 'Overwrite the auxiliary encode results if they exist, otherwise skip encoding the relevant original')]
@@ -70,7 +68,7 @@ final class Videos extends Command
         $output->writeln(sprintf('<info>Dry run: %s</info>', $dryRun ? 'Yes' : 'No'));
         $output->writeln(sprintf('<info>Overwrite auxiliaries: %s</info>', $overwrite ? 'Yes' : 'No'));
         if (! $dryRun) {
-            $output->writeln(sprintf('<info>Check quality: %s</info>', $checkQuality ? 'Yes' : 'No'));
+            $output->writeln('<info>Check quality: Yes (always enabled)</info>');
         }
 
         $output->writeln('');
@@ -97,8 +95,8 @@ final class Videos extends Command
         $output->writeln(
             sprintf('<info>VMAF support: %s</info>', $this->ffmpeg->hasVmaf ? 'available' : 'not available'),
         );
-        if ($checkQuality && ! $this->ffmpeg->hasVmaf) {
-            $output->writeln('<error>Quality check requested but VMAF is not available. Aborting.</error>');
+        if (! $this->ffmpeg->hasVmaf) {
+            $output->writeln('<error>VMAF is not available. Quality checking is required. Aborting.</error>');
 
             return self::FAILURE;
         }
@@ -161,7 +159,6 @@ final class Videos extends Command
                     $output,
                     $maxBitrateSpikes,
                     $minVmafScore,
-                    $checkQuality,
                 );
             } catch (Throwable $exception) {
                 $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
@@ -285,7 +282,6 @@ final class Videos extends Command
         OutputInterface $output,
         float $maxBitrateSpikes,
         float $minVmafScore,
-        bool $checkQuality,
     ): int {
         $resultAccepted = true;
         $baseBitrate    = $file->baseBitrate();
@@ -301,10 +297,6 @@ final class Videos extends Command
             }
 
             [$tempFilePath, $processedSizeKb] = $this->encode($file, $output, $baseBitrate, $maxBitrateSpikes);
-
-            if (! $checkQuality) {
-                continue;
-            }
 
             $output->write('Checking VMAF score... ');
             $vmafScore = $this->ffmpeg->vmafScore(
@@ -346,7 +338,7 @@ final class Videos extends Command
             'processed_file' => $newFilePath,
             'processed_size_kb' => $processedSizeKb,
             'base_bitrate_kbps' => $baseBitrate,
-            'vmaf_score' => $checkQuality ? $vmafScore : null,
+            'vmaf_score' => $vmafScore,
         ]);
 
         return $processedSizeKb;
