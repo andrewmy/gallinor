@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ui\Cli;
 
+use App\Domain\Exceptions\UnsupportedResolution;
 use App\Domain\Ffmpeg;
 use App\Domain\Platform;
 use App\Domain\VideoEncoder;
@@ -229,14 +230,14 @@ final class Videos extends Command
                     continue;
                 }
 
-                if ($videoFile->baseBitrate() === null) {
-                    $output->writeln(sprintf('Unsupported resolution, skipping: %sx%s', $videoFile->width, $videoFile->height));
-                    $totalSkippedFiles++;
-                    continue;
-                }
-
-                if ($this->isBitrateAcceptable($videoFile, $videoFile->baseBitrate())) {
-                    $output->writeln(sprintf('Bitrate %s Kbps is acceptable, no action needed.', $videoFile->bitRate));
+                try {
+                    if ($this->isBitrateAcceptable($videoFile, $videoFile->baseBitrate())) {
+                        $output->writeln(sprintf('Bitrate %s Kbps is acceptable, no action needed.', $videoFile->bitRate));
+                        $totalSkippedFiles++;
+                        continue;
+                    }
+                } catch (UnsupportedResolution $exception) {
+                    $output->writeln($exception->getMessage());
                     $totalSkippedFiles++;
                     continue;
                 }

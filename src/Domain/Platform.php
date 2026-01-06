@@ -30,7 +30,6 @@ final readonly class Platform
         $this->nCores = max(1, match ($this->os) {
             self::OS_DARWIN => (int) shell_exec('sysctl -n hw.ncpu'),
             self::OS_WINDOWS => (int) shell_exec('powershell -Command "(Get-CimInstance -ClassName Win32_Processor).NumberOfCores"'),
-            default => 1,
         });
     }
 

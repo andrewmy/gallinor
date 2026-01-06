@@ -8,6 +8,7 @@ use JsonException;
 use RuntimeException;
 
 use function array_merge;
+use function assert;
 use function escapeshellarg;
 use function file_get_contents;
 use function filesize;
@@ -15,6 +16,7 @@ use function implode;
 use function in_array;
 use function is_array;
 use function is_file;
+use function is_string;
 use function json_decode;
 use function json_encode;
 use function shell_exec;
@@ -36,8 +38,11 @@ final readonly class Ffmpeg
         $which = $this->platform->isWindows() ? 'where.exe' : 'which';
         $grep  = $this->platform->isWindows() ? 'findstr' : 'grep';
 
+        // they both can be arrays on windows
+        /** @var false|string|list<string>|null $ffprobePath */
         $ffprobePath = shell_exec($which . ' ffprobe');
-        $ffmpegPath  = shell_exec($which . ' ffmpeg');
+        /** @var false|string|list<string>|null $ffmpegPath */
+        $ffmpegPath = shell_exec($which . ' ffmpeg');
         if (empty($ffprobePath) || empty($ffmpegPath)) {
             throw new RuntimeException('ffprobe or ffmpeg not found in system path');
         }
@@ -79,7 +84,7 @@ final readonly class Ffmpeg
         $this->hasVmaf = ! empty($vmafCheck);
     }
 
-    private function ffmpeg(string $args): string|null
+    private function ffmpeg(string $args): string|false|null
     {
         return shell_exec($this->ffmpegPath . ' ' . $args);
     }
@@ -92,7 +97,7 @@ final readonly class Ffmpeg
             $this->ffprobePath,
             $filePath,
         ));
-        if ($mediaInfoStr === null) {
+        if (! is_string($mediaInfoStr)) {
             throw new RuntimeException('Failed to get video info, skipping');
         }
 
@@ -102,11 +107,12 @@ final readonly class Ffmpeg
             throw new RuntimeException('Failed to parse video info: ' . $exception->getMessage());
         }
 
-        if (! isset($mediaInfo['streams'][0])) {
+        assert(is_array($mediaInfo));
+        if (! is_array($mediaInfo['streams']) || ! isset($mediaInfo['streams'][0])) {
             throw new RuntimeException('No video stream found in file, skipping');
         }
 
-        /** @var array{width: int, height: int, bit_rate: int, pix_fmt: string, codec_name: string, color_space: ?string, color_primaries: ?string, color_transfer: ?string, duration: float} $stream */
+        /** @var array{width?: int, height?: int, bit_rate?: int, pix_fmt?: string, codec_name?: string, color_space?: ?string, color_primaries?: ?string, color_transfer?: ?string, duration?: float} $stream */
         $stream = $mediaInfo['streams'][0];
         if (
             ! isset(
@@ -235,11 +241,12 @@ final readonly class Ffmpeg
         }
 
         try {
-            $vmafResult = json_decode(file_get_contents($vmafLogFile), true, 512, JSON_THROW_ON_ERROR);
+            $vmafResult = json_decode((string) file_get_contents($vmafLogFile), true, 512, JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
             throw new RuntimeException('Failed to parse VMAF output: ' . $exception->getMessage());
         }
 
+        assert(is_array($vmafResult) && is_array($vmafResult['pooled_metrics']) && is_array($vmafResult['pooled_metrics']['vmaf']));
         if (! isset($vmafResult['pooled_metrics']['vmaf']['harmonic_mean'])) {
             throw new RuntimeException('Invalid VMAF output format: no pooled_metrics found');
         }

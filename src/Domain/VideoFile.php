@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain;
 
+use App\Domain\Exceptions\UnsupportedResolution;
+
 use function ceil;
 use function pathinfo;
+use function sprintf;
 
 use const DIRECTORY_SEPARATOR;
 
@@ -32,7 +35,7 @@ final readonly class VideoFile
     {
         $pathParts = pathinfo($this->path);
 
-        return $pathParts['dirname'] . DIRECTORY_SEPARATOR . $pathParts['filename'] . '.' . $suffix . '.mp4';
+        return ($pathParts['dirname'] ?? '') . DIRECTORY_SEPARATOR . $pathParts['filename'] . '.' . $suffix . '.mp4';
     }
 
     public function bitrateStep(): int|null
@@ -45,13 +48,15 @@ final readonly class VideoFile
         };
     }
 
-    public function baseBitrate(): int|null
+    public function baseBitrate(): int
     {
         return match (true) {
             $this->width === 1280 && $this->height === 720, $this->width === 720 && $this->height === 1280 => 4000,
             $this->width === 1920 && $this->height === 1080, $this->width === 1080 && $this->height === 1920 => 8000,
             $this->width === 3840 && $this->height === 2160, $this->width === 2160 && $this->height === 3840 => 28000,
-            default => null,
+            default => throw new UnsupportedResolution(
+                sprintf('Unsupported dimensions %sx%s', $this->width, $this->height),
+            ),
         };
     }
 

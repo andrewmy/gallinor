@@ -3,3 +3,8 @@ parameters:
     paths:
         - src
     tmpDir: var
+    ignoreErrors:
+            -
+                identifiers:
+                    - varTag.nativeType # see src/Domain/Ffmpeg.php
+                    - cast.double
