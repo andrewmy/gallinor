@@ -58,8 +58,6 @@ final class Videos extends Command
         OutputInterface $output,
         #[Option]
         bool $dryRun = false,
-        #[Option(description: 'Replace the originals with the encode result')]
-        bool $replaceOriginals = false,
         #[Option(description: 'Check visual quality with the VMAF score and pick a better bitrate')]
         bool $checkQuality = false,
         #[Option(description: 'Force using the CPU encoder, slow')]
@@ -72,11 +70,7 @@ final class Videos extends Command
         $output->writeln(sprintf('<info>Dry run: %s</info>', $dryRun ? 'Yes' : 'No'));
         $output->writeln(sprintf('<info>Overwrite auxiliaries: %s</info>', $overwrite ? 'Yes' : 'No'));
         if (! $dryRun) {
-            $output->writeln(sprintf('<info>Replace originals: %s</info>', $replaceOriginals ? 'Yes' : 'No'));
             $output->writeln(sprintf('<info>Check quality: %s</info>', $checkQuality ? 'Yes' : 'No'));
-            if ($replaceOriginals && ! $checkQuality) {
-                $output->writeln('<comment>Warning: Replacing original files without quality check may lead to data loss.</comment>');
-            }
         }
 
         $output->writeln('');
@@ -167,7 +161,6 @@ final class Videos extends Command
                     $output,
                     $maxBitrateSpikes,
                     $minVmafScore,
-                    $replaceOriginals,
                     $checkQuality,
                 );
             } catch (Throwable $exception) {
@@ -292,7 +285,6 @@ final class Videos extends Command
         OutputInterface $output,
         float $maxBitrateSpikes,
         float $minVmafScore,
-        bool $replaceOriginals,
         bool $checkQuality,
     ): int {
         $resultAccepted = true;
@@ -341,22 +333,17 @@ final class Videos extends Command
             $baseBitrate += $file->bitrateStep();
         } while (! $resultAccepted);
 
-        if ($replaceOriginals) {
-            rename($tempFilePath, $file->path);
-            $output->writeln('<info>Replaced original file with optimal version.</info>');
-        } else {
-            $newFilePath = $file->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
-            rename($tempFilePath, $newFilePath);
-            $output->writeln(sprintf(
-                '<info>Saved optimal file as: %s</info>',
-                $this->cliHelper->link($newFilePath),
-            ));
-        }
+        $newFilePath = $file->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
+        rename($tempFilePath, $newFilePath);
+        $output->writeln(sprintf(
+            '<info>Saved optimal file as: %s</info>',
+            $this->cliHelper->link($newFilePath),
+        ));
 
         $this->logger->info('Processed file', [
             'original_file' => $file->path,
             'original_size_kb' => $file->currentSizeKb,
-            'processed_file' => $replaceOriginals ? $file->path : $newFilePath,
+            'processed_file' => $newFilePath,
             'processed_size_kb' => $processedSizeKb,
             'base_bitrate_kbps' => $baseBitrate,
             'vmaf_score' => $checkQuality ? $vmafScore : null,

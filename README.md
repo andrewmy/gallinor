@@ -57,7 +57,7 @@ The result files are saved along the originals with the `.optimal.mp4` suffix.
 php app.php rename /path/to/videos [/path2 /path3 ...] [--dry-run]
 ```
 
-If you ran the `videos` command without `--replace-originals` as you should, after checking the quality, finish the job here.
+After checking the quality, finish the job here.
 
 ## Notes
 
