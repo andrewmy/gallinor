@@ -55,8 +55,8 @@ final readonly class Ffmpeg
 
         $hasAppleToolbox = $this->platform->isWindows()
             ? false
-            : shell_exec('ffmpeg -hide_banner -encoders | grep hevc_videotoolbox');
-        $hasNvEncoder    = shell_exec('ffmpeg -hide_banner -encoders | ' . $grep . ' hevc_nvenc');
+            : $this->ffmpeg('-hide_banner -encoders | grep hevc_videotoolbox');
+        $hasNvEncoder    = $this->ffmpeg('-hide_banner -encoders | ' . $grep . ' hevc_nvenc');
 
         if ($useCpu) {
             $this->activeEncoder = VideoEncoder::Cpu;
@@ -69,21 +69,27 @@ final readonly class Ffmpeg
         }
 
         if ($hasNvEncoder) {
-            $temporalAqCheck     = shell_exec('ffmpeg -h encoder=hevc_nvenc 2>&1 | ' . $grep . ' temporal');
+            $temporalAqCheck     = $this->ffmpeg('-h encoder=hevc_nvenc 2>&1 | ' . $grep . ' temporal');
             $this->hasTemporalAq = ! empty($temporalAqCheck);
         } else {
             $this->hasTemporalAq = false;
         }
 
-        $vmafCheck     = shell_exec('ffmpeg -hide_banner -filters | ' . $grep . ' vmaf');
+        $vmafCheck     = $this->ffmpeg('-hide_banner -filters | ' . $grep . ' vmaf');
         $this->hasVmaf = ! empty($vmafCheck);
+    }
+
+    private function ffmpeg(string $args): string|null
+    {
+        return shell_exec($this->ffmpegPath . ' ' . $args);
     }
 
     /** @throws RuntimeException */
     public function videoFileFromPath(string $filePath): VideoFile
     {
         $mediaInfoStr = shell_exec(sprintf(
-            'ffprobe -v error -select_streams v:0 -show_entries stream=width,height,bit_rate,pix_fmt,codec_name,color_space,color_primaries,color_transfer,duration -of json "%s"',
+            '%s -v error -select_streams v:0 -show_entries stream=width,height,bit_rate,pix_fmt,codec_name,color_space,color_primaries,color_transfer,duration -of json "%s"',
+            $this->ffprobePath,
             $filePath,
         ));
         if ($mediaInfoStr === null) {
@@ -137,7 +143,7 @@ final readonly class Ffmpeg
         string $tempFilePath,
     ): string {
         $params = [
-            'ffmpeg',
+            $this->ffmpegPath,
             '-hide_banner',
             '-loglevel error',
             '-stats',
@@ -217,15 +223,13 @@ final readonly class Ffmpeg
 
         // windows ffmpeg vmaf does not support /dev/stdout, need to use a temp file instead
         $vmafLogFile = 'var/vmaf.json';
-        $vmafCmd     = sprintf(
-            'ffmpeg -hide_banner -loglevel error -i "%s" -i "%s" -lavfi "libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10" -f null -',
+        $this->ffmpeg(sprintf(
+            '-hide_banner -loglevel error -i "%s" -i "%s" -lavfi "libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10" -f null -',
             $processedFilePath,
             $originalFilePath,
             $vmafLogFile,
             $this->platform->nCores,
-        );
-
-        shell_exec($vmafCmd);
+        ));
         if (! is_file($vmafLogFile)) {
             throw new RuntimeException('Failed to execute VMAF command');
         }
