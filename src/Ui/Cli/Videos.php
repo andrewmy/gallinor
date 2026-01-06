@@ -28,6 +28,7 @@ use function count;
 use function exec;
 use function file_exists;
 use function filesize;
+use function microtime;
 use function number_format;
 use function rename;
 use function rtrim;
@@ -107,6 +108,7 @@ final class Videos extends Command
 
             return self::FAILURE;
         }
+
         $initTime = microtime(true);
         $output->writeln(sprintf('<info>Init time: %.3fs</info>', $initTime - $startTime));
 
