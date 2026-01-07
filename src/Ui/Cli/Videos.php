@@ -39,6 +39,7 @@ use function trim;
 use function unlink;
 
 use const DIRECTORY_SEPARATOR;
+use const PHP_EOL;
 
 #[AsCommand(name: 'videos', description: 'Re-encode videos to optimal bitrate')]
 final class Videos extends Command
@@ -46,6 +47,8 @@ final class Videos extends Command
     private Platform $platform;
     private Ffmpeg $ffmpeg;
     private float $maxBitrateOverhead = 1.1;
+    private float $maxBitrateSpikes   = 1.25;
+    private float $minVmafScore       = 90.0;
 
     public function __construct(
         private readonly LoggerInterface $logger,
@@ -64,12 +67,7 @@ final class Videos extends Command
         #[Argument]
         array $directories = [],
     ): int {
-        $output->writeln(sprintf('<info>Dry run: %s</info>', $dryRun ? 'Yes' : 'No'));
-        if (! $dryRun) {
-            $output->writeln('<info>Check quality: Yes (always enabled)</info>');
-        }
-
-        $output->writeln('');
+        $output->writeln(sprintf('<info>Dry run: %s</info>%s', $dryRun ? 'Yes' : 'No', PHP_EOL));
 
         $startTime = microtime(true);
         try {
@@ -103,8 +101,6 @@ final class Videos extends Command
 
         $totalProcessedSize = 0;
         $totalErroredFiles  = 0;
-        $maxBitrateSpikes   = 1.25;
-        $minVmafScore       = 90.0;
 
         [$fileList, $totalSkippedFiles] = $this->gatherFileList(
             directories: $directories,
@@ -151,8 +147,6 @@ final class Videos extends Command
                 $totalProcessedSize += $this->processFile(
                     $file,
                     $output,
-                    $maxBitrateSpikes,
-                    $minVmafScore,
                 );
             } catch (Throwable $exception) {
                 $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
@@ -271,11 +265,8 @@ final class Videos extends Command
     private function processFile(
         VideoFile $file,
         OutputInterface $output,
-        float $maxBitrateSpikes,
-        float $minVmafScore,
     ): int {
-        $resultAccepted = true;
-        $baseBitrate    = $file->baseBitrate();
+        $baseBitrate = $file->baseBitrate();
         do {
             if ($this->isBitrateAcceptable($file, $baseBitrate)) {
                 $output->writeln(sprintf(
@@ -287,7 +278,7 @@ final class Videos extends Command
                 return $file->currentSizeKb;
             }
 
-            [$tempFilePath, $processedSizeKb] = $this->encode($file, $output, $baseBitrate, $maxBitrateSpikes);
+            [$tempFilePath, $processedSizeKb] = $this->encode($file, $output, $baseBitrate);
 
             $output->write('Checking VMAF score... ');
             $vmafScore = $this->ffmpeg->vmafScore(
@@ -296,7 +287,7 @@ final class Videos extends Command
             );
             $output->writeln(sprintf('%.2f', $vmafScore));
             $resultAccepted = true;
-            if ($vmafScore >= $minVmafScore) {
+            if ($vmafScore >= $this->minVmafScore) {
                 continue;
             }
 
@@ -308,7 +299,7 @@ final class Videos extends Command
                     '<error>With bitrate %sk the VMAF score %.2f is below acceptable threshold %s, retrying with higher bitrate %sk.</error>',
                     $baseBitrate,
                     $vmafScore,
-                    $minVmafScore,
+                    $this->minVmafScore,
                     $baseBitrate + $file->bitrateStep(),
                 ),
             );
@@ -340,11 +331,10 @@ final class Videos extends Command
         VideoFile $file,
         OutputInterface $output,
         int $baseBitrate,
-        float $maxBitrateSpikes,
     ): array {
         $tempFilePath = $file->suffixedFilePath('tmp');
 
-        $ffmpegCmd = $this->ffmpeg->commandForFile($file, $baseBitrate, $maxBitrateSpikes, $tempFilePath);
+        $ffmpegCmd = $this->ffmpeg->commandForFile($file, $baseBitrate, $this->maxBitrateSpikes, $tempFilePath);
         if ($output->isVerbose()) {
             $output->writeln(sprintf('Executing command: %s', $ffmpegCmd));
         }
