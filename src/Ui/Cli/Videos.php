@@ -48,8 +48,8 @@ final class Videos extends Command
     private float $maxBitrateOverhead = 1.1;
 
     public function __construct(
-        private LoggerInterface $logger,
-        private CliHelper $cliHelper,
+        private readonly LoggerInterface $logger,
+        private readonly CliHelper $cliHelper,
     ) {
         parent::__construct();
     }
