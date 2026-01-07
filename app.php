@@ -4,6 +4,7 @@
 declare(strict_types=1);
 
 use App\Ui\Cli\CliHelper;
+use App\Ui\Cli\Images;
 use App\Ui\Cli\Rename;
 use App\Ui\Cli\Videos;
 use Monolog\Handler\StreamHandler;
@@ -13,14 +14,13 @@ use Symfony\Component\Console\Application;
 
 require __DIR__ . '/vendor/autoload.php';
 
+$logger    = new Logger('app', [new StreamHandler('var/app.log', Level::Debug)]);
 $cliHelper = new CliHelper();
 
 $app = new Application();
 $app->addCommands([
-    new Videos(
-        new Logger('app', [new StreamHandler('var/app.log', Level::Debug)]),
-        $cliHelper,
-    ),
+    new Videos($logger, $cliHelper),
     new Rename($cliHelper),
+    new Images($logger, $cliHelper),
 ]);
 $app->run();

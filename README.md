@@ -4,30 +4,47 @@ This is a CLI tool for reducing the size of your video and image gallery while m
 
 ## Features
 
-- Reduce mp4 video file sizes, re-encoding everything to HEVC (H.265) with MVP bitrate
-- Support 720p, 1080p, and 4K videos
-- Support for Apple and NVidia hardware acceleration for video encoding
-- Support for CPU video encoding
 - Support for macOS and Windows
-- Video quality check and bitrate adjustment
+- Quality check and bitrate adjustment to find the MVP
+- Video:
+  - Reduce mp4 video file sizes, re-encoding everything to HEVC (H.265) with MVP bitrate
+  - Support 720p, 1080p, and 4K videos
+  - Support for Apple and NVidia hardware acceleration for video encoding
+  - Support for CPU video encoding as a last resort
+- Images:
+  - 
 
 ## Todo
 
-- [ ] Reduce jpg image file sizes
-- [ ] Encoding vs QC time
+- [ ] Reduce JPEG image file sizes by encoding into AVIF
 - [ ] Nicer progress indication
+- [ ] xz-compress ARW files (~30%)
 
 ## Requirements
 
-- PHP 8.4 or higher
+- PHP 8.5 or higher
 - Composer
-- FFmpeg with HEVC (H.265) support installed and available in your system PATH
-- For hardware acceleration:
-  - macOS: Apple Silicon or Intel with VideoToolbox support
-  - Windows: NVidia GPU with NVENC support
-- For quality check — VMAF library installed and available in your system PATH
 - On Windows:
-  - PowerShell
+    - PowerShell
+- For video:
+  - FFmpeg with HEVC (H.265) support installed and available in your system PATH
+    - macOS: `brew install ffmpeg`
+  - For hardware acceleration:
+    - macOS: Apple Silicon or Intel with VideoToolbox support
+    - Windows: NVidia GPU with NVENC support
+  - For quality check — VMAF library installed and available in your system PATH, usually is in the box with ffmpeg
+- For images:
+  - libavif
+    - macOS: `brew install libavif`
+    - Windows: https://github.com/AOMediaCodec/libavif/releases
+  - ssimulacra2
+    - Rust
+      - macOS: `brew install rust`
+    - `cargo install ssimulacra2_rs --no-default-features`
+  - exiftool
+    - macOS: `brew install exiftool`
+  - For raws — xz
+    - macOS: `brew install xz`
 
 ## Installation
 
@@ -61,8 +78,14 @@ After checking the quality, finish the job here.
 
 ## Notes
 
-NVENC seems to achieve better visual quality with smaller bitrate. On a selection of complex 1080p videos with source bitrate 16 Mbps, to achieve VMAF score 90+:
-- Apple VideoToolbox needed 12-14 Mbps or fails completely;
-- NVENC needed 8-12 Mbps.
+### Video
 
-The CPU encoder is very slow and its CRF rate is not really well tested, wear a hard hat and fire up some movie while using it.
+- NVENC seems to achieve better visual quality with smaller bitrate. On a selection of complex 1080p videos with source bitrate 16 Mbps, to achieve VMAF score 90+:
+  - Apple VideoToolbox needed 12-14 Mbps or fails completely;
+  - NVENC needed 8-12 Mbps.
+- The CPU encoder is very slow and its CRF rate is not really well tested, wear a hard hat and fire up some movie while using it.
+
+### Photo
+
+- DNG files seem to be compressed well, `xz -9 -T0` gives ~2.5%, not worth it.
+- While videos appear to degrade significantly with VMAF score below 90, photos seem to be perfectly fine with SSIMULACRA2 score 85.
