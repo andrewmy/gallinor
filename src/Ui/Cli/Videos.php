@@ -61,13 +61,10 @@ final class Videos extends Command
         bool $dryRun = false,
         #[Option(description: 'Force using the CPU encoder, slow')]
         bool $useCpu = false,
-        #[Option(description: 'Overwrite the auxiliary encode results if they exist, otherwise skip encoding the relevant original')]
-        bool $overwrite = false,
         #[Argument]
         array $directories = [],
     ): int {
         $output->writeln(sprintf('<info>Dry run: %s</info>', $dryRun ? 'Yes' : 'No'));
-        $output->writeln(sprintf('<info>Overwrite auxiliaries: %s</info>', $overwrite ? 'Yes' : 'No'));
         if (! $dryRun) {
             $output->writeln('<info>Check quality: Yes (always enabled)</info>');
         }
@@ -93,9 +90,6 @@ final class Videos extends Command
             ));
         }
 
-        $output->writeln(
-            sprintf('<info>VMAF support: %s</info>', $this->ffmpeg->hasVmaf ? 'available' : 'not available'),
-        );
         if (! $this->ffmpeg->hasVmaf) {
             $output->writeln('<error>VMAF is not available. Quality checking is required. Aborting.</error>');
 
@@ -115,7 +109,6 @@ final class Videos extends Command
         [$fileList, $totalSkippedFiles] = $this->gatherFileList(
             directories: $directories,
             output: $output,
-            overwrite: $overwrite,
         );
 
         $totalCurrentSize   = array_reduce(
@@ -193,7 +186,6 @@ final class Videos extends Command
     private function gatherFileList(
         array $directories,
         OutputInterface $output,
-        bool $overwrite,
     ): array {
         $fileList          = [];
         $totalSkippedFiles = 0;
@@ -242,16 +234,14 @@ final class Videos extends Command
                     continue;
                 }
 
-                if (! $overwrite) {
-                    $optimalFilePath = $videoFile->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
-                    if (file_exists($optimalFilePath)) {
-                        $output->writeln(sprintf(
-                            'Optimal version already exists (%s), skipping.',
-                            $this->cliHelper->link($optimalFilePath),
-                        ));
-                        $totalSkippedFiles++;
-                        continue;
-                    }
+                $optimalFilePath = $videoFile->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
+                if (file_exists($optimalFilePath)) {
+                    $output->writeln(sprintf(
+                        'Optimal version already exists (%s), skipping.',
+                        $this->cliHelper->link($optimalFilePath),
+                    ));
+                    $totalSkippedFiles++;
+                    continue;
                 }
 
                 $fileList[] = $videoFile;
