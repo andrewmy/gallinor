@@ -101,6 +101,7 @@ final class Videos extends Command
 
         $totalProcessedSize = 0;
         $totalErroredFiles  = 0;
+        $totalQcTime        = 0;
 
         [$fileList, $totalSkippedFiles] = $this->gatherFileList(
             directories: $directories,
@@ -144,10 +145,12 @@ final class Videos extends Command
             ));
 
             try {
-                $totalProcessedSize += $this->processFile(
+                [$processedSize, $qcTime] = $this->processFile(
                     $file,
                     $output,
                 );
+                $totalProcessedSize      += $processedSize;
+                $totalQcTime             += $qcTime;
             } catch (Throwable $exception) {
                 $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
                 $totalErroredFiles++;
@@ -164,8 +167,9 @@ final class Videos extends Command
         ));
         $processTime = microtime(true);
         $output->writeln(sprintf(
-            "<info>Process time: %.3fs\nTotal time: %.3fs</info>",
+            "<info>Process time: %.3fs\nQC time: %3fs\nTotal time: %.3fs</info>",
             $processTime - $gatherTime,
+            $totalQcTime,
             $processTime - $startTime,
         ));
 
@@ -262,11 +266,13 @@ final class Videos extends Command
         return (int) ($file->bitRate / 1024) <= $baseBitrate * $this->maxBitrateOverhead;
     }
 
+    /** @return array{int, float} */
     private function processFile(
         VideoFile $file,
         OutputInterface $output,
-    ): int {
+    ): array {
         $baseBitrate = $file->baseBitrate();
+        $qcTime      = 0;
         do {
             if ($this->isBitrateAcceptable($file, $baseBitrate)) {
                 $output->writeln(sprintf(
@@ -275,16 +281,18 @@ final class Videos extends Command
                     $baseBitrate,
                 ));
 
-                return $file->currentSizeKb;
+                return [$file->currentSizeKb, 0];
             }
 
             [$tempFilePath, $processedSizeKb] = $this->encode($file, $output, $baseBitrate);
 
             $output->write('Checking VMAF score... ');
+            $startTime = microtime(true);
             $vmafScore = $this->ffmpeg->vmafScore(
                 originalFilePath: $file->path,
                 processedFilePath: $tempFilePath,
             );
+            $qcTime   += microtime(true) - $startTime;
             $output->writeln(sprintf('%.2f', $vmafScore));
             $resultAccepted = true;
             if ($vmafScore >= $this->minVmafScore) {
@@ -323,7 +331,7 @@ final class Videos extends Command
             'vmaf_score' => $vmafScore,
         ]);
 
-        return $processedSizeKb;
+        return [$processedSizeKb, $qcTime];
     }
 
     /** @return array{string, int} */
