@@ -20,8 +20,6 @@ This is a CLI tool for reducing the size of your video and image gallery while m
 ## Todo
 
 - [ ] Nicer progress indication?
-- [ ] `remove-originals` command for JPEGs after AVIF conversion
-- [ ] `remove-originals` command for archived ARWs
 
 ## Requirements
 
