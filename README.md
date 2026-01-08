@@ -12,13 +12,16 @@ This is a CLI tool for reducing the size of your video and image gallery while m
   - Support for Apple and NVidia hardware acceleration for video encoding
   - Support for CPU video encoding as a last resort
 - Images:
-  - 
+  - Convert JPEGs to AVIF with quality-based encoding (SSIMULACRA2 score ≥ 85)
+  - Archive ARW raw files with xz compression (~30% reduction)
+  - Skip photos with no size benefit from AVIF conversion
+  - Skip Samsung Portrait Mode and Live Photos (not sure about iOS)
 
 ## Todo
 
-- [ ] Reduce JPEG image file sizes by encoding into AVIF
-- [ ] Nicer progress indication
-- [ ] xz-compress ARW files (~30%)
+- [ ] Nicer progress indication?
+- [ ] `remove-originals` command for JPEGs after AVIF conversion
+- [ ] `remove-originals` command for archived ARWs
 
 ## Requirements
 
@@ -58,6 +61,7 @@ For the full list of options and their descriptions:
 
 ```shell
 php app.php help videos
+php app.php help images
 ```
 
 ### Crush some vids
@@ -75,6 +79,14 @@ php app.php rename /path/to/videos [/path2 /path3 ...] [--dry-run]
 ```
 
 After checking the quality, finish the job here.
+
+### Process images
+
+```shell
+php app.php images /path/to/photos [/path2 /path3 ...] [--dry-run]
+```
+
+Converts JPEGs to AVIF (saving alongside originals as `.avif`) and archives ARW files per directory as `raws-N.tar.xz`.
 
 ## Notes
 
