@@ -120,7 +120,7 @@ final class Videos extends Command
         );
 
         $output->writeln(sprintf(
-            "\n\nTotal Current Size: %s KB\nTotal Projected Size: %s KB\nTotal Projected Savings: %s KB\nSkipped Files: %d",
+            "\n\nProjection:\n  Current size: %s KB\n  Projected size: %s KB\n  Projected savings: %s KB\n  Skipped: %d",
             number_format($totalCurrentSize, thousands_separator: ' '),
             number_format($totalProjectedSize, thousands_separator: ' '),
             number_format($totalCurrentSize - $totalProjectedSize, thousands_separator: ' '),
@@ -138,7 +138,7 @@ final class Videos extends Command
         foreach ($fileList as $file) {
             $output->writeln('');
             $output->writeln(sprintf(
-                'Processing: %s, %d of %d',
+                'Processing: %s (%d of %d)',
                 $this->cliHelper->link($file->path),
                 $i,
                 $fileCount,
@@ -159,15 +159,20 @@ final class Videos extends Command
             $i++;
         }
 
-        $output->writeln(sprintf(
-            "\nTotal Actual Size: %s KB\nTotal Actual Savings: %s KB\nErrored Files: %d",
-            number_format($totalProcessedSize, thousands_separator: ' '),
-            number_format($totalCurrentSize - $totalProcessedSize, thousands_separator: ' '),
-            $totalErroredFiles,
-        ));
         $processTime = microtime(true);
         $output->writeln(sprintf(
-            "<info>Process time: %.3fs\nQC time: %3fs\nTotal time: %.3fs</info>",
+            "\nVideo Summary:\n  Processed: %d\n  Skipped: %d\n  Errored: %d\n  Size before: %s KB\n  Size after: %s KB\n  Savings: %s KB",
+            $fileCount,
+            $totalSkippedFiles,
+            $totalErroredFiles,
+            number_format($totalCurrentSize, thousands_separator: ' '),
+            number_format($totalProcessedSize, thousands_separator: ' '),
+            number_format($totalCurrentSize - $totalProcessedSize, thousands_separator: ' '),
+        ));
+        $output->writeln(sprintf(
+            "\n<info>Timing:\n  Init: %.3fs\n  Gather: %.3fs\n  Process: %.3fs\n  QC: %.3fs\n  Total: %.3fs</info>",
+            $initTime - $startTime,
+            $gatherTime - $initTime,
             $processTime - $gatherTime,
             $totalQcTime,
             $processTime - $startTime,
