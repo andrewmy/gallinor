@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
-namespace App\Ui\Cli;
+namespace App\Ui\Cli\Videos;
 
 use App\Domain\VideoFile;
+use App\Ui\Cli\CliHelper;
 use FilesystemIterator;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -26,7 +27,7 @@ use function trim;
 
 use const DIRECTORY_SEPARATOR;
 
-#[AsCommand(name: 'rename', description: 'Rename optimal files to replace originals')]
+#[AsCommand(name: 'videos:rename', description: 'Rename optimal video files to replace originals')]
 final class Rename extends Command
 {
     public function __construct(private readonly CliHelper $cliHelper)

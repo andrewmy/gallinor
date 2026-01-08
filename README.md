@@ -60,22 +60,22 @@ composer install
 For the full list of options and their descriptions:
 
 ```shell
-php app.php help videos
-php app.php help images
+php app.php help videos:squeeze
+php app.php help images:squeeze
 ```
 
 ### Crush some vids
 
 ```shell
- php app.php videos /path/to/videos [/path2 /path3 ...] [--dry-run]
+ php app.php videos:squeeze /path/to/videos [/path2 /path3 ...] [--dry-run]
 ```
 
 The result files are saved along the originals with the `.optimal.mp4` suffix.
 
-### Rename optimals to replace originals
+### Rename optimal videos to replace originals
 
 ```shell
-php app.php rename /path/to/videos [/path2 /path3 ...] [--dry-run]
+php app.php videos:rename /path/to/videos [/path2 /path3 ...] [--dry-run]
 ```
 
 After checking the quality, finish the job here.
@@ -83,7 +83,7 @@ After checking the quality, finish the job here.
 ### Process images
 
 ```shell
-php app.php images /path/to/photos [/path2 /path3 ...] [--dry-run]
+php app.php images:squeeze /path/to/photos [/path2 /path3 ...] [--dry-run]
 ```
 
 Converts JPEGs to AVIF (saving alongside originals as `.avif`) and archives ARW files per directory as `raws-N.tar.xz`.

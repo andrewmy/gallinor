@@ -2,13 +2,14 @@
 
 declare(strict_types=1);
 
-namespace App\Ui\Cli;
+namespace App\Ui\Cli\Videos;
 
 use App\Domain\Exceptions\UnsupportedResolution;
 use App\Domain\Ffmpeg;
 use App\Domain\Platform;
 use App\Domain\VideoEncoder;
 use App\Domain\VideoFile;
+use App\Ui\Cli\CliHelper;
 use FilesystemIterator;
 use Psr\Log\LoggerInterface;
 use RecursiveDirectoryIterator;
@@ -41,8 +42,8 @@ use function unlink;
 use const DIRECTORY_SEPARATOR;
 use const PHP_EOL;
 
-#[AsCommand(name: 'videos', description: 'Re-encode videos to optimal bitrate')]
-final class Videos extends Command
+#[AsCommand(name: 'videos:squeeze', description: 'Re-encode videos to optimal bitrate')]
+final class Squeeze extends Command
 {
     private Platform $platform;
     private Ffmpeg $ffmpeg;

@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
-namespace App\Ui\Cli;
+namespace App\Ui\Cli\Images;
 
 use App\Domain\Platform;
+use App\Ui\Cli\CliHelper;
 use FilesystemIterator;
 use Psr\Log\LoggerInterface;
 use RecursiveDirectoryIterator;
@@ -53,8 +54,8 @@ use const DIRECTORY_SEPARATOR;
 use const PATHINFO_FILENAME;
 use const PHP_EOL;
 
-#[AsCommand(name: 'images', description: 'Re-encode JPEGs to optimal AVIFs, XZ the ARWs')]
-final class Images extends Command
+#[AsCommand(name: 'images:squeeze', description: 'Re-encode JPEGs to optimal AVIFs, XZ the ARWs')]
+final class Squeeze extends Command
 {
     private const float MIN_SSIM_SCORE = 85.0;
     private const int CQ_LEVEL_START   = 20;
