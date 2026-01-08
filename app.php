@@ -4,6 +4,7 @@
 declare(strict_types=1);
 
 use App\Ui\Cli\CliHelper;
+use App\Ui\Cli\Images\RemoveOriginals as ImagesRemoveOriginals;
 use App\Ui\Cli\Images\Squeeze as ImagesSqueeze;
 use App\Ui\Cli\Videos\Rename as VideosRename;
 use App\Ui\Cli\Videos\Squeeze as VideosSqueeze;
@@ -22,5 +23,6 @@ $app->addCommands([
     new VideosSqueeze($logger, $cliHelper),
     new VideosRename($cliHelper),
     new ImagesSqueeze($logger, $cliHelper),
+    new ImagesRemoveOriginals($logger, $cliHelper),
 ]);
 $app->run();
