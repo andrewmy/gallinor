@@ -132,40 +132,43 @@ final class Squeeze extends Command
             return self::SUCCESS;
         }
 
-        $jpegCount = count($jpegList);
-        $i         = 1;
+        $jpegCount   = count($jpegList);
+        $progressBar = $this->cliHelper->createProgressBar($output, $jpegCount, 'JPEGs');
+        $progressBar->start();
+
         foreach ($jpegList as $jpegPath) {
-            $output->writeln('');
-            $output->writeln(sprintf(
-                'Processing JPEG: %s (%d of %d)',
-                $this->cliHelper->link($jpegPath),
-                $i,
-                $jpegCount,
-            ));
+            $fileName = basename($jpegPath);
+            $progressBar->setMessage($fileName, 'status');
+            $progressBar->display();
+
+            $statusCallback = static function (int $cqLevel, float $score, int $savedKb) use ($progressBar, $fileName): void {
+                $progressBar->setMessage(
+                    sprintf('%s | cq=%d, score=%.1f, saved %s KB', $fileName, $cqLevel, $score, number_format($savedKb, thousands_separator: ' ')),
+                    'status',
+                );
+                $progressBar->display();
+            };
 
             try {
                 $originalSize         = (int) ceil(filesize($jpegPath) / 1024);
                 $totalJpegSizeBefore += $originalSize;
 
-                $result = $this->processJpeg($jpegPath, $output);
+                $result = $this->processJpeg($jpegPath, $output, $statusCallback);
 
                 if ($result === null) {
                     $totalJpegsSkipped++;
-                    $output->writeln('<comment>Skipped (no suitable AVIF produced)</comment>');
+                    $progressBar->setMessage(sprintf('%s | <comment>Skipped</comment>', $fileName), 'status');
                 } else {
                     [$avifPath, $avifSizeKb, $qcTime, $finalCqLevel, $finalScore] = $result;
                     $totalJpegSizeAfter                                          += $avifSizeKb;
                     $totalQcTime                                                 += $qcTime;
                     $totalJpegsProcessed++;
 
-                    $output->writeln(sprintf(
-                        '<info>Saved: %s (cq-level=%d, score=%.2f, %s KB, saved %s KB)</info>',
-                        $this->cliHelper->link($avifPath),
-                        $finalCqLevel,
-                        $finalScore,
-                        number_format($avifSizeKb, thousands_separator: ' '),
-                        number_format($originalSize - $avifSizeKb, thousands_separator: ' '),
-                    ));
+                    $savings = $originalSize - $avifSizeKb;
+                    $progressBar->setMessage(
+                        sprintf('%s | cq=%d, score=%.1f, saved %s KB', $fileName, $finalCqLevel, $finalScore, number_format($savings, thousands_separator: ' ')),
+                        'status',
+                    );
 
                     $this->logger->info('Processed JPEG', [
                         'original_file' => $jpegPath,
@@ -177,31 +180,60 @@ final class Squeeze extends Command
                     ]);
                 }
             } catch (Throwable $exception) {
-                $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
+                $progressBar->setMessage(sprintf('%s | <error>Error</error>', $fileName), 'status');
+                if ($output->isVerbose()) {
+                    $progressBar->clear();
+                    $output->writeln(sprintf('<error>%s: %s</error>', $fileName, $exception->getMessage()));
+                    $progressBar->display();
+                }
+
                 $totalJpegsErrored++;
             }
 
-            $i++;
+            $progressBar->advance();
         }
 
+        $progressBar->setMessage('Done', 'status');
+        $progressBar->finish();
         $output->writeln('');
-        $output->writeln('<info>Archiving ARW files...</info>');
+
         $archiveStartTime = microtime(true);
+        $arwDirCount      = count($arwsByDir);
 
-        foreach ($arwsByDir as $dir => $arwFiles) {
-            $output->writeln(sprintf('Directory: %s (%d files)', $this->cliHelper->link($dir), count($arwFiles)));
+        if ($arwDirCount > 0) {
+            $arwProgressBar = $this->cliHelper->createProgressBar($output, $arwDirCount, 'ARW dirs');
+            $arwProgressBar->start();
 
-            try {
-                $archiveSize        = $this->archiveArws($dir, $arwFiles, $output);
-                $totalArchiveSize  += $archiveSize;
-                $totalArwsArchived += count($arwFiles);
-                $output->writeln(sprintf(
-                    '<info>Archive created: %s KB</info>',
-                    number_format($archiveSize, thousands_separator: ' '),
-                ));
-            } catch (Throwable $exception) {
-                $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
+            foreach ($arwsByDir as $dir => $arwFiles) {
+                $dirName   = basename($dir);
+                $fileCount = count($arwFiles);
+                $arwProgressBar->setMessage(sprintf('%s (%d files)', $dirName, $fileCount), 'status');
+                $arwProgressBar->display();
+
+                try {
+                    $archiveSize        = $this->archiveArws($dir, $arwFiles, $output);
+                    $totalArchiveSize  += $archiveSize;
+                    $totalArwsArchived += $fileCount;
+
+                    $arwProgressBar->setMessage(
+                        sprintf('%s | %s KB', $dirName, number_format($archiveSize, thousands_separator: ' ')),
+                        'status',
+                    );
+                } catch (Throwable $exception) {
+                    $arwProgressBar->setMessage(sprintf('%s | <error>Error</error>', $dirName), 'status');
+                    if ($output->isVerbose()) {
+                        $arwProgressBar->clear();
+                        $output->writeln(sprintf('<error>%s: %s</error>', $dirName, $exception->getMessage()));
+                        $arwProgressBar->display();
+                    }
+                }
+
+                $arwProgressBar->advance();
             }
+
+            $arwProgressBar->setMessage('Done', 'status');
+            $arwProgressBar->finish();
+            $output->writeln('');
         }
 
         $totalArchiveTime = microtime(true) - $archiveStartTime;
@@ -395,8 +427,12 @@ final class Squeeze extends Command
         return dirname($jpegPath) . DIRECTORY_SEPARATOR . pathinfo($jpegPath, PATHINFO_FILENAME) . '.avif';
     }
 
-    /** @return array{string, int, float, int, float}|null [avifPath, sizeKb, qcTime, cqLevel, score] or null if skipped */
-    private function processJpeg(string $jpegPath, OutputInterface $output): array|null
+    /**
+     * @param callable(int, float, int): void $statusCallback Called with (cqLevel, score, savedKb) during quality search
+     *
+     * @return array{string, int, float, int, float}|null [avifPath, sizeKb, qcTime, cqLevel, score] or null if skipped
+     */
+    private function processJpeg(string $jpegPath, OutputInterface $output, callable $statusCallback): array|null
     {
         $tmpAvif = $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '.avif';
         $tmpPng  = $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '.png';
@@ -461,18 +497,24 @@ final class Squeeze extends Command
                 throw new RuntimeException(sprintf('ssimulacra2 failed with exit code %d', $scoreExitCode));
             }
 
-            $score = (float) trim($scoreOutput[0] ?? '0');
-            $output->writeln(sprintf('  cq-level=%d, score=%.2f', $cqLevel, $score));
+            $score         = (float) trim($scoreOutput[0] ?? '0');
+            $currentAvifKb = (int) ceil(filesize($tmpAvif) / 1024);
+            $statusCallback($cqLevel, $score, $originalSizeKb - $currentAvifKb);
+
+            if ($output->isVerbose()) {
+                $output->writeln(sprintf('  cq-level=%d, score=%.2f', $cqLevel, $score));
+            }
 
             if ($score >= self::MIN_SSIM_SCORE) {
-                $avifSizeKb = (int) ceil(filesize($tmpAvif) / 1024);
+                if ($currentAvifKb >= $originalSizeKb) {
+                    if ($output->isVerbose()) {
+                        $output->writeln(sprintf(
+                            '  <comment>AVIF not smaller (%s KB >= %s KB), skipping</comment>',
+                            number_format($currentAvifKb, thousands_separator: ' '),
+                            number_format($originalSizeKb, thousands_separator: ' '),
+                        ));
+                    }
 
-                if ($avifSizeKb >= $originalSizeKb) {
-                    $output->writeln(sprintf(
-                        '  <comment>AVIF not smaller (%s KB >= %s KB), skipping</comment>',
-                        number_format($avifSizeKb, thousands_separator: ' '),
-                        number_format($originalSizeKb, thousands_separator: ' '),
-                    ));
                     unlink($tmpAvif);
 
                     return null;
@@ -481,18 +523,23 @@ final class Squeeze extends Command
                 $finalPath = $this->getAvifPath($jpegPath);
                 rename($tmpAvif, $finalPath);
 
-                return [$finalPath, $avifSizeKb, $totalQcTime, $cqLevel, $score];
+                return [$finalPath, $currentAvifKb, $totalQcTime, $cqLevel, $score];
             }
 
             if ($cqLevel <= self::CQ_LEVEL_END) {
                 continue;
             }
 
-            $output->writeln(sprintf('  Score %.2f < %.2f, trying higher quality...', $score, self::MIN_SSIM_SCORE));
+            if ($output->isVerbose()) {
+                $output->writeln(sprintf('  Score %.2f < %.2f, trying higher quality...', $score, self::MIN_SSIM_SCORE));
+            }
+
             unlink($tmpAvif);
         }
 
-        $output->writeln(sprintf('<comment>  Could not achieve score >= %.2f even at cq-level=%d</comment>', self::MIN_SSIM_SCORE, self::CQ_LEVEL_END));
+        if ($output->isVerbose()) {
+            $output->writeln(sprintf('<comment>  Could not achieve score >= %.2f even at cq-level=%d</comment>', self::MIN_SSIM_SCORE, self::CQ_LEVEL_END));
+        }
 
         if (file_exists($tmpAvif)) {
             unlink($tmpAvif);

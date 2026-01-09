@@ -5,9 +5,8 @@ This is a CLI tool for reducing the size of your video and image gallery while m
 ## Features
 
 - Support for macOS and Windows
-- Quality check and bitrate adjustment to find the MVP
 - Video:
-  - Reduce mp4 video file sizes, re-encoding everything to HEVC (H.265) with MVP bitrate
+  - Reduce mp4 video file sizes, re-encoding everything to HEVC (H.265) with quality-based bitrate (VMAF score ≥ 90)
   - Support 720p, 1080p, and 4K videos
   - Support for Apple and NVidia hardware acceleration for video encoding
   - Support for CPU video encoding as a last resort
@@ -99,3 +98,4 @@ Converts JPEGs to AVIF (saving alongside originals as `.avif`) and archives ARW 
 
 - DNG files seem to be compressed well, `xz -9 -T0` gives ~2.5%, not worth it.
 - While videos appear to degrade significantly with VMAF score below 90, photos seem to be perfectly fine with SSIMULACRA2 score 85.
+- The full cycle of re-encode/check/try again takes ~10s avg per image on a M1 Pro, avg size savings 50%.
