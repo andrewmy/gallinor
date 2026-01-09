@@ -136,14 +136,17 @@ final class Squeeze extends Command
         $progressBar = $this->cliHelper->createProgressBar($output, $jpegCount, 'JPEGs');
         $progressBar->start();
 
+        $totalSavings = 0;
+
         foreach ($jpegList as $jpegPath) {
             $fileName = basename($jpegPath);
             $progressBar->setMessage($fileName, 'status');
             $progressBar->display();
 
-            $statusCallback = static function (int $cqLevel, float $score, int $savedKb) use ($progressBar, $fileName): void {
+            $statusCallback = static function (int $cqLevel, float $score, int $savedKb) use ($progressBar, $fileName, &$totalSavings): void {
+                $runningTotal = $totalSavings + $savedKb;
                 $progressBar->setMessage(
-                    sprintf('%s | cq=%d, score=%.1f, saved %s KB', $fileName, $cqLevel, $score, number_format($savedKb, thousands_separator: ' ')),
+                    sprintf('%s | cq=%d, score=%.1f, saved %s KB (total: %s KB)', $fileName, $cqLevel, $score, number_format($savedKb, thousands_separator: ' '), number_format($runningTotal, thousands_separator: ' ')),
                     'status',
                 );
                 $progressBar->display();
@@ -157,16 +160,17 @@ final class Squeeze extends Command
 
                 if ($result === null) {
                     $totalJpegsSkipped++;
-                    $progressBar->setMessage(sprintf('%s | <comment>Skipped</comment>', $fileName), 'status');
+                    $progressBar->setMessage(sprintf('%s | <comment>Skipped</comment> (total: %s KB)', $fileName, number_format($totalSavings, thousands_separator: ' ')), 'status');
                 } else {
                     [$avifPath, $avifSizeKb, $qcTime, $finalCqLevel, $finalScore] = $result;
                     $totalJpegSizeAfter                                          += $avifSizeKb;
                     $totalQcTime                                                 += $qcTime;
                     $totalJpegsProcessed++;
 
-                    $savings = $originalSize - $avifSizeKb;
+                    $savings       = $originalSize - $avifSizeKb;
+                    $totalSavings += $savings;
                     $progressBar->setMessage(
-                        sprintf('%s | cq=%d, score=%.1f, saved %s KB', $fileName, $finalCqLevel, $finalScore, number_format($savings, thousands_separator: ' ')),
+                        sprintf('%s | cq=%d, score=%.1f, saved %s KB (total: %s KB)', $fileName, $finalCqLevel, $finalScore, number_format($savings, thousands_separator: ' '), number_format($totalSavings, thousands_separator: ' ')),
                         'status',
                     );
 
@@ -243,7 +247,7 @@ final class Squeeze extends Command
         $endTime = microtime(true);
         $output->writeln('');
         $output->writeln(sprintf(
-            "JPEG Summary:\n  Found: %d\n  Processed: %d\n  Skipped: %d\n  Errored: %d\n  Size before: %s KB\n  Size after: %s KB\n  Savings: %s KB",
+            "JPEG Summary:\n  Found: %d\n  Processed: %d\n  Skipped: %d\n  Errored: %d\n  Size before: %s KB (includes skipped)\n  Size after: %s KB\n  Savings: %s KB",
             $totalJpegsFound,
             $totalJpegsProcessed,
             $totalJpegsSkipped,
@@ -459,7 +463,6 @@ final class Squeeze extends Command
                 throw new RuntimeException(sprintf('avifenc failed with exit code %d', $encodeExitCode));
             }
 
-            // Decode AVIF to PNG for QC
             $decodeCmd = sprintf(
                 '%s --png-compress 0 %s %s 2>&1',
                 escapeshellarg($this->toolPaths['avifdec']),

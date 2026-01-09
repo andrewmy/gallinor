@@ -139,14 +139,17 @@ final class Squeeze extends Command
         $progressBar = $this->cliHelper->createProgressBar($output, $fileCount, 'Videos');
         $progressBar->start();
 
+        $totalSavings = 0;
+
         foreach ($fileList as $file) {
             $fileName = basename($file->path);
             $progressBar->setMessage($fileName, 'status');
             $progressBar->display();
 
-            $statusCallback = static function (int $bitrate, float $vmafScore, int $savedKb) use ($progressBar, $fileName): void {
+            $statusCallback = static function (int $bitrate, float $vmafScore, int $savedKb) use ($progressBar, $fileName, &$totalSavings): void {
+                $runningTotal = $totalSavings + $savedKb;
                 $progressBar->setMessage(
-                    sprintf('%s | %sk, VMAF=%.1f, saved %s KB', $fileName, $bitrate, $vmafScore, number_format($savedKb, thousands_separator: ' ')),
+                    sprintf('%s | %sk, VMAF=%.1f, saved %s KB (total: %s KB)', $fileName, $bitrate, $vmafScore, number_format($savedKb, thousands_separator: ' '), number_format($runningTotal, thousands_separator: ' ')),
                     'status',
                 );
                 $progressBar->display();
@@ -157,9 +160,10 @@ final class Squeeze extends Command
                 $totalProcessedSize                  += $processedSize;
                 $totalQcTime                         += $qcTime;
 
-                $savings = $file->currentSizeKb - $processedSize;
+                $savings       = $file->currentSizeKb - $processedSize;
+                $totalSavings += $savings;
                 $progressBar->setMessage(
-                    sprintf('%s | VMAF=%.1f, saved %s KB', $fileName, $vmafScore, number_format($savings, thousands_separator: ' ')),
+                    sprintf('%s | VMAF=%.1f, saved %s KB (total: %s KB)', $fileName, $vmafScore, number_format($savings, thousands_separator: ' '), number_format($totalSavings, thousands_separator: ' ')),
                     'status',
                 );
             } catch (Throwable $exception) {

@@ -98,4 +98,5 @@ Converts JPEGs to AVIF (saving alongside originals as `.avif`) and archives ARW 
 
 - DNG files seem to be compressed well, `xz -9 -T0` gives ~2.5%, not worth it.
 - While videos appear to degrade significantly with VMAF score below 90, photos seem to be perfectly fine with SSIMULACRA2 score 85.
+- Unfortunately there is no GPU acceleration here.
 - The full cycle of re-encode/check/try again takes ~10s avg per image on a M1 Pro, avg size savings 50%.
