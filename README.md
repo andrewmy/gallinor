@@ -16,10 +16,6 @@ This is a CLI tool for reducing the size of your video and image gallery while m
   - Skip photos with no size benefit from AVIF conversion
   - Skip Samsung Portrait Mode and Live Photos (not sure about iOS)
 
-## Todo
-
-- [ ] Nicer progress indication?
-
 ## Requirements
 
 - PHP 8.5 or higher

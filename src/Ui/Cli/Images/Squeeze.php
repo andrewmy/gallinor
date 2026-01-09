@@ -110,6 +110,7 @@ final class Squeeze extends Command
         $totalJpegSizeBefore = 0;
         $totalJpegSizeAfter  = 0;
         $totalArwsArchived   = 0;
+        $totalArwSizeBefore  = 0;
         $totalArchiveSize    = 0;
         $totalQcTime         = 0.0;
 
@@ -214,6 +215,13 @@ final class Squeeze extends Command
                 $arwProgressBar->setMessage(sprintf('%s (%d files)', $dirName, $fileCount), 'status');
                 $arwProgressBar->display();
 
+                $arwDirSizeBefore = 0;
+                foreach ($arwFiles as $arwFile) {
+                    $arwDirSizeBefore += (int) ceil(filesize($arwFile) / 1024);
+                }
+
+                $totalArwSizeBefore += $arwDirSizeBefore;
+
                 try {
                     $archiveSize        = $this->archiveArws($dir, $arwFiles, $output);
                     $totalArchiveSize  += $archiveSize;
@@ -257,10 +265,12 @@ final class Squeeze extends Command
             number_format($totalJpegSizeBefore - $totalJpegSizeAfter, thousands_separator: ' '),
         ));
         $output->writeln(sprintf(
-            "\nARW Summary:\n  Found: %d\n  Archived: %d\n  Total archive size: %s KB",
+            "\nARW Summary:\n  Found: %d\n  Archived: %d\n  Size before: %s KB\n  Size after: %s KB\n  Savings: %s KB",
             $totalArwsFound,
             $totalArwsArchived,
+            number_format($totalArwSizeBefore, thousands_separator: ' '),
             number_format($totalArchiveSize, thousands_separator: ' '),
+            number_format($totalArwSizeBefore - $totalArchiveSize, thousands_separator: ' '),
         ));
         $output->writeln(sprintf(
             "\n<info>Timing:\n  Init: %.3fs\n  Gather: %.3fs\n  JPEG QC: %.3fs\n  Archiving: %.3fs\n  Total: %.3fs</info>",
