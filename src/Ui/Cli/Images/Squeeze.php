@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ui\Cli\Images;
 
 use App\Domain\Exiftool;
+use App\Domain\ImageTools;
 use App\Domain\Platform;
 use App\Ui\Cli\CliHelper;
 use FilesystemIterator;
@@ -61,11 +62,12 @@ final class Squeeze extends Command
     private const int CQ_LEVEL_STEP    = 2;
 
     private Platform $platform;
+    private ImageTools $imageTools;
     private Exiftool $exiftool;
     private string $runId;
     private string $tmpDir;
 
-    /** @var array<string, string> */
+    /** @var array<string, string> Tool paths for xz and tar (archiving) */
     private array $toolPaths = [];
 
     public function __construct(
@@ -88,11 +90,16 @@ final class Squeeze extends Command
         $startTime = microtime(true);
 
         try {
-            $this->platform = new Platform();
-            $this->runId    = uniqid('gallinor-', true);
-            $this->tmpDir   = sys_get_temp_dir();
+            $this->platform   = new Platform();
+            $this->runId      = uniqid('gallinor-', true);
+            $this->tmpDir     = sys_get_temp_dir();
+            $this->imageTools = new ImageTools($this->platform);
 
-            $this->validateTools($output);
+            $output->writeln(sprintf('<info>Found avifenc: %s</info>', $this->imageTools->avifencPath));
+            $output->writeln(sprintf('<info>Found avifdec: %s</info>', $this->imageTools->avifdecPath));
+            $output->writeln(sprintf('<info>Found ssimulacra2: %s</info>', $this->imageTools->ssimulacra2Path));
+
+            $this->validateArchiveTools($output);
             $this->exiftool = new Exiftool($this->platform);
             $output->writeln(sprintf('<info>Found exiftool: %s</info>', $this->exiftool->path()));
         } catch (Throwable $exception) {
@@ -283,11 +290,11 @@ final class Squeeze extends Command
         return self::SUCCESS;
     }
 
-    private function validateTools(OutputInterface $output): void
+    private function validateArchiveTools(OutputInterface $output): void
     {
         $which = $this->platform->isWindows() ? 'where.exe' : 'which';
 
-        $requiredTools = ['avifenc', 'avifdec', 'ssimulacra2', 'xz', 'tar'];
+        $requiredTools = ['xz', 'tar'];
 
         foreach ($requiredTools as $tool) {
             $result = trim((string) shell_exec(sprintf('%s %s 2>/dev/null', $which, escapeshellarg($tool))));
@@ -420,81 +427,18 @@ final class Squeeze extends Command
         $tmpAvif = $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '.avif';
         $tmpPng  = $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '.png';
 
-        $originalSizeKb = (int) ceil(filesize($jpegPath) / 1024);
+        $originalSizeKb = $this->imageTools->fileSizeKb($jpegPath);
         $totalQcTime    = 0.0;
 
         for ($cqLevel = self::CQ_LEVEL_START; $cqLevel >= self::CQ_LEVEL_END; $cqLevel -= self::CQ_LEVEL_STEP) {
-            $encodeCmd = sprintf(
-                '%s -s 6 -j 8 -y 420 -d 10 -a tune=iq -a end-usage=q -a cq-level=%d %s %s 2>&1',
-                escapeshellarg($this->toolPaths['avifenc']),
-                $cqLevel,
-                escapeshellarg($jpegPath),
-                escapeshellarg($tmpAvif),
-            );
+            $this->imageTools->encodeToAvif($jpegPath, $tmpAvif, $cqLevel);
+            $this->imageTools->decodeAvifToPng($tmpAvif, $tmpPng);
 
-            $encodeOutput = [];
-            exec($encodeCmd, $encodeOutput, $encodeExitCode);
-
-            if ($encodeExitCode !== 0) {
-                if (file_exists($tmpAvif)) {
-                    unlink($tmpAvif);
-                }
-
-                throw new RuntimeException(sprintf(
-                    "avifenc failed with exit code %d:\n%s",
-                    $encodeExitCode,
-                    implode("\n", $encodeOutput),
-                ));
-            }
-
-            $decodeCmd = sprintf(
-                '%s --png-compress 0 %s %s 2>&1',
-                escapeshellarg($this->toolPaths['avifdec']),
-                escapeshellarg($tmpAvif),
-                escapeshellarg($tmpPng),
-            );
-
-            $decodeOutput = [];
-            exec($decodeCmd, $decodeOutput, $decodeExitCode);
-
-            if ($decodeExitCode !== 0) {
-                if (file_exists($tmpAvif)) {
-                    unlink($tmpAvif);
-                }
-
-                throw new RuntimeException(sprintf(
-                    "avifdec failed with exit code %d:\n%s",
-                    $decodeExitCode,
-                    implode("\n", $decodeOutput),
-                ));
-            }
-
-            $qcStartTime = microtime(true);
-            $scoreCmd    = sprintf(
-                '%s %s %s 2>&1',
-                escapeshellarg($this->toolPaths['ssimulacra2']),
-                escapeshellarg($jpegPath),
-                escapeshellarg($tmpPng),
-            );
-
-            $scoreOutput = [];
-            exec($scoreCmd, $scoreOutput, $scoreExitCode);
+            $qcStartTime  = microtime(true);
+            $score        = $this->imageTools->ssimulacra2Score($jpegPath, $tmpPng);
             $totalQcTime += microtime(true) - $qcStartTime;
 
-            if ($scoreExitCode !== 0) {
-                if (file_exists($tmpAvif)) {
-                    unlink($tmpAvif);
-                }
-
-                throw new RuntimeException(sprintf(
-                    "ssimulacra2 failed with exit code %d:\n%s",
-                    $scoreExitCode,
-                    implode("\n", $scoreOutput),
-                ));
-            }
-
-            $score         = (float) trim($scoreOutput[0] ?? '0');
-            $currentAvifKb = (int) ceil(filesize($tmpAvif) / 1024);
+            $currentAvifKb = $this->imageTools->fileSizeKb($tmpAvif);
             $statusCallback($cqLevel, $score, $originalSizeKb - $currentAvifKb);
 
             if ($output->isVerbose()) {
