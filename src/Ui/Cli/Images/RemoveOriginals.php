@@ -33,7 +33,6 @@ use function glob;
 use function in_array;
 use function microtime;
 use function number_format;
-use function pathinfo;
 use function preg_match;
 use function rtrim;
 use function shell_exec;
@@ -43,7 +42,6 @@ use function trim;
 use function unlink;
 
 use const DIRECTORY_SEPARATOR;
-use const PATHINFO_FILENAME;
 use const PHP_EOL;
 
 #[AsCommand(name: 'images:remove-originals', description: 'Remove original JPEGs and ARWs after conversion/archiving')]
@@ -289,7 +287,7 @@ final class RemoveOriginals extends Command
                         continue;
                     }
 
-                    $avifPath = $this->getAvifPath($filePath);
+                    $avifPath = $this->cliHelper->getAvifPath($filePath);
                     if (! file_exists($avifPath)) {
                         $output->writeln(sprintf('  Skipping (no AVIF): %s', $this->cliHelper->link($filePath)));
                         $stats['jpegsSkipped']++;
@@ -324,11 +322,6 @@ final class RemoveOriginals extends Command
         }
 
         return [$jpegsToRemove, $arwsToRemove, $arwWarnings, $stats];
-    }
-
-    private function getAvifPath(string $jpegPath): string
-    {
-        return dirname($jpegPath) . DIRECTORY_SEPARATOR . pathinfo($jpegPath, PATHINFO_FILENAME) . '.avif';
     }
 
     /** @return array<string, true> */

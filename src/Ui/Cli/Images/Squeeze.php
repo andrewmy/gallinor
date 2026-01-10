@@ -39,7 +39,6 @@ use function implode;
 use function in_array;
 use function microtime;
 use function number_format;
-use function pathinfo;
 use function preg_match;
 use function rename;
 use function rtrim;
@@ -52,7 +51,6 @@ use function uniqid;
 use function unlink;
 
 use const DIRECTORY_SEPARATOR;
-use const PATHINFO_FILENAME;
 use const PHP_EOL;
 
 #[AsCommand(name: 'images:squeeze', description: 'Re-encode JPEGs to optimal AVIFs, XZ the ARWs')]
@@ -363,7 +361,7 @@ final class Squeeze extends Command
                         continue;
                     }
 
-                    $avifPath = $this->getAvifPath($filePath);
+                    $avifPath = $this->cliHelper->getAvifPath($filePath);
                     if (file_exists($avifPath)) {
                         $output->writeln(sprintf('  Skipping (AVIF exists): %s', $this->cliHelper->link($filePath)));
                         $stats['jpegsSkipped']++;
@@ -409,11 +407,6 @@ final class Squeeze extends Command
         }
 
         return array_any($files, static fn (string $file): bool => preg_match('/raws-\d+\.tar\.xz$/', $file) === 1);
-    }
-
-    private function getAvifPath(string $jpegPath): string
-    {
-        return dirname($jpegPath) . DIRECTORY_SEPARATOR . pathinfo($jpegPath, PATHINFO_FILENAME) . '.avif';
     }
 
     /**
@@ -522,7 +515,7 @@ final class Squeeze extends Command
                     return null;
                 }
 
-                $finalPath = $this->getAvifPath($jpegPath);
+                $finalPath = $this->cliHelper->getAvifPath($jpegPath);
                 rename($tmpAvif, $finalPath);
 
                 return [$finalPath, $currentAvifKb, $totalQcTime, $cqLevel, $score];
