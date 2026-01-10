@@ -22,7 +22,7 @@ final class CliHelper
     {
         $progressBar = new ProgressBar($output, $max);
         $progressBar->setFormat(
-            sprintf(" %s: %%current%%/%%max%% [%%bar%%] %%elapsed:6s%% | %%status%%\n", $label),
+            sprintf(" %s: %%current%%/%%max%% [%%bar%%] %%elapsed:6s%% / %%remaining:6s%% | %%status%%\n", $label),
         );
         $progressBar->setMessage('Starting...', 'status');
         $progressBar->setBarWidth(30);
