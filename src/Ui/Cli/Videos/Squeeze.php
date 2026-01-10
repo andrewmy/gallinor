@@ -31,6 +31,7 @@ use function count;
 use function exec;
 use function file_exists;
 use function filesize;
+use function implode;
 use function microtime;
 use function number_format;
 use function rename;
@@ -168,11 +169,9 @@ final class Squeeze extends Command
                 );
             } catch (Throwable $exception) {
                 $progressBar->setMessage(sprintf('%s | <error>Error</error>', $fileName), 'status');
-                if ($output->isVerbose()) {
-                    $progressBar->clear();
-                    $output->writeln(sprintf('<error>%s: %s</error>', $fileName, $exception->getMessage()));
-                    $progressBar->display();
-                }
+                $progressBar->clear();
+                $output->writeln(sprintf('<error>%s: %s</error>', $fileName, $exception->getMessage()));
+                $progressBar->display();
 
                 $totalErroredFiles++;
             }
@@ -393,6 +392,7 @@ final class Squeeze extends Command
             $output->writeln(sprintf('Executing command: %s', $ffmpegCmd));
         }
 
+        $ffmpegOutput = [];
         exec($ffmpegCmd, $ffmpegOutput, $ffmpegExitCode);
         if ($output->isVerbose()) {
             foreach ($ffmpegOutput as $line) {
@@ -403,9 +403,11 @@ final class Squeeze extends Command
         if ($ffmpegExitCode !== 0) {
             unlink($tempFilePath);
 
-            throw new RuntimeException(
-                sprintf('ffmpeg command failed with exit code %s, skipping file.', $ffmpegExitCode),
-            );
+            throw new RuntimeException(sprintf(
+                "ffmpeg command failed with exit code %s:\n%s",
+                $ffmpegExitCode,
+                implode("\n", $ffmpegOutput),
+            ));
         }
 
         $processedSizeKb = (int) ceil(filesize($tempFilePath) / 1024);
