@@ -186,11 +186,9 @@ final class Squeeze extends Command
                 }
             } catch (Throwable $exception) {
                 $progressBar->setMessage(sprintf('%s | <error>Error</error>', $fileName), 'status');
-                if ($output->isVerbose()) {
-                    $progressBar->clear();
-                    $output->writeln(sprintf('<error>%s: %s</error>', $fileName, $exception->getMessage()));
-                    $progressBar->display();
-                }
+                $progressBar->clear();
+                $output->writeln(sprintf('<error>%s: %s</error>', $fileName, $exception->getMessage()));
+                $progressBar->display();
 
                 $totalJpegsErrored++;
             }
@@ -233,11 +231,9 @@ final class Squeeze extends Command
                     );
                 } catch (Throwable $exception) {
                     $arwProgressBar->setMessage(sprintf('%s | <error>Error</error>', $dirName), 'status');
-                    if ($output->isVerbose()) {
-                        $arwProgressBar->clear();
-                        $output->writeln(sprintf('<error>%s: %s</error>', $dirName, $exception->getMessage()));
-                        $arwProgressBar->display();
-                    }
+                    $arwProgressBar->clear();
+                    $output->writeln(sprintf('<error>%s: %s</error>', $dirName, $exception->getMessage()));
+                    $arwProgressBar->display();
                 }
 
                 $arwProgressBar->advance();
@@ -463,6 +459,7 @@ final class Squeeze extends Command
                 escapeshellarg($tmpAvif),
             );
 
+            $encodeOutput = [];
             exec($encodeCmd, $encodeOutput, $encodeExitCode);
 
             if ($encodeExitCode !== 0) {
@@ -470,7 +467,11 @@ final class Squeeze extends Command
                     unlink($tmpAvif);
                 }
 
-                throw new RuntimeException(sprintf('avifenc failed with exit code %d', $encodeExitCode));
+                throw new RuntimeException(sprintf(
+                    "avifenc failed with exit code %d:\n%s",
+                    $encodeExitCode,
+                    implode("\n", $encodeOutput),
+                ));
             }
 
             $decodeCmd = sprintf(
@@ -480,6 +481,7 @@ final class Squeeze extends Command
                 escapeshellarg($tmpPng),
             );
 
+            $decodeOutput = [];
             exec($decodeCmd, $decodeOutput, $decodeExitCode);
 
             if ($decodeExitCode !== 0) {
@@ -487,7 +489,11 @@ final class Squeeze extends Command
                     unlink($tmpAvif);
                 }
 
-                throw new RuntimeException(sprintf('avifdec failed with exit code %d', $decodeExitCode));
+                throw new RuntimeException(sprintf(
+                    "avifdec failed with exit code %d:\n%s",
+                    $decodeExitCode,
+                    implode("\n", $decodeOutput),
+                ));
             }
 
             $qcStartTime = microtime(true);
@@ -507,7 +513,11 @@ final class Squeeze extends Command
                     unlink($tmpAvif);
                 }
 
-                throw new RuntimeException(sprintf('ssimulacra2 failed with exit code %d', $scoreExitCode));
+                throw new RuntimeException(sprintf(
+                    "ssimulacra2 failed with exit code %d:\n%s",
+                    $scoreExitCode,
+                    implode("\n", $scoreOutput),
+                ));
             }
 
             $score         = (float) trim($scoreOutput[0] ?? '0');
@@ -588,13 +598,20 @@ final class Squeeze extends Command
                     escapeshellarg($listFile),
                 );
 
+                $tarOutput = [];
                 exec($tarCmd, $tarOutput, $tarExitCode);
 
                 if ($tarExitCode !== 0) {
-                    throw new RuntimeException(sprintf('tar failed with exit code %d', $tarExitCode));
+                    throw new RuntimeException(sprintf(
+                        "tar failed with exit code %d:\n%s",
+                        $tarExitCode,
+                        implode("\n", $tarOutput),
+                    ));
                 }
 
                 $xzCmd = sprintf('%s -9 -T0 %s 2>&1', escapeshellarg($this->toolPaths['xz']), escapeshellarg($tarPath));
+
+                $xzOutput = [];
                 exec($xzCmd, $xzOutput, $xzExitCode);
 
                 if ($xzExitCode !== 0) {
@@ -602,7 +619,11 @@ final class Squeeze extends Command
                         unlink($tarPath);
                     }
 
-                    throw new RuntimeException(sprintf('xz failed with exit code %d', $xzExitCode));
+                    throw new RuntimeException(sprintf(
+                        "xz failed with exit code %d:\n%s",
+                        $xzExitCode,
+                        implode("\n", $xzOutput),
+                    ));
                 }
 
                 $compressedTar = $tarPath . '.xz';
@@ -617,6 +638,7 @@ final class Squeeze extends Command
                     escapeshellarg($archivePath),
                 );
 
+                $cmdOutput = [];
                 exec($cmd, $cmdOutput, $cmdExitCode);
 
                 if ($cmdExitCode !== 0) {
@@ -624,7 +646,11 @@ final class Squeeze extends Command
                         unlink($archivePath);
                     }
 
-                    throw new RuntimeException(sprintf('Archive creation failed with exit code %d', $cmdExitCode));
+                    throw new RuntimeException(sprintf(
+                        "Archive creation failed with exit code %d:\n%s",
+                        $cmdExitCode,
+                        implode("\n", $cmdOutput),
+                    ));
                 }
             }
 
