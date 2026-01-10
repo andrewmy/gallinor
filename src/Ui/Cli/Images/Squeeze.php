@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ui\Cli\Images;
 
+use App\Domain\Exiftool;
 use App\Domain\Platform;
 use App\Ui\Cli\CliHelper;
 use FilesystemIterator;
@@ -63,6 +64,7 @@ final class Squeeze extends Command
     private const int CQ_LEVEL_STEP    = 2;
 
     private Platform $platform;
+    private Exiftool $exiftool;
     private string $runId;
     private string $tmpDir;
 
@@ -94,6 +96,8 @@ final class Squeeze extends Command
             $this->tmpDir   = sys_get_temp_dir();
 
             $this->validateTools($output);
+            $this->exiftool = new Exiftool($this->platform);
+            $output->writeln(sprintf('<info>Found exiftool: %s</info>', $this->exiftool->path()));
         } catch (Throwable $exception) {
             $output->writeln('<error>' . $exception->getMessage() . '</error>');
 
@@ -284,7 +288,7 @@ final class Squeeze extends Command
     {
         $which = $this->platform->isWindows() ? 'where.exe' : 'which';
 
-        $requiredTools = ['exiftool', 'avifenc', 'avifdec', 'ssimulacra2', 'xz', 'tar'];
+        $requiredTools = ['avifenc', 'avifdec', 'ssimulacra2', 'xz', 'tar'];
 
         foreach ($requiredTools as $tool) {
             $result = trim((string) shell_exec(sprintf('%s %s 2>/dev/null', $which, escapeshellarg($tool))));
@@ -339,7 +343,11 @@ final class Squeeze extends Command
 
                 if (! isset($processedDirs[$dir])) {
                     $processedDirs[$dir] = true;
-                    $skipSet            += $this->batchExiftoolCheck($dir, $output);
+                    $found               = $this->exiftool->findPortraitAndLivePhotos($dir);
+                    if ($found !== []) {
+                        $output->writeln(sprintf('  Found %d Portrait/Live Photos in: %s', count($found), $dir));
+                        $skipSet += $found;
+                    }
                 }
 
                 if (! in_array($extension, ['jpg', 'jpeg', 'arw'], true)) {
@@ -390,35 +398,6 @@ final class Squeeze extends Command
         $arwsByDir = array_filter($arwsByDir, static fn (array $files) => $files !== []);
 
         return [$jpegList, $arwsByDir, $stats];
-    }
-
-    /** @return array<string, true> */
-    private function batchExiftoolCheck(string $dir, OutputInterface $output): array
-    {
-        $cmd = sprintf(
-            '%s -if %s -p %s -ext jpg -ext jpeg %s 2>/dev/null',
-            escapeshellarg($this->toolPaths['exiftool']),
-            escapeshellarg('$DepthMapData or $EmbeddedVideoFile'),
-            escapeshellarg('$directory/$filename'),
-            escapeshellarg($dir),
-        );
-
-        $result = [];
-        exec($cmd, $result, $exitCode);
-
-        // Exit code 0 means files matched the condition (have depth/video data)
-        if ($exitCode !== 0 || $result === []) {
-            return [];
-        }
-
-        $skipSet = [];
-        foreach ($result as $filename) {
-            $skipSet[trim($filename)] = true;
-        }
-
-        $output->writeln(sprintf('  Found %d Portrait/Live Photos in: %s', count($result), $dir));
-
-        return $skipSet;
     }
 
     private function archiveExistsInDir(string $dir): bool
