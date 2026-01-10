@@ -27,6 +27,7 @@ use function array_reduce;
 use function assert;
 use function basename;
 use function ceil;
+use function copy;
 use function count;
 use function exec;
 use function file_exists;
@@ -38,7 +39,9 @@ use function rename;
 use function rtrim;
 use function sprintf;
 use function str_ends_with;
+use function sys_get_temp_dir;
 use function trim;
+use function uniqid;
 use function unlink;
 
 use const DIRECTORY_SEPARATOR;
@@ -343,7 +346,7 @@ final class Squeeze extends Command
                 continue;
             }
 
-            unlink($tempFilePath);
+            @unlink($tempFilePath);
             $resultAccepted = false;
             $retryCount++;
 
@@ -360,7 +363,11 @@ final class Squeeze extends Command
         } while (! $resultAccepted);
 
         $newFilePath = $file->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
-        rename($tempFilePath, $newFilePath);
+        // rename() fails across filesystems (temp vs target), fall back to copy+delete
+        if (! @rename($tempFilePath, $newFilePath)) {
+            copy($tempFilePath, $newFilePath);
+            @unlink($tempFilePath);
+        }
 
         if ($output->isVerbose()) {
             $output->writeln(sprintf('<info>Saved: %s</info>', $this->cliHelper->link($newFilePath)));
@@ -385,7 +392,9 @@ final class Squeeze extends Command
         OutputInterface $output,
         int $baseBitrate,
     ): array {
-        $tempFilePath = $file->suffixedFilePath('tmp');
+        // Encode to system temp directory - if process is interrupted,
+        // the partial file won't pollute the source directory.
+        $tempFilePath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('gallinor_') . '.mp4';
 
         $ffmpegCmd = $this->ffmpeg->commandForFile($file, $baseBitrate, $this->maxBitrateSpikes, $tempFilePath);
         if ($output->isVerbose()) {
@@ -401,7 +410,7 @@ final class Squeeze extends Command
         }
 
         if ($ffmpegExitCode !== 0) {
-            unlink($tempFilePath);
+            @unlink($tempFilePath);
 
             throw new RuntimeException(sprintf(
                 "ffmpeg command failed with exit code %s:\n%s",
