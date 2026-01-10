@@ -4,13 +4,20 @@ declare(strict_types=1);
 
 namespace App\Ui\Cli;
 
+use FilesystemIterator;
+use Generator;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use SplFileInfo;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Output\OutputInterface;
 
 use function dirname;
 use function number_format;
 use function pathinfo;
+use function rtrim;
 use function sprintf;
+use function trim;
 
 use const DIRECTORY_SEPARATOR;
 use const PATHINFO_FILENAME;
@@ -49,5 +56,32 @@ final class CliHelper
     public function formatBytes(int $bytes): string
     {
         return $this->formatKb((int) ($bytes / 1024));
+    }
+
+    /**
+     * Scan directories recursively and yield all files.
+     *
+     * @param list<string> $directories
+     *
+     * @return Generator<SplFileInfo>
+     */
+    public function scanDirectories(array $directories, OutputInterface $output): Generator
+    {
+        foreach ($directories as $directory) {
+            $directory = rtrim(trim($directory, '"\' '), DIRECTORY_SEPARATOR);
+            $output->writeln(sprintf('Scanning directory: %s', $this->link($directory)));
+
+            $files = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator(directory: $directory, flags: FilesystemIterator::SKIP_DOTS),
+            );
+
+            foreach ($files as $file) {
+                if (! $file instanceof SplFileInfo || ! $file->isFile()) {
+                    continue;
+                }
+
+                yield $file;
+            }
+        }
     }
 }

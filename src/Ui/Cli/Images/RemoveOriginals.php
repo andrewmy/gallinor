@@ -7,11 +7,7 @@ namespace App\Ui\Cli\Images;
 use App\Domain\Exiftool;
 use App\Domain\Platform;
 use App\Ui\Cli\CliHelper;
-use FilesystemIterator;
 use Psr\Log\LoggerInterface;
-use RecursiveDirectoryIterator;
-use RecursiveIteratorIterator;
-use SplFileInfo;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -19,7 +15,6 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
-use function assert;
 use function basename;
 use function count;
 use function dirname;
@@ -31,7 +26,6 @@ use function glob;
 use function in_array;
 use function microtime;
 use function preg_match;
-use function rtrim;
 use function sprintf;
 use function strtolower;
 use function trim;
@@ -229,79 +223,64 @@ final class RemoveOriginals extends Command
         /** @var array<string, array<string, true>> $archivedFilesCache */
         $archivedFilesCache = [];
 
-        foreach ($directories as $directory) {
-            $directory = rtrim(trim($directory, '"\''), DIRECTORY_SEPARATOR);
-            $output->writeln(sprintf('Scanning directory: %s', $this->cliHelper->link($directory)));
+        foreach ($this->cliHelper->scanDirectories($directories, $output) as $file) {
+            $filePath  = $file->getPathname();
+            $extension = strtolower($file->getExtension());
+            $dir       = dirname($filePath);
 
-            $files = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator(directory: $directory, flags: FilesystemIterator::SKIP_DOTS),
-            );
-
-            foreach ($files as $file) {
-                assert($file instanceof SplFileInfo);
-
-                if (! $file->isFile()) {
-                    continue;
+            if (! isset($processedDirs[$dir])) {
+                $processedDirs[$dir] = true;
+                $found               = $this->exiftool->findPortraitAndLivePhotos($dir);
+                if ($found !== []) {
+                    $output->writeln(sprintf('  Found %d Portrait/Live Photos in: %s', count($found), $dir));
+                    $skipSet += $found;
                 }
-
-                $filePath  = $file->getPathname();
-                $extension = strtolower($file->getExtension());
-                $dir       = dirname($filePath);
-
-                if (! isset($processedDirs[$dir])) {
-                    $processedDirs[$dir] = true;
-                    $found               = $this->exiftool->findPortraitAndLivePhotos($dir);
-                    if ($found !== []) {
-                        $output->writeln(sprintf('  Found %d Portrait/Live Photos in: %s', count($found), $dir));
-                        $skipSet += $found;
-                    }
-                }
-
-                if (! in_array($extension, ['jpg', 'jpeg', 'arw'], true)) {
-                    continue;
-                }
-
-                if (in_array($extension, ['jpg', 'jpeg'], true)) {
-                    $stats['jpegsFound']++;
-
-                    if (isset($skipSet[$filePath])) {
-                        $output->writeln(sprintf('  Skipping (Portrait/Live): %s', $this->cliHelper->link($filePath)));
-                        $stats['jpegsSkipped']++;
-                        continue;
-                    }
-
-                    $avifPath = $this->cliHelper->getAvifPath($filePath);
-                    if (! file_exists($avifPath)) {
-                        $output->writeln(sprintf('  Skipping (no AVIF): %s', $this->cliHelper->link($filePath)));
-                        $stats['jpegsSkipped']++;
-                        continue;
-                    }
-
-                    $jpegsToRemove[] = $filePath;
-                    $output->writeln(sprintf('  Will remove: %s', $this->cliHelper->link($filePath)));
-                    continue;
-                }
-
-                $stats['arwsFound']++;
-
-                if (! isset($archivedFilesCache[$dir])) {
-                    $archivedFilesCache[$dir] = $this->getArchivedFilesInDir($dir);
-                }
-
-                $filename = basename($filePath);
-                if (! isset($archivedFilesCache[$dir][$filename])) {
-                    $stats['arwsNotArchived']++;
-                    if (! isset($arwWarnings[$dir])) {
-                        $arwWarnings[$dir] = [];
-                    }
-
-                    $arwWarnings[$dir][] = $filePath;
-                    continue;
-                }
-
-                $arwsToRemove[] = $filePath;
-                $output->writeln(sprintf('  Will remove: %s', $this->cliHelper->link($filePath)));
             }
+
+            if (! in_array($extension, ['jpg', 'jpeg', 'arw'], true)) {
+                continue;
+            }
+
+            if (in_array($extension, ['jpg', 'jpeg'], true)) {
+                $stats['jpegsFound']++;
+
+                if (isset($skipSet[$filePath])) {
+                    $output->writeln(sprintf('  Skipping (Portrait/Live): %s', $this->cliHelper->link($filePath)));
+                    $stats['jpegsSkipped']++;
+                    continue;
+                }
+
+                $avifPath = $this->cliHelper->getAvifPath($filePath);
+                if (! file_exists($avifPath)) {
+                    $output->writeln(sprintf('  Skipping (no AVIF): %s', $this->cliHelper->link($filePath)));
+                    $stats['jpegsSkipped']++;
+                    continue;
+                }
+
+                $jpegsToRemove[] = $filePath;
+                $output->writeln(sprintf('  Will remove: %s', $this->cliHelper->link($filePath)));
+                continue;
+            }
+
+            $stats['arwsFound']++;
+
+            if (! isset($archivedFilesCache[$dir])) {
+                $archivedFilesCache[$dir] = $this->getArchivedFilesInDir($dir);
+            }
+
+            $filename = basename($filePath);
+            if (! isset($archivedFilesCache[$dir][$filename])) {
+                $stats['arwsNotArchived']++;
+                if (! isset($arwWarnings[$dir])) {
+                    $arwWarnings[$dir] = [];
+                }
+
+                $arwWarnings[$dir][] = $filePath;
+                continue;
+            }
+
+            $arwsToRemove[] = $filePath;
+            $output->writeln(sprintf('  Will remove: %s', $this->cliHelper->link($filePath)));
         }
 
         return [$jpegsToRemove, $arwsToRemove, $arwWarnings, $stats];

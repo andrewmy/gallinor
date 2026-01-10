@@ -313,75 +313,60 @@ final class Squeeze extends Command
         /** @var array<string, true> $processedDirs */
         $processedDirs = [];
 
-        foreach ($directories as $directory) {
-            $directory = rtrim(trim($directory, '"\' '), DIRECTORY_SEPARATOR);
-            $output->writeln(sprintf('Scanning directory: %s', $this->cliHelper->link($directory)));
+        foreach ($this->cliHelper->scanDirectories($directories, $output) as $file) {
+            $filePath  = $file->getPathname();
+            $extension = strtolower($file->getExtension());
+            $dir       = dirname($filePath);
 
-            $files = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator(directory: $directory, flags: FilesystemIterator::SKIP_DOTS),
-            );
+            if (! isset($processedDirs[$dir])) {
+                $processedDirs[$dir] = true;
+                $found               = $this->exiftool->findPortraitAndLivePhotos($dir);
+                if ($found !== []) {
+                    $output->writeln(sprintf('  Found %d Portrait/Live Photos in: %s', count($found), $dir));
+                    $skipSet += $found;
+                }
+            }
 
-            foreach ($files as $file) {
-                assert($file instanceof SplFileInfo);
+            if (! in_array($extension, ['jpg', 'jpeg', 'arw'], true)) {
+                continue;
+            }
 
-                if (! $file->isFile()) {
+            if (in_array($extension, ['jpg', 'jpeg'], true)) {
+                $stats['jpegsFound']++;
+
+                if (isset($skipSet[$filePath])) {
+                    $output->writeln(sprintf('  Skipping (Portrait/Live): %s', $this->cliHelper->link($filePath)));
+                    $stats['jpegsSkipped']++;
                     continue;
                 }
 
-                $filePath  = $file->getPathname();
-                $extension = strtolower($file->getExtension());
-                $dir       = dirname($filePath);
-
-                if (! isset($processedDirs[$dir])) {
-                    $processedDirs[$dir] = true;
-                    $found               = $this->exiftool->findPortraitAndLivePhotos($dir);
-                    if ($found !== []) {
-                        $output->writeln(sprintf('  Found %d Portrait/Live Photos in: %s', count($found), $dir));
-                        $skipSet += $found;
-                    }
-                }
-
-                if (! in_array($extension, ['jpg', 'jpeg', 'arw'], true)) {
+                $avifPath = $this->cliHelper->getAvifPath($filePath);
+                if (file_exists($avifPath)) {
+                    $output->writeln(sprintf('  Skipping (AVIF exists): %s', $this->cliHelper->link($filePath)));
+                    $stats['jpegsSkipped']++;
                     continue;
                 }
 
-                if (in_array($extension, ['jpg', 'jpeg'], true)) {
-                    $stats['jpegsFound']++;
+                $jpegList[] = $filePath;
+                continue;
+            }
 
-                    if (isset($skipSet[$filePath])) {
-                        $output->writeln(sprintf('  Skipping (Portrait/Live): %s', $this->cliHelper->link($filePath)));
-                        $stats['jpegsSkipped']++;
-                        continue;
-                    }
+            $stats['arwsFound']++;
 
-                    $avifPath = $this->cliHelper->getAvifPath($filePath);
-                    if (file_exists($avifPath)) {
-                        $output->writeln(sprintf('  Skipping (AVIF exists): %s', $this->cliHelper->link($filePath)));
-                        $stats['jpegsSkipped']++;
-                        continue;
-                    }
-
-                    $jpegList[] = $filePath;
+            if (! isset($arwsByDir[$dir])) {
+                if ($this->archiveExistsInDir($dir)) {
+                    $output->writeln(sprintf('  Skipping ARWs in dir (archive exists): %s', $this->cliHelper->link($dir)));
+                    $arwsByDir[$dir] = []; // Mark as processed but empty
                     continue;
                 }
 
-                $stats['arwsFound']++;
+                $arwsByDir[$dir] = [];
+            }
 
-                if (! isset($arwsByDir[$dir])) {
-                    if ($this->archiveExistsInDir($dir)) {
-                        $output->writeln(sprintf('  Skipping ARWs in dir (archive exists): %s', $this->cliHelper->link($dir)));
-                        $arwsByDir[$dir] = []; // Mark as processed but empty
-                        continue;
-                    }
-
-                    $arwsByDir[$dir] = [];
-                }
-
-                if ($arwsByDir[$dir] !== []) {
-                    $arwsByDir[$dir][] = $filePath;
-                } elseif (! $this->archiveExistsInDir($dir)) {
-                    $arwsByDir[$dir][] = $filePath;
-                }
+            if ($arwsByDir[$dir] !== []) {
+                $arwsByDir[$dir][] = $filePath;
+            } elseif (! $this->archiveExistsInDir($dir)) {
+                $arwsByDir[$dir][] = $filePath;
             }
         }
 

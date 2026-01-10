@@ -10,12 +10,8 @@ use App\Domain\Platform;
 use App\Domain\VideoEncoder;
 use App\Domain\VideoFile;
 use App\Ui\Cli\CliHelper;
-use FilesystemIterator;
 use Psr\Log\LoggerInterface;
-use RecursiveDirectoryIterator;
-use RecursiveIteratorIterator;
 use RuntimeException;
-use SplFileInfo;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -24,7 +20,6 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
 use function array_reduce;
-use function assert;
 use function basename;
 use function ceil;
 use function copy;
@@ -36,11 +31,9 @@ use function implode;
 use function microtime;
 use function number_format;
 use function rename;
-use function rtrim;
 use function sprintf;
 use function str_ends_with;
 use function sys_get_temp_dir;
-use function trim;
 use function uniqid;
 use function unlink;
 
@@ -221,74 +214,66 @@ final class Squeeze extends Command
         $fileList          = [];
         $totalSkippedFiles = 0;
 
-        foreach ($directories as $directory) {
-            $directory = rtrim(trim($directory, '"\' '), DIRECTORY_SEPARATOR);
-            $output->writeln(sprintf('Directory: %s', $this->cliHelper->link($directory)));
-            $files = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator(directory: $directory, flags: FilesystemIterator::SKIP_DOTS),
-            );
-            foreach ($files as $file) {
-                assert($file instanceof SplFileInfo);
-                if (! $file->isFile() || $file->getExtension() !== 'mp4') {
-                    continue;
-                }
-
-                $filePath = $file->getPathname();
-                if (
-                    str_ends_with($filePath, '.' . VideoFile::OPTIMAL_SUFFIX . '.mp4')
-                    || str_ends_with($filePath, '.tmp.mp4')
-                ) {
-                    $output->writeln(sprintf('Skipping auxiliary file: %s', $this->cliHelper->link($filePath)));
-                    $totalSkippedFiles++;
-                    continue;
-                }
-
-                $output->writeln(sprintf("\nFile: %s", $this->cliHelper->link($filePath)));
-
-                try {
-                    $videoFile = $this->ffmpeg->videoFileFromPath($filePath);
-                } catch (Throwable $exception) {
-                    $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
-                    $totalSkippedFiles++;
-                    continue;
-                }
-
-                try {
-                    if ($this->isBitrateAcceptable($videoFile, $videoFile->baseBitrate())) {
-                        $output->writeln(sprintf('Bitrate %s Kbps is acceptable, no action needed.', $videoFile->bitRate));
-                        $totalSkippedFiles++;
-                        continue;
-                    }
-                } catch (UnsupportedResolution $exception) {
-                    $output->writeln($exception->getMessage());
-                    $totalSkippedFiles++;
-                    continue;
-                }
-
-                $optimalFilePath = $videoFile->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
-                if (file_exists($optimalFilePath)) {
-                    $output->writeln(sprintf(
-                        'Optimal version already exists (%s), skipping.',
-                        $this->cliHelper->link($optimalFilePath),
-                    ));
-                    $totalSkippedFiles++;
-                    continue;
-                }
-
-                $fileList[] = $videoFile;
-
-                $sizeEstimate = $videoFile->sizeEstimate($videoFile->baseBitrate());
-                $output->writeln(sprintf(
-                    "Dimensions: %sx%s\nCurrent bitrate: %s Kbps\nPixel format: %s\nCurrent size: %s\nProjected size: %s\nProjected Savings: %s",
-                    $videoFile->width,
-                    $videoFile->height,
-                    number_format((int) ($videoFile->bitRate / 1024), thousands_separator: ' '),
-                    $videoFile->pixFmt,
-                    $this->cliHelper->formatKb($videoFile->currentSizeKb),
-                    $this->cliHelper->formatKb($sizeEstimate),
-                    $this->cliHelper->formatKb($videoFile->currentSizeKb - $sizeEstimate),
-                ));
+        foreach ($this->cliHelper->scanDirectories($directories, $output) as $file) {
+            if ($file->getExtension() !== 'mp4') {
+                continue;
             }
+
+            $filePath = $file->getPathname();
+            if (
+                str_ends_with($filePath, '.' . VideoFile::OPTIMAL_SUFFIX . '.mp4')
+                || str_ends_with($filePath, '.tmp.mp4')
+            ) {
+                $output->writeln(sprintf('Skipping auxiliary file: %s', $this->cliHelper->link($filePath)));
+                $totalSkippedFiles++;
+                continue;
+            }
+
+            $output->writeln(sprintf("\nFile: %s", $this->cliHelper->link($filePath)));
+
+            try {
+                $videoFile = $this->ffmpeg->videoFileFromPath($filePath);
+            } catch (Throwable $exception) {
+                $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
+                $totalSkippedFiles++;
+                continue;
+            }
+
+            try {
+                if ($this->isBitrateAcceptable($videoFile, $videoFile->baseBitrate())) {
+                    $output->writeln(sprintf('Bitrate %s Kbps is acceptable, no action needed.', $videoFile->bitRate));
+                    $totalSkippedFiles++;
+                    continue;
+                }
+            } catch (UnsupportedResolution $exception) {
+                $output->writeln($exception->getMessage());
+                $totalSkippedFiles++;
+                continue;
+            }
+
+            $optimalFilePath = $videoFile->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
+            if (file_exists($optimalFilePath)) {
+                $output->writeln(sprintf(
+                    'Optimal version already exists (%s), skipping.',
+                    $this->cliHelper->link($optimalFilePath),
+                ));
+                $totalSkippedFiles++;
+                continue;
+            }
+
+            $fileList[] = $videoFile;
+
+            $sizeEstimate = $videoFile->sizeEstimate($videoFile->baseBitrate());
+            $output->writeln(sprintf(
+                "Dimensions: %sx%s\nCurrent bitrate: %s Kbps\nPixel format: %s\nCurrent size: %s\nProjected size: %s\nProjected Savings: %s",
+                $videoFile->width,
+                $videoFile->height,
+                number_format((int) ($videoFile->bitRate / 1024), thousands_separator: ' '),
+                $videoFile->pixFmt,
+                $this->cliHelper->formatKb($videoFile->currentSizeKb),
+                $this->cliHelper->formatKb($sizeEstimate),
+                $this->cliHelper->formatKb($videoFile->currentSizeKb - $sizeEstimate),
+            ));
         }
 
         return [$fileList, $totalSkippedFiles];
