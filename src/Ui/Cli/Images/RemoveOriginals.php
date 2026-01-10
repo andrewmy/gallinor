@@ -32,7 +32,6 @@ use function filesize;
 use function glob;
 use function in_array;
 use function microtime;
-use function number_format;
 use function preg_match;
 use function rtrim;
 use function shell_exec;
@@ -117,7 +116,7 @@ final class RemoveOriginals extends Command
                 $stats['jpegsFound'],
                 $stats['jpegsSkipped'],
                 count($jpegsToRemove),
-                $this->formatBytes($jpegSpaceToFree),
+                $this->cliHelper->formatBytes($jpegSpaceToFree),
             ));
             $output->writeln(sprintf(
                 "\nARW Summary:\n  Found: %d\n  Skipped: %d\n  Not archived: %d\n  To remove: %d\n  Space to free: %s",
@@ -125,7 +124,7 @@ final class RemoveOriginals extends Command
                 $stats['arwsSkipped'],
                 $stats['arwsNotArchived'],
                 count($arwsToRemove),
-                $this->formatBytes($arwSpaceToFree),
+                $this->cliHelper->formatBytes($arwSpaceToFree),
             ));
 
             return self::SUCCESS;
@@ -176,7 +175,7 @@ final class RemoveOriginals extends Command
             $stats['jpegsSkipped'],
             $jpegsRemoved,
             $jpegsErrored,
-            $this->formatBytes($jpegSpaceFreed),
+            $this->cliHelper->formatBytes($jpegSpaceFreed),
         ));
         $output->writeln(sprintf(
             "\nARW Summary:\n  Found: %d\n  Skipped: %d\n  Not archived: %d\n  Removed: %d\n  Errored: %d\n  Space freed: %s",
@@ -185,7 +184,7 @@ final class RemoveOriginals extends Command
             $stats['arwsNotArchived'],
             $arwsRemoved,
             $arwsErrored,
-            $this->formatBytes($arwSpaceFreed),
+            $this->cliHelper->formatBytes($arwSpaceFreed),
         ));
         $output->writeln(sprintf(
             "\n<info>Timing:\n  Init: %.3fs\n  Gather: %.3fs\n  Remove: %.3fs\n  Total: %.3fs</info>",
@@ -357,10 +356,5 @@ final class RemoveOriginals extends Command
         }
 
         return $archivedFiles;
-    }
-
-    private function formatBytes(int $bytes): string
-    {
-        return sprintf('%s KB', number_format((int) ($bytes / 1024), thousands_separator: ' '));
     }
 }

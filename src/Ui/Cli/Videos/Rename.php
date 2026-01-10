@@ -21,7 +21,6 @@ use function assert;
 use function count;
 use function filesize;
 use function microtime;
-use function number_format;
 use function rename;
 use function rtrim;
 use function sprintf;
@@ -93,11 +92,11 @@ final class Rename extends Command
                 ];
 
                 $output->writeln(sprintf(
-                    '  %s (%s KB) => %s (%s KB)',
+                    '  %s (%s) => %s (%s)',
                     $this->cliHelper->link($optimalPath),
-                    number_format($newSize / 1024, thousands_separator: ' '),
+                    $this->cliHelper->formatBytes($newSize),
                     $this->cliHelper->link($originalPath),
-                    number_format($oldSize / 1024, thousands_separator: ' '),
+                    $this->cliHelper->formatBytes($oldSize),
                 ));
             }
         }
@@ -108,12 +107,12 @@ final class Rename extends Command
         if ($dryRun) {
             $output->writeln('');
             $output->writeln(sprintf(
-                "Video Summary:\n  Found: %d\n  To rename: %d\n  Size before: %s KB\n  Size after: %s KB\n  Space to free: %s KB",
+                "Video Summary:\n  Found: %d\n  To rename: %d\n  Size before: %s\n  Size after: %s\n  Space to free: %s",
                 count($filesToRename),
                 count($filesToRename),
-                number_format($totalOldSize / 1024, thousands_separator: ' '),
-                number_format($totalNewSize / 1024, thousands_separator: ' '),
-                number_format(($totalOldSize - $totalNewSize) / 1024, thousands_separator: ' '),
+                $this->cliHelper->formatBytes($totalOldSize),
+                $this->cliHelper->formatBytes($totalNewSize),
+                $this->cliHelper->formatBytes($totalOldSize - $totalNewSize),
             ));
 
             return self::SUCCESS;
@@ -136,13 +135,13 @@ final class Rename extends Command
 
         $output->writeln('');
         $output->writeln(sprintf(
-            "Video Summary:\n  Found: %d\n  Renamed: %d\n  Errored: %d\n  Size before: %s KB\n  Size after: %s KB\n  Space freed: %s KB",
+            "Video Summary:\n  Found: %d\n  Renamed: %d\n  Errored: %d\n  Size before: %s\n  Size after: %s\n  Space freed: %s",
             count($filesToRename),
             $renamed,
             $errored,
-            number_format($totalOldSize / 1024, thousands_separator: ' '),
-            number_format($totalNewSize / 1024, thousands_separator: ' '),
-            number_format(($totalOldSize - $totalNewSize) / 1024, thousands_separator: ' '),
+            $this->cliHelper->formatBytes($totalOldSize),
+            $this->cliHelper->formatBytes($totalNewSize),
+            $this->cliHelper->formatBytes($totalOldSize - $totalNewSize),
         ));
         $output->writeln(sprintf(
             "\n<info>Timing:\n  Gather: %.3fs\n  Rename: %.3fs\n  Total: %.3fs</info>",

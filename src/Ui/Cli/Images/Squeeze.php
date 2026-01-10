@@ -38,7 +38,6 @@ use function glob;
 use function implode;
 use function in_array;
 use function microtime;
-use function number_format;
 use function preg_match;
 use function rename;
 use function rtrim;
@@ -141,15 +140,17 @@ final class Squeeze extends Command
 
         $totalSavings = 0;
 
+        $cliHelper = $this->cliHelper;
+
         foreach ($jpegList as $jpegPath) {
             $fileName = basename($jpegPath);
             $progressBar->setMessage($fileName, 'status');
             $progressBar->display();
 
-            $statusCallback = static function (int $cqLevel, float $score, int $savedKb) use ($progressBar, $fileName, &$totalSavings): void {
+            $statusCallback = static function (int $cqLevel, float $score, int $savedKb) use ($progressBar, $fileName, &$totalSavings, $cliHelper): void {
                 $runningTotal = $totalSavings + $savedKb;
                 $progressBar->setMessage(
-                    sprintf('%s | cq=%d, score=%.1f, saved %s KB (total: %s KB)', $fileName, $cqLevel, $score, number_format($savedKb, thousands_separator: ' '), number_format($runningTotal, thousands_separator: ' ')),
+                    sprintf('%s | cq=%d, score=%.1f, saved %s (total: %s)', $fileName, $cqLevel, $score, $cliHelper->formatKb($savedKb), $cliHelper->formatKb($runningTotal)),
                     'status',
                 );
                 $progressBar->display();
@@ -163,7 +164,7 @@ final class Squeeze extends Command
 
                 if ($result === null) {
                     $totalJpegsSkipped++;
-                    $progressBar->setMessage(sprintf('%s | <comment>Skipped</comment> (total: %s KB)', $fileName, number_format($totalSavings, thousands_separator: ' ')), 'status');
+                    $progressBar->setMessage(sprintf('%s | <comment>Skipped</comment> (total: %s)', $fileName, $cliHelper->formatKb($totalSavings)), 'status');
                 } else {
                     [$avifPath, $avifSizeKb, $qcTime, $finalCqLevel, $finalScore] = $result;
                     $totalJpegSizeAfter                                          += $avifSizeKb;
@@ -173,7 +174,7 @@ final class Squeeze extends Command
                     $savings       = $originalSize - $avifSizeKb;
                     $totalSavings += $savings;
                     $progressBar->setMessage(
-                        sprintf('%s | cq=%d, score=%.1f, saved %s KB (total: %s KB)', $fileName, $finalCqLevel, $finalScore, number_format($savings, thousands_separator: ' '), number_format($totalSavings, thousands_separator: ' ')),
+                        sprintf('%s | cq=%d, score=%.1f, saved %s (total: %s)', $fileName, $finalCqLevel, $finalScore, $cliHelper->formatKb($savings), $cliHelper->formatKb($totalSavings)),
                         'status',
                     );
 
@@ -228,7 +229,7 @@ final class Squeeze extends Command
                     $totalArwsArchived += $fileCount;
 
                     $arwProgressBar->setMessage(
-                        sprintf('%s | %s KB', $dirName, number_format($archiveSize, thousands_separator: ' ')),
+                        sprintf('%s | %s', $dirName, $cliHelper->formatKb($archiveSize)),
                         'status',
                     );
                 } catch (Throwable $exception) {
@@ -253,22 +254,22 @@ final class Squeeze extends Command
         $endTime = microtime(true);
         $output->writeln('');
         $output->writeln(sprintf(
-            "JPEG Summary:\n  Found: %d\n  Processed: %d\n  Skipped: %d\n  Errored: %d\n  Size before: %s KB (includes skipped)\n  Size after: %s KB\n  Savings: %s KB",
+            "JPEG Summary:\n  Found: %d\n  Processed: %d\n  Skipped: %d\n  Errored: %d\n  Size before: %s (includes skipped)\n  Size after: %s\n  Savings: %s",
             $totalJpegsFound,
             $totalJpegsProcessed,
             $totalJpegsSkipped,
             $totalJpegsErrored,
-            number_format($totalJpegSizeBefore, thousands_separator: ' '),
-            number_format($totalJpegSizeAfter, thousands_separator: ' '),
-            number_format($totalJpegSizeBefore - $totalJpegSizeAfter, thousands_separator: ' '),
+            $this->cliHelper->formatKb($totalJpegSizeBefore),
+            $this->cliHelper->formatKb($totalJpegSizeAfter),
+            $this->cliHelper->formatKb($totalJpegSizeBefore - $totalJpegSizeAfter),
         ));
         $output->writeln(sprintf(
-            "\nARW Summary:\n  Found: %d\n  Archived: %d\n  Size before: %s KB\n  Size after: %s KB\n  Savings: %s KB",
+            "\nARW Summary:\n  Found: %d\n  Archived: %d\n  Size before: %s\n  Size after: %s\n  Savings: %s",
             $totalArwsFound,
             $totalArwsArchived,
-            number_format($totalArwSizeBefore, thousands_separator: ' '),
-            number_format($totalArchiveSize, thousands_separator: ' '),
-            number_format($totalArwSizeBefore - $totalArchiveSize, thousands_separator: ' '),
+            $this->cliHelper->formatKb($totalArwSizeBefore),
+            $this->cliHelper->formatKb($totalArchiveSize),
+            $this->cliHelper->formatKb($totalArwSizeBefore - $totalArchiveSize),
         ));
         $output->writeln(sprintf(
             "\n<info>Timing:\n  Init: %.3fs\n  Gather: %.3fs\n  JPEG QC: %.3fs\n  Archiving: %.3fs\n  Total: %.3fs</info>",
@@ -504,9 +505,9 @@ final class Squeeze extends Command
                 if ($currentAvifKb >= $originalSizeKb) {
                     if ($output->isVerbose()) {
                         $output->writeln(sprintf(
-                            '  <comment>AVIF not smaller (%s KB >= %s KB), skipping</comment>',
-                            number_format($currentAvifKb, thousands_separator: ' '),
-                            number_format($originalSizeKb, thousands_separator: ' '),
+                            '  <comment>AVIF not smaller (%s >= %s), skipping</comment>',
+                            $this->cliHelper->formatKb($currentAvifKb),
+                            $this->cliHelper->formatKb($originalSizeKb),
                         ));
                     }
 

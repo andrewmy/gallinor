@@ -8,6 +8,7 @@ use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Output\OutputInterface;
 
 use function dirname;
+use function number_format;
 use function pathinfo;
 use function sprintf;
 
@@ -38,5 +39,15 @@ final class CliHelper
     public function getAvifPath(string $jpegPath): string
     {
         return dirname($jpegPath) . DIRECTORY_SEPARATOR . pathinfo($jpegPath, PATHINFO_FILENAME) . '.avif';
+    }
+
+    public function formatKb(int $kb): string
+    {
+        return sprintf('%s KB', number_format($kb, thousands_separator: ' '));
+    }
+
+    public function formatBytes(int $bytes): string
+    {
+        return $this->formatKb((int) ($bytes / 1024));
     }
 }
