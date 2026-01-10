@@ -9,11 +9,9 @@ use RuntimeException;
 use function ceil;
 use function escapeshellarg;
 use function exec;
-use function explode;
 use function file_exists;
 use function filesize;
 use function implode;
-use function shell_exec;
 use function sprintf;
 use function trim;
 use function unlink;
@@ -26,27 +24,9 @@ final readonly class ImageTools
 
     public function __construct(private Platform $platform)
     {
-        $which = $this->platform->isWindows() ? 'where.exe' : 'which';
-
-        $this->avifencPath     = $this->findTool($which, 'avifenc');
-        $this->avifdecPath     = $this->findTool($which, 'avifdec');
-        $this->ssimulacra2Path = $this->findTool($which, 'ssimulacra2');
-    }
-
-    private function findTool(string $which, string $tool): string
-    {
-        $result = trim((string) shell_exec(sprintf('%s %s 2>/dev/null', $which, escapeshellarg($tool))));
-
-        if ($this->platform->isWindows()) {
-            $lines  = explode("\n", $result);
-            $result = trim($lines[0]);
-        }
-
-        if ($result === '') {
-            throw new RuntimeException(sprintf('Required tool not found: %s', $tool));
-        }
-
-        return $result;
+        $this->avifencPath     = $this->platform->findTool('avifenc');
+        $this->avifdecPath     = $this->platform->findTool('avifdec');
+        $this->ssimulacra2Path = $this->platform->findTool('ssimulacra2');
     }
 
     /**

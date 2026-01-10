@@ -11,7 +11,6 @@ use FilesystemIterator;
 use Psr\Log\LoggerInterface;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
-use RuntimeException;
 use SplFileInfo;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -26,7 +25,6 @@ use function count;
 use function dirname;
 use function escapeshellarg;
 use function exec;
-use function explode;
 use function file_exists;
 use function filesize;
 use function glob;
@@ -34,7 +32,6 @@ use function in_array;
 use function microtime;
 use function preg_match;
 use function rtrim;
-use function shell_exec;
 use function sprintf;
 use function strtolower;
 use function trim;
@@ -199,24 +196,11 @@ final class RemoveOriginals extends Command
 
     private function validateTools(OutputInterface $output): void
     {
-        $which = $this->platform->isWindows() ? 'where.exe' : 'which';
-
         $requiredTools = ['tar'];
 
         foreach ($requiredTools as $tool) {
-            $result = trim((string) shell_exec(sprintf('%s %s 2>/dev/null', $which, escapeshellarg($tool))));
-
-            if ($this->platform->isWindows()) {
-                $lines  = explode("\n", $result);
-                $result = trim($lines[0]);
-            }
-
-            if ($result === '') {
-                throw new RuntimeException(sprintf('Required tool not found: %s', $tool));
-            }
-
-            $this->toolPaths[$tool] = $result;
-            $output->writeln(sprintf('<info>Found %s: %s</info>', $tool, $result));
+            $this->toolPaths[$tool] = $this->platform->findTool($tool);
+            $output->writeln(sprintf('<info>Found %s: %s</info>', $tool, $this->toolPaths[$tool]));
         }
     }
 

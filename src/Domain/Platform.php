@@ -6,9 +6,13 @@ namespace App\Domain;
 
 use RuntimeException;
 
+use function escapeshellarg;
+use function explode;
 use function in_array;
 use function max;
 use function shell_exec;
+use function sprintf;
+use function trim;
 
 use const PHP_OS_FAMILY;
 
@@ -36,5 +40,27 @@ final readonly class Platform
     public function isWindows(): bool
     {
         return $this->os === self::OS_WINDOWS;
+    }
+
+    /**
+     * Find a tool in the system PATH.
+     *
+     * @throws RuntimeException If the tool is not found.
+     */
+    public function findTool(string $tool): string
+    {
+        $which  = $this->isWindows() ? 'where.exe' : 'which';
+        $result = trim((string) shell_exec(sprintf('%s %s 2>/dev/null', $which, escapeshellarg($tool))));
+
+        if ($this->isWindows()) {
+            $lines  = explode("\n", $result);
+            $result = trim($lines[0]);
+        }
+
+        if ($result === '') {
+            throw new RuntimeException(sprintf('Required tool not found: %s', $tool));
+        }
+
+        return $result;
     }
 }
