@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ui\Cli\Images;
 
 use App\Domain\Exiftool;
+use App\Domain\FilesystemScanner;
 use App\Domain\ImageFile;
 use App\Domain\ImageProcessingResult;
 use App\Domain\ImageTools;
@@ -69,6 +70,7 @@ final class Squeeze extends Command
     public function __construct(
         private readonly LoggerInterface $logger,
         private readonly CliHelper $cliHelper,
+        private readonly FilesystemScanner $scanner,
     ) {
         parent::__construct();
     }
@@ -309,7 +311,7 @@ final class Squeeze extends Command
         /** @var array<string, true> $processedDirs */
         $processedDirs = [];
 
-        foreach ($this->cliHelper->scanDirectories($directories, $output) as $file) {
+        foreach ($this->scanner->scanDirectories($directories) as $file) {
             $filePath  = $file->getPathname();
             $extension = strtolower($file->getExtension());
             $dir       = dirname($filePath);

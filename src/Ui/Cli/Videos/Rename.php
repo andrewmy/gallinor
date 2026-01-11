@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Ui\Cli\Videos;
 
+use App\Domain\FilesystemScanner;
 use App\Domain\VideoFile;
 use App\Ui\Cli\CliHelper;
 use App\Ui\Cli\Summary\Timing;
@@ -28,8 +29,10 @@ use const PHP_EOL;
 #[AsCommand(name: 'videos:rename', description: 'Rename optimal video files to replace originals')]
 final class Rename extends Command
 {
-    public function __construct(private readonly CliHelper $cliHelper)
-    {
+    public function __construct(
+        private readonly CliHelper $cliHelper,
+        private readonly FilesystemScanner $scanner,
+    ) {
         parent::__construct();
     }
 
@@ -49,7 +52,7 @@ final class Rename extends Command
         $totalOldSize  = 0;
         $totalNewSize  = 0;
 
-        foreach ($this->cliHelper->scanDirectories($directories, $output) as $file) {
+        foreach ($this->scanner->scanDirectories($directories) as $file) {
             if (! str_ends_with($file->getFilename(), '.' . VideoFile::OPTIMAL_SUFFIX . '.mp4')) {
                 continue;
             }

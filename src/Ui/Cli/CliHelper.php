@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace App\Ui\Cli;
 
-use App\Domain\FilesystemScanner;
-use Generator;
-use SplFileInfo;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -15,11 +12,6 @@ use function sprintf;
 
 final class CliHelper
 {
-    public function __construct(
-        private FilesystemScanner $scanner,
-    ) {
-    }
-
     public function link(string $path, string|null $label = null): string
     {
         $label ??= $path;
@@ -55,19 +47,5 @@ final class CliHelper
     public function formatKb(int $kb): string
     {
         return $this->formatBytes($kb * 1024);
-    }
-
-    /**
-     * Scan directories recursively and yield all files.
-     *
-     * @param list<string> $directories
-     *
-     * @return Generator<SplFileInfo>
-     */
-    public function scanDirectories(array $directories, OutputInterface $output): Generator
-    {
-        foreach ($this->scanner->scanDirectories($directories) as $file) {
-            yield $file;
-        }
     }
 }

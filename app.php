@@ -19,13 +19,13 @@ require __DIR__ . '/vendor/autoload.php';
 
 $logger    = new Logger('app', [new StreamHandler('var/app.log', Level::Debug)]);
 $scanner   = new SymfonyFilesystemScanner(new Filesystem());
-$cliHelper = new CliHelper($scanner);
+$cliHelper = new CliHelper();
 
 $app = new Application();
 $app->addCommands([
-    new VideosSqueeze($logger, $cliHelper),
-    new VideosRename($cliHelper),
-    new ImagesSqueeze($logger, $cliHelper),
-    new ImagesRemoveOriginals($logger, $cliHelper),
+    new VideosSqueeze($logger, $cliHelper, $scanner),
+    new VideosRename($cliHelper, $scanner),
+    new ImagesSqueeze($logger, $cliHelper, $scanner),
+    new ImagesRemoveOriginals($logger, $cliHelper, $scanner),
 ]);
 $app->run();

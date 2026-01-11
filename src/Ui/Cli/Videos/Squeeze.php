@@ -6,6 +6,7 @@ namespace App\Ui\Cli\Videos;
 
 use App\Domain\Exceptions\UnsupportedResolution;
 use App\Domain\Ffmpeg;
+use App\Domain\FilesystemScanner;
 use App\Domain\Platform;
 use App\Domain\VideoEncoder;
 use App\Domain\VideoFile;
@@ -54,6 +55,7 @@ final class Squeeze extends Command
     public function __construct(
         private readonly LoggerInterface $logger,
         private readonly CliHelper $cliHelper,
+        private readonly FilesystemScanner $scanner,
     ) {
         parent::__construct();
     }
@@ -224,7 +226,7 @@ final class Squeeze extends Command
         $fileList          = [];
         $totalSkippedFiles = 0;
 
-        foreach ($this->cliHelper->scanDirectories($directories, $output) as $file) {
+        foreach ($this->scanner->scanDirectories($directories) as $file) {
             if ($file->getExtension() !== 'mp4') {
                 continue;
             }
