@@ -34,13 +34,20 @@ final readonly class ImageTools
     {
         $process = new Process([
             $this->avifencPath,
-            '-s', '6',
-            '-j', '8',
-            '-y', '420',
-            '-d', '10',
-            '-a', 'tune=iq',
-            '-a', 'end-usage=q',
-            '-a', "cq-level=$cqLevel",
+            '-s',
+            '6',
+            '-j',
+            '8',
+            '-y',
+            '420',
+            '-d',
+            '10',
+            '-a',
+            'tune=iq',
+            '-a',
+            'end-usage=q',
+            '-a',
+            "cq-level=$cqLevel",
             $sourcePath,
             $targetPath,
         ]);
@@ -56,7 +63,8 @@ final readonly class ImageTools
     {
         $process = new Process([
             $this->avifdecPath,
-            '--png-compress', '0',
+            '--png-compress',
+            '0',
             $avifPath,
             $pngPath,
         ]);

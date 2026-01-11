@@ -6,23 +6,22 @@ namespace App\Domain;
 
 use JsonException;
 use RuntimeException;
-use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
 
 use function array_merge;
 use function assert;
 use function ceil;
 use function escapeshellarg;
-use function file_exists;
 use function file_get_contents;
 use function filesize;
 use function implode;
 use function in_array;
 use function is_array;
 use function is_file;
-use function is_string;
 use function json_decode;
+use function json_encode;
 use function sprintf;
+use function str_contains;
 use function sys_get_temp_dir;
 use function uniqid;
 use function unlink;
@@ -109,10 +108,14 @@ final readonly class Ffmpeg
     {
         $process = new Process([
             $this->ffprobePath,
-            '-v', 'error',
-            '-select_streams', 'v:0',
-            '-show_entries', 'stream=width,height,bit_rate,pix_fmt,codec_name,color_space,color_primaries,color_transfer,duration',
-            '-of', 'json',
+            '-v',
+            'error',
+            '-select_streams',
+            'v:0',
+            '-show_entries',
+            'stream=width,height,bit_rate,pix_fmt,codec_name,color_space,color_primaries,color_transfer,duration',
+            '-of',
+            'json',
             $filePath,
         ]);
         $process->mustRun();
@@ -251,11 +254,16 @@ final readonly class Ffmpeg
         $process = new Process([
             $this->ffmpegPath,
             '-hide_banner',
-            '-loglevel', 'error',
-            '-i', $processedFilePath,
-            '-i', $originalFilePath,
-            '-lavfi', sprintf('libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10', $vmafLogFile, $this->platform->nCores),
-            '-f', 'null',
+            '-loglevel',
+            'error',
+            '-i',
+            $processedFilePath,
+            '-i',
+            $originalFilePath,
+            '-lavfi',
+            sprintf('libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10', $vmafLogFile, $this->platform->nCores),
+            '-f',
+            'null',
             '-',
         ]);
         $process->mustRun();

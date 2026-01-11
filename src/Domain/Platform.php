@@ -63,7 +63,7 @@ final readonly class Platform
      */
     public function findTool(string $tool): string
     {
-        $which = $this->isWindows() ? 'where.exe' : 'which';
+        $which   = $this->isWindows() ? 'where.exe' : 'which';
         $process = new Process([$which, $tool]);
         $process->mustRun();
 

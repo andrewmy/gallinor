@@ -29,7 +29,7 @@ final readonly class ArwSummary
     /** @return list<string> */
     private function formatLines(CliHelper $helper): array
     {
-        $lines = ['ARW Summary:'];
+        $lines   = ['ARW Summary:'];
         $lines[] = sprintf('  Found: %d', $this->found);
 
         if ($this->archived !== null) {

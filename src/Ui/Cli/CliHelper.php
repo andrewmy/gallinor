@@ -4,23 +4,22 @@ declare(strict_types=1);
 
 namespace App\Ui\Cli;
 
-use FilesystemIterator;
+use App\Domain\FilesystemScanner;
 use Generator;
-use RecursiveDirectoryIterator;
-use RecursiveIteratorIterator;
 use SplFileInfo;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Output\OutputInterface;
 
 use function number_format;
-use function rtrim;
 use function sprintf;
-use function trim;
-
-use const DIRECTORY_SEPARATOR;
 
 final class CliHelper
 {
+    public function __construct(
+        private FilesystemScanner $scanner,
+    ) {
+    }
+
     public function link(string $path, string|null $label = null): string
     {
         $label ??= $path;
@@ -67,21 +66,8 @@ final class CliHelper
      */
     public function scanDirectories(array $directories, OutputInterface $output): Generator
     {
-        foreach ($directories as $directory) {
-            $directory = rtrim(trim($directory, '"\' '), DIRECTORY_SEPARATOR);
-            $output->writeln(sprintf('Scanning directory: %s', $this->link($directory)));
-
-            $files = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator(directory: $directory, flags: FilesystemIterator::SKIP_DOTS),
-            );
-
-            foreach ($files as $file) {
-                if (! $file instanceof SplFileInfo || ! $file->isFile()) {
-                    continue;
-                }
-
-                yield $file;
-            }
+        foreach ($this->scanner->scanDirectories($directories) as $file) {
+            yield $file;
         }
     }
 }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain;
 
-use RuntimeException;
 use Symfony\Component\Process\Process;
 
 use function explode;
@@ -29,10 +28,14 @@ class Exiftool
     {
         $process = new Process([
             $this->exiftoolPath,
-            '-if', '$DepthMapData or $EmbeddedVideoFile',
-            '-p', '$directory/$filename',
-            '-ext', 'jpg',
-            '-ext', 'jpeg',
+            '-if',
+            '$DepthMapData or $EmbeddedVideoFile',
+            '-p',
+            '$directory/$filename',
+            '-ext',
+            'jpg',
+            '-ext',
+            'jpeg',
             $dir,
         ]);
         $process->run();
@@ -49,9 +52,11 @@ class Exiftool
         $skipSet = [];
         foreach (explode("\n", trim($output)) as $filename) {
             $filename = trim($filename);
-            if ($filename !== '') {
-                $skipSet[$filename] = true;
+            if ($filename === '') {
+                continue;
             }
+
+            $skipSet[$filename] = true;
         }
 
         return $skipSet;

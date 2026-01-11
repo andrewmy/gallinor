@@ -28,7 +28,7 @@ final readonly class JpegSummary
     /** @return list<string> */
     private function formatLines(CliHelper $helper): array
     {
-        $lines = ['JPEG Summary:'];
+        $lines   = ['JPEG Summary:'];
         $lines[] = sprintf('  Found: %d', $this->found);
 
         if ($this->processed !== null) {
