@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Ui\Cli\Images;
 
 use App\Domain\Exiftool;
+use App\Domain\ImageFile;
+use App\Domain\ImageProcessingResult;
 use App\Domain\ImageTools;
 use App\Domain\Platform;
 use App\Ui\Cli\CliHelper;
@@ -143,49 +145,47 @@ final class Squeeze extends Command
 
         $cliHelper = $this->cliHelper;
 
-        foreach ($jpegList as $jpegPath) {
-            $fileName = basename($jpegPath);
+        foreach ($jpegList as $imageFile) {
+            $fileName = $imageFile->filename();
             $progressBar->setMessage($fileName, 'status');
             $progressBar->display();
 
-            $statusCallback = static function (int $cqLevel, float $score, int $savedKb) use ($progressBar, $fileName, &$totalSavings, $cliHelper): void {
-                $runningTotal = $totalSavings + $savedKb;
+            $statusCallback = static function (int $cqLevel, float $score, int $saved) use ($progressBar, $fileName, &$totalSavings, $cliHelper): void {
+                $runningTotal = $totalSavings + $saved;
                 $progressBar->setMessage(
-                    sprintf('%s | cq=%d, score=%.1f, saved %s (total: %s)', $fileName, $cqLevel, $score, $cliHelper->formatKb($savedKb), $cliHelper->formatKb($runningTotal)),
+                    sprintf('%s | cq=%d, score=%.1f, saved %s (total: %s)', $fileName, $cqLevel, $score, $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)),
                     'status',
                 );
                 $progressBar->display();
             };
 
             try {
-                $originalSize         = (int) ceil(filesize($jpegPath) / 1024);
-                $totalJpegSizeBefore += $originalSize;
+                $totalJpegSizeBefore += $imageFile->size;
 
-                $result = $this->processJpeg($jpegPath, $output, $statusCallback);
+                $result = $this->processJpeg($imageFile, $output, $statusCallback);
 
                 if ($result === null) {
                     $totalJpegsSkipped++;
-                    $progressBar->setMessage(sprintf('%s | <comment>Skipped</comment> (total: %s)', $fileName, $cliHelper->formatKb($totalSavings)), 'status');
+                    $progressBar->setMessage(sprintf('%s | <comment>Skipped</comment> (total: %s)', $fileName, $cliHelper->formatBytes($totalSavings)), 'status');
                 } else {
-                    [$avifPath, $avifSizeKb, $qcTime, $finalCqLevel, $finalScore] = $result;
-                    $totalJpegSizeAfter                                          += $avifSizeKb;
-                    $totalQcTime                                                 += $qcTime;
+                    $totalJpegSizeAfter += $result->avifSize;
+                    $totalQcTime        += $result->qcTime;
                     $totalJpegsProcessed++;
 
-                    $savings       = $originalSize - $avifSizeKb;
+                    $savings       = $result->savings($imageFile->size);
                     $totalSavings += $savings;
                     $progressBar->setMessage(
-                        sprintf('%s | cq=%d, score=%.1f, saved %s (total: %s)', $fileName, $finalCqLevel, $finalScore, $cliHelper->formatKb($savings), $cliHelper->formatKb($totalSavings)),
+                        sprintf('%s | cq=%d, score=%.1f, saved %s (total: %s)', $fileName, $result->cqLevel, $result->qualityScore, $cliHelper->formatBytes($savings), $cliHelper->formatBytes($totalSavings)),
                         'status',
                     );
 
                     $this->logger->info('Processed JPEG', [
-                        'original_file' => $jpegPath,
-                        'original_size_kb' => $originalSize,
-                        'avif_file' => $avifPath,
-                        'avif_size_kb' => $avifSizeKb,
-                        'cq_level' => $finalCqLevel,
-                        'ssim_score' => $finalScore,
+                        'original_file' => $imageFile->path,
+                        'original_size' => $imageFile->size,
+                        'avif_file' => $imageFile->optimizedPath(),
+                        'avif_size' => $result->avifSize,
+                        'cq_level' => $result->cqLevel,
+                        'quality_score' => $result->qualityScore,
                     ]);
                 }
             } catch (Throwable $exception) {
@@ -260,8 +260,8 @@ final class Squeeze extends Command
             processed: $totalJpegsProcessed,
             skipped: $totalJpegsSkipped,
             errored: $totalJpegsErrored,
-            sizeBefore: $totalJpegSizeBefore * 1024,
-            sizeAfter: $totalJpegSizeAfter * 1024,
+            sizeBefore: $totalJpegSizeBefore,
+            sizeAfter: $totalJpegSizeAfter,
         ))->print($output, $this->cliHelper);
 
         $output->writeln('');
@@ -297,7 +297,7 @@ final class Squeeze extends Command
     /**
      * @param list<string> $directories
      *
-     * @return array{list<string>, array<string, list<string>>, array{jpegsFound: int, jpegsSkipped: int, arwsFound: int}}
+     * @return array{list<ImageFile>, array<string, list<string>>, array{jpegsFound: int, jpegsSkipped: int, arwsFound: int}}
      */
     private function gatherFiles(array $directories, OutputInterface $output): array
     {
@@ -336,14 +336,15 @@ final class Squeeze extends Command
                     continue;
                 }
 
-                $avifPath = $this->cliHelper->getAvifPath($filePath);
-                if (file_exists($avifPath)) {
+                $imageFile = new ImageFile($filePath);
+
+                if ($imageFile->hasOptimized()) {
                     $output->writeln(sprintf('  Skipping (AVIF exists): %s', $this->cliHelper->link($filePath)));
                     $stats['jpegsSkipped']++;
                     continue;
                 }
 
-                $jpegList[] = $filePath;
+                $jpegList[] = $imageFile;
                 continue;
             }
 
@@ -383,41 +384,36 @@ final class Squeeze extends Command
         return array_any($files, static fn (string $file): bool => preg_match('/raws-\d+\.tar\.xz$/', $file) === 1);
     }
 
-    /**
-     * @param callable(int, float, int): void $statusCallback Called with (cqLevel, score, savedKb) during quality search
-     *
-     * @return array{string, int, float, int, float}|null [avifPath, sizeKb, qcTime, cqLevel, score] or null if skipped
-     */
-    private function processJpeg(string $jpegPath, OutputInterface $output, callable $statusCallback): array|null
+    /** @param callable(int, float, int): void $statusCallback Called with (cqLevel, score, savedKb) during quality search */
+    private function processJpeg(ImageFile $file, OutputInterface $output, callable $statusCallback): ImageProcessingResult|null
     {
         $tmpAvif = $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '.avif';
         $tmpPng  = $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '.png';
 
-        $originalSizeKb = $this->imageTools->fileSizeKb($jpegPath);
-        $totalQcTime    = 0.0;
+        $totalQcTime = 0.0;
 
         for ($cqLevel = self::CQ_LEVEL_START; $cqLevel >= self::CQ_LEVEL_END; $cqLevel -= self::CQ_LEVEL_STEP) {
-            $this->imageTools->encodeToAvif($jpegPath, $tmpAvif, $cqLevel);
+            $this->imageTools->encodeToAvif($file->path, $tmpAvif, $cqLevel);
             $this->imageTools->decodeAvifToPng($tmpAvif, $tmpPng);
 
             $qcStartTime  = microtime(true);
-            $score        = $this->imageTools->ssimulacra2Score($jpegPath, $tmpPng);
+            $score        = $this->imageTools->ssimulacra2Score($file->path, $tmpPng);
             $totalQcTime += microtime(true) - $qcStartTime;
 
-            $currentAvifKb = $this->imageTools->fileSizeKb($tmpAvif);
-            $statusCallback($cqLevel, $score, $originalSizeKb - $currentAvifKb);
+            $currentAvifSize = (int) filesize($tmpAvif);
+            $statusCallback($cqLevel, $score, $file->size - $currentAvifSize);
 
             if ($output->isVerbose()) {
                 $output->writeln(sprintf('  cq-level=%d, score=%.2f', $cqLevel, $score));
             }
 
             if ($score >= self::MIN_SSIM_SCORE) {
-                if ($currentAvifKb >= $originalSizeKb) {
+                if ($currentAvifSize >= $file->size) {
                     if ($output->isVerbose()) {
                         $output->writeln(sprintf(
                             '  <comment>AVIF not smaller (%s >= %s), skipping</comment>',
-                            $this->cliHelper->formatKb($currentAvifKb),
-                            $this->cliHelper->formatKb($originalSizeKb),
+                            $this->cliHelper->formatBytes($currentAvifSize),
+                            $this->cliHelper->formatBytes($file->size),
                         ));
                     }
 
@@ -426,10 +422,14 @@ final class Squeeze extends Command
                     return null;
                 }
 
-                $finalPath = $this->cliHelper->getAvifPath($jpegPath);
-                rename($tmpAvif, $finalPath);
+                rename($tmpAvif, $file->optimizedPath());
 
-                return [$finalPath, $currentAvifKb, $totalQcTime, $cqLevel, $score];
+                return new ImageProcessingResult(
+                    avifSize: $currentAvifSize,
+                    cqLevel: $cqLevel,
+                    qualityScore: $score,
+                    qcTime: $totalQcTime,
+                );
             }
 
             if ($cqLevel <= self::CQ_LEVEL_END) {

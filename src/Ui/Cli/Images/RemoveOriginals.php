@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Ui\Cli\Images;
 
 use App\Domain\Exiftool;
+use App\Domain\ImageFile;
 use App\Domain\Platform;
 use App\Ui\Cli\CliHelper;
 use App\Ui\Cli\Summary\ArwSummary;
@@ -23,7 +24,6 @@ use function count;
 use function dirname;
 use function escapeshellarg;
 use function exec;
-use function file_exists;
 use function filesize;
 use function glob;
 use function in_array;
@@ -94,8 +94,8 @@ final class RemoveOriginals extends Command
         }
 
         $jpegSpaceToFree = 0;
-        foreach ($jpegsToRemove as $path) {
-            $jpegSpaceToFree += (int) filesize($path);
+        foreach ($jpegsToRemove as $imageFile) {
+            $jpegSpaceToFree += $imageFile->size;
         }
 
         $arwSpaceToFree = 0;
@@ -135,16 +135,16 @@ final class RemoveOriginals extends Command
         $jpegSpaceFreed = 0;
         $jpegsErrored   = 0;
 
-        foreach ($jpegsToRemove as $jpegPath) {
+        foreach ($jpegsToRemove as $imageFile) {
             try {
-                $size = (int) filesize($jpegPath);
-                unlink($jpegPath);
+                $size = $imageFile->size;
+                unlink($imageFile->path);
                 $jpegsRemoved++;
                 $jpegSpaceFreed += $size;
 
-                $this->logger->info('Removed JPEG', ['file' => $jpegPath, 'size' => $size]);
+                $this->logger->info('Removed JPEG', ['file' => $imageFile->path, 'size' => $size]);
             } catch (Throwable $exception) {
-                $output->writeln(sprintf('<error>Failed to remove %s: %s</error>', $jpegPath, $exception->getMessage()));
+                $output->writeln(sprintf('<error>Failed to remove %s: %s</error>', $imageFile->path, $exception->getMessage()));
                 $jpegsErrored++;
             }
         }
@@ -214,7 +214,7 @@ final class RemoveOriginals extends Command
     /**
      * @param list<string> $directories
      *
-     * @return array{list<string>, list<string>, array<string, list<string>>, array{jpegsFound: int, jpegsSkipped: int, arwsFound: int, arwsSkipped: int, arwsNotArchived: int, avifReplacementSize: int, archiveReplacementSize: int}}
+     * @return array{list<ImageFile>, list<string>, array<string, list<string>>, array{jpegsFound: int, jpegsSkipped: int, arwsFound: int, arwsSkipped: int, arwsNotArchived: int, avifReplacementSize: int, archiveReplacementSize: int}}
      */
     private function gatherFiles(array $directories, OutputInterface $output): array
     {
@@ -268,15 +268,16 @@ final class RemoveOriginals extends Command
                     continue;
                 }
 
-                $avifPath = $this->cliHelper->getAvifPath($filePath);
-                if (! file_exists($avifPath)) {
+                $imageFile = new ImageFile($filePath);
+
+                if (! $imageFile->hasOptimized()) {
                     $output->writeln(sprintf('  Skipping (no AVIF): %s', $this->cliHelper->link($filePath)));
                     $stats['jpegsSkipped']++;
                     continue;
                 }
 
-                $jpegsToRemove[]               = $filePath;
-                $stats['avifReplacementSize'] += (int) filesize($avifPath);
+                $jpegsToRemove[]               = $imageFile;
+                $stats['avifReplacementSize'] += (int) filesize($imageFile->optimizedPath());
                 $output->writeln(sprintf('  Will remove: %s', $this->cliHelper->link($filePath)));
                 continue;
             }

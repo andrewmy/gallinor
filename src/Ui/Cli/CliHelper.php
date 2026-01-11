@@ -12,15 +12,12 @@ use SplFileInfo;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Output\OutputInterface;
 
-use function dirname;
 use function number_format;
-use function pathinfo;
 use function rtrim;
 use function sprintf;
 use function trim;
 
 use const DIRECTORY_SEPARATOR;
-use const PATHINFO_FILENAME;
 
 final class CliHelper
 {
@@ -41,11 +38,6 @@ final class CliHelper
         $progressBar->setBarWidth(30);
 
         return $progressBar;
-    }
-
-    public function getAvifPath(string $jpegPath): string
-    {
-        return dirname($jpegPath) . DIRECTORY_SEPARATOR . pathinfo($jpegPath, PATHINFO_FILENAME) . '.avif';
     }
 
     public function formatBytes(int $bytes): string
