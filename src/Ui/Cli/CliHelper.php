@@ -48,14 +48,22 @@ final class CliHelper
         return dirname($jpegPath) . DIRECTORY_SEPARATOR . pathinfo($jpegPath, PATHINFO_FILENAME) . '.avif';
     }
 
-    public function formatKb(int $kb): string
-    {
-        return sprintf('%s KB', number_format($kb, thousands_separator: ' '));
-    }
-
     public function formatBytes(int $bytes): string
     {
-        return $this->formatKb((int) ($bytes / 1024));
+        if ($bytes >= 1024 * 1024 * 1024) {
+            return sprintf('%.2f GB', $bytes / (1024 * 1024 * 1024));
+        }
+
+        if ($bytes >= 1024 * 1024) {
+            return sprintf('%.1f MB', $bytes / (1024 * 1024));
+        }
+
+        return sprintf('%s KB', number_format((int) ($bytes / 1024), thousands_separator: ' '));
+    }
+
+    public function formatKb(int $kb): string
+    {
+        return $this->formatBytes($kb * 1024);
     }
 
     /**

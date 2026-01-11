@@ -10,6 +10,8 @@ use App\Domain\Platform;
 use App\Domain\VideoEncoder;
 use App\Domain\VideoFile;
 use App\Ui\Cli\CliHelper;
+use App\Ui\Cli\Summary\Timing;
+use App\Ui\Cli\Summary\VideoSummary;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
 use Symfony\Component\Console\Attribute\Argument;
@@ -129,6 +131,13 @@ final class Squeeze extends Command
         $output->writeln(sprintf('<info>Gather time: %.3fs</info>', $gatherTime - $initTime));
 
         if ($dryRun) {
+            $output->writeln('');
+            (new Timing(
+                total: $gatherTime - $startTime,
+                init: $initTime - $startTime,
+                gather: $gatherTime - $initTime,
+            ))->print($output);
+
             return self::SUCCESS;
         }
 
@@ -181,23 +190,24 @@ final class Squeeze extends Command
         $output->writeln('');
 
         $processTime = microtime(true);
-        $output->writeln(sprintf(
-            "\nVideo Summary:\n  Processed: %d\n  Skipped: %d\n  Errored: %d\n  Size before: %s\n  Size after: %s\n  Savings: %s",
-            $fileCount,
-            $totalSkippedFiles,
-            $totalErroredFiles,
-            $this->cliHelper->formatKb($totalCurrentSize),
-            $this->cliHelper->formatKb($totalProcessedSize),
-            $this->cliHelper->formatKb($totalCurrentSize - $totalProcessedSize),
-        ));
-        $output->writeln(sprintf(
-            "\n<info>Timing:\n  Init: %.3fs\n  Gather: %.3fs\n  Process: %.3fs\n  QC: %.3fs\n  Total: %.3fs</info>",
-            $initTime - $startTime,
-            $gatherTime - $initTime,
-            $processTime - $gatherTime,
-            $totalQcTime,
-            $processTime - $startTime,
-        ));
+
+        $output->writeln('');
+        (new VideoSummary(
+            sizeBefore: $totalCurrentSize * 1024,
+            sizeAfter: $totalProcessedSize * 1024,
+            processed: $fileCount,
+            skipped: $totalSkippedFiles,
+            errored: $totalErroredFiles,
+        ))->print($output, $this->cliHelper);
+
+        $output->writeln('');
+        (new Timing(
+            total: $processTime - $startTime,
+            init: $initTime - $startTime,
+            gather: $gatherTime - $initTime,
+            process: $processTime - $gatherTime,
+            qc: $totalQcTime,
+        ))->print($output);
 
         return self::SUCCESS;
     }

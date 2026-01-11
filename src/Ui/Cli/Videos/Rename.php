@@ -6,6 +6,8 @@ namespace App\Ui\Cli\Videos;
 
 use App\Domain\VideoFile;
 use App\Ui\Cli\CliHelper;
+use App\Ui\Cli\Summary\Timing;
+use App\Ui\Cli\Summary\VideoSummary;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -85,14 +87,17 @@ final class Rename extends Command
 
         if ($dryRun) {
             $output->writeln('');
-            $output->writeln(sprintf(
-                "Video Summary:\n  Found: %d\n  To rename: %d\n  Size before: %s\n  Size after: %s\n  Space to free: %s",
-                count($filesToRename),
-                count($filesToRename),
-                $this->cliHelper->formatBytes($totalOldSize),
-                $this->cliHelper->formatBytes($totalNewSize),
-                $this->cliHelper->formatBytes($totalOldSize - $totalNewSize),
-            ));
+            (new VideoSummary(
+                sizeBefore: $totalOldSize,
+                sizeAfter: $totalNewSize,
+                found: count($filesToRename),
+            ))->print($output, $this->cliHelper);
+
+            $output->writeln('');
+            (new Timing(
+                total: $gatherTime - $startTime,
+                gather: $gatherTime - $startTime,
+            ))->print($output);
 
             return self::SUCCESS;
         }
@@ -113,21 +118,20 @@ final class Rename extends Command
         $endTime = microtime(true);
 
         $output->writeln('');
-        $output->writeln(sprintf(
-            "Video Summary:\n  Found: %d\n  Renamed: %d\n  Errored: %d\n  Size before: %s\n  Size after: %s\n  Space freed: %s",
-            count($filesToRename),
-            $renamed,
-            $errored,
-            $this->cliHelper->formatBytes($totalOldSize),
-            $this->cliHelper->formatBytes($totalNewSize),
-            $this->cliHelper->formatBytes($totalOldSize - $totalNewSize),
-        ));
-        $output->writeln(sprintf(
-            "\n<info>Timing:\n  Gather: %.3fs\n  Rename: %.3fs\n  Total: %.3fs</info>",
-            $gatherTime - $startTime,
-            $endTime - $gatherTime,
-            $endTime - $startTime,
-        ));
+        (new VideoSummary(
+            sizeBefore: $totalOldSize,
+            sizeAfter: $totalNewSize,
+            found: count($filesToRename),
+            renamed: $renamed,
+            errored: $errored,
+        ))->print($output, $this->cliHelper);
+
+        $output->writeln('');
+        (new Timing(
+            total: $endTime - $startTime,
+            gather: $gatherTime - $startTime,
+            rename: $endTime - $gatherTime,
+        ))->print($output);
 
         return self::SUCCESS;
     }

@@ -7,6 +7,9 @@ namespace App\Ui\Cli\Images;
 use App\Domain\Exiftool;
 use App\Domain\Platform;
 use App\Ui\Cli\CliHelper;
+use App\Ui\Cli\Summary\ArwSummary;
+use App\Ui\Cli\Summary\JpegSummary;
+use App\Ui\Cli\Summary\Timing;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -102,21 +105,26 @@ final class RemoveOriginals extends Command
 
         if ($dryRun) {
             $output->writeln('');
-            $output->writeln(sprintf(
-                "JPEG Summary:\n  Found: %d\n  Skipped: %d\n  To remove: %d\n  Space to free: %s",
-                $stats['jpegsFound'],
-                $stats['jpegsSkipped'],
-                count($jpegsToRemove),
-                $this->cliHelper->formatBytes($jpegSpaceToFree),
-            ));
-            $output->writeln(sprintf(
-                "\nARW Summary:\n  Found: %d\n  Skipped: %d\n  Not archived: %d\n  To remove: %d\n  Space to free: %s",
-                $stats['arwsFound'],
-                $stats['arwsSkipped'],
-                $stats['arwsNotArchived'],
-                count($arwsToRemove),
-                $this->cliHelper->formatBytes($arwSpaceToFree),
-            ));
+            (new JpegSummary(
+                found: $stats['jpegsFound'],
+                skipped: $stats['jpegsSkipped'],
+                removedSize: $jpegSpaceToFree,
+            ))->print($output, $this->cliHelper);
+
+            $output->writeln('');
+            (new ArwSummary(
+                found: $stats['arwsFound'],
+                skipped: $stats['arwsSkipped'],
+                notArchived: $stats['arwsNotArchived'],
+                removedSize: $arwSpaceToFree,
+            ))->print($output, $this->cliHelper);
+
+            $output->writeln('');
+            (new Timing(
+                total: $gatherTime - $startTime,
+                init: $initTime - $startTime,
+                gather: $gatherTime - $initTime,
+            ))->print($output);
 
             return self::SUCCESS;
         }
@@ -160,30 +168,31 @@ final class RemoveOriginals extends Command
         $endTime = microtime(true);
 
         $output->writeln('');
-        $output->writeln(sprintf(
-            "JPEG Summary:\n  Found: %d\n  Skipped: %d\n  Removed: %d\n  Errored: %d\n  Space freed: %s",
-            $stats['jpegsFound'],
-            $stats['jpegsSkipped'],
-            $jpegsRemoved,
-            $jpegsErrored,
-            $this->cliHelper->formatBytes($jpegSpaceFreed),
-        ));
-        $output->writeln(sprintf(
-            "\nARW Summary:\n  Found: %d\n  Skipped: %d\n  Not archived: %d\n  Removed: %d\n  Errored: %d\n  Space freed: %s",
-            $stats['arwsFound'],
-            $stats['arwsSkipped'],
-            $stats['arwsNotArchived'],
-            $arwsRemoved,
-            $arwsErrored,
-            $this->cliHelper->formatBytes($arwSpaceFreed),
-        ));
-        $output->writeln(sprintf(
-            "\n<info>Timing:\n  Init: %.3fs\n  Gather: %.3fs\n  Remove: %.3fs\n  Total: %.3fs</info>",
-            $initTime - $startTime,
-            $gatherTime - $initTime,
-            $endTime - $gatherTime,
-            $endTime - $startTime,
-        ));
+        (new JpegSummary(
+            found: $stats['jpegsFound'],
+            skipped: $stats['jpegsSkipped'],
+            removed: $jpegsRemoved,
+            errored: $jpegsErrored,
+            removedSize: $jpegSpaceFreed,
+        ))->print($output, $this->cliHelper);
+
+        $output->writeln('');
+        (new ArwSummary(
+            found: $stats['arwsFound'],
+            skipped: $stats['arwsSkipped'],
+            notArchived: $stats['arwsNotArchived'],
+            removed: $arwsRemoved,
+            errored: $arwsErrored,
+            removedSize: $arwSpaceFreed,
+        ))->print($output, $this->cliHelper);
+
+        $output->writeln('');
+        (new Timing(
+            total: $endTime - $startTime,
+            init: $initTime - $startTime,
+            gather: $gatherTime - $initTime,
+            remove: $endTime - $gatherTime,
+        ))->print($output);
 
         return self::SUCCESS;
     }

@@ -8,12 +8,11 @@ use App\Domain\Exiftool;
 use App\Domain\ImageTools;
 use App\Domain\Platform;
 use App\Ui\Cli\CliHelper;
-use FilesystemIterator;
+use App\Ui\Cli\Summary\ArwSummary;
+use App\Ui\Cli\Summary\JpegSummary;
+use App\Ui\Cli\Summary\Timing;
 use Psr\Log\LoggerInterface;
-use RecursiveDirectoryIterator;
-use RecursiveIteratorIterator;
 use RuntimeException;
-use SplFileInfo;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -24,7 +23,6 @@ use Throwable;
 use function array_any;
 use function array_filter;
 use function array_map;
-use function assert;
 use function basename;
 use function ceil;
 use function count;
@@ -40,11 +38,9 @@ use function in_array;
 use function microtime;
 use function preg_match;
 use function rename;
-use function rtrim;
 use function sprintf;
 use function strtolower;
 use function sys_get_temp_dir;
-use function trim;
 use function uniqid;
 use function unlink;
 
@@ -257,33 +253,33 @@ final class Squeeze extends Command
         $this->cleanup();
 
         $endTime = microtime(true);
+
         $output->writeln('');
-        $output->writeln(sprintf(
-            "JPEG Summary:\n  Found: %d\n  Processed: %d\n  Skipped: %d\n  Errored: %d\n  Size before: %s (includes skipped)\n  Size after: %s\n  Savings: %s",
-            $totalJpegsFound,
-            $totalJpegsProcessed,
-            $totalJpegsSkipped,
-            $totalJpegsErrored,
-            $this->cliHelper->formatKb($totalJpegSizeBefore),
-            $this->cliHelper->formatKb($totalJpegSizeAfter),
-            $this->cliHelper->formatKb($totalJpegSizeBefore - $totalJpegSizeAfter),
-        ));
-        $output->writeln(sprintf(
-            "\nARW Summary:\n  Found: %d\n  Archived: %d\n  Size before: %s\n  Size after: %s\n  Savings: %s",
-            $totalArwsFound,
-            $totalArwsArchived,
-            $this->cliHelper->formatKb($totalArwSizeBefore),
-            $this->cliHelper->formatKb($totalArchiveSize),
-            $this->cliHelper->formatKb($totalArwSizeBefore - $totalArchiveSize),
-        ));
-        $output->writeln(sprintf(
-            "\n<info>Timing:\n  Init: %.3fs\n  Gather: %.3fs\n  JPEG QC: %.3fs\n  Archiving: %.3fs\n  Total: %.3fs</info>",
-            $initTime - $startTime,
-            $gatherTime - $initTime,
-            $totalQcTime,
-            $totalArchiveTime,
-            $endTime - $startTime,
-        ));
+        (new JpegSummary(
+            found: $totalJpegsFound,
+            processed: $totalJpegsProcessed,
+            skipped: $totalJpegsSkipped,
+            errored: $totalJpegsErrored,
+            sizeBefore: $totalJpegSizeBefore * 1024,
+            sizeAfter: $totalJpegSizeAfter * 1024,
+        ))->print($output, $this->cliHelper);
+
+        $output->writeln('');
+        (new ArwSummary(
+            found: $totalArwsFound,
+            archived: $totalArwsArchived,
+            sizeBefore: $totalArwSizeBefore * 1024,
+            sizeAfter: $totalArchiveSize * 1024,
+        ))->print($output, $this->cliHelper);
+
+        $output->writeln('');
+        (new Timing(
+            total: $endTime - $startTime,
+            init: $initTime - $startTime,
+            gather: $gatherTime - $initTime,
+            qc: $totalQcTime,
+            archiving: $totalArchiveTime,
+        ))->print($output);
 
         return self::SUCCESS;
     }
