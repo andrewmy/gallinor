@@ -23,6 +23,9 @@ use function is_file;
 use function is_string;
 use function json_decode;
 use function sprintf;
+use function sys_get_temp_dir;
+use function uniqid;
+use function unlink;
 
 use const JSON_THROW_ON_ERROR;
 
@@ -242,8 +245,8 @@ final readonly class Ffmpeg
             throw new RuntimeException('VMAF filter is not available in ffmpeg');
         }
 
-        // windows ffmpeg vmaf does not support /dev/stdout, need to use a temp file instead
-        $vmafLogFile = 'var/vmaf.json';
+        // Use system temp directory for VMAF log (windows ffmpeg vmaf does not support /dev/stdout)
+        $vmafLogFile = sys_get_temp_dir() . '/vmaf_' . uniqid('', true) . '.json';
 
         $process = new Process([
             $this->ffmpegPath,
@@ -265,6 +268,8 @@ final readonly class Ffmpeg
             $vmafResult = json_decode((string) file_get_contents($vmafLogFile), true, 512, JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
             throw new RuntimeException('Failed to parse VMAF output: ' . $exception->getMessage());
+        } finally {
+            @unlink($vmafLogFile);
         }
 
         assert(is_array($vmafResult) && is_array($vmafResult['pooled_metrics']) && is_array($vmafResult['pooled_metrics']['vmaf']));
