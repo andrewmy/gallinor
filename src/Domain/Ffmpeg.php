@@ -6,10 +6,13 @@ namespace App\Domain;
 
 use JsonException;
 use RuntimeException;
+use Symfony\Component\Process\Process;
 
 use function array_merge;
 use function assert;
+use function ceil;
 use function escapeshellarg;
+use function file_exists;
 use function file_get_contents;
 use function filesize;
 use function implode;
@@ -18,10 +21,9 @@ use function is_array;
 use function is_file;
 use function is_string;
 use function json_decode;
-use function json_encode;
-use function shell_exec;
 use function sprintf;
 use function trim;
+use function unlink;
 
 use const JSON_THROW_ON_ERROR;
 
@@ -33,73 +35,103 @@ final readonly class Ffmpeg
     public bool $hasTemporalAq;
     public bool $hasVmaf;
 
-    public function __construct(bool $useCpu, private Platform $platform)
-    {
-        $which = $this->platform->isWindows() ? 'where.exe' : 'which';
-        $grep  = $this->platform->isWindows() ? 'findstr' : 'grep';
-
-        // they both can be arrays on windows
-        /** @var false|string|list<string>|null $ffprobePath */
-        $ffprobePath = shell_exec($which . ' ffprobe');
-        /** @var false|string|list<string>|null $ffmpegPath */
-        $ffmpegPath = shell_exec($which . ' ffmpeg');
-        if (empty($ffprobePath) || empty($ffmpegPath)) {
-            throw new RuntimeException('ffprobe or ffmpeg not found in system path');
-        }
-
-        if (is_array($ffprobePath)) {
-            $ffprobePath = $ffprobePath[0];
-        }
-
-        if (is_array($ffmpegPath)) {
-            $ffmpegPath = $ffmpegPath[0];
-        }
-
-        $this->ffprobePath = trim($ffprobePath);
-        $this->ffmpegPath  = trim($ffmpegPath);
+    public function __construct(
+        bool $useCpu,
+        private Platform $platform,
+    ) {
+        $this->ffprobePath = $this->platform->findTool('ffprobe');
+        $this->ffmpegPath  = $this->platform->findTool('ffmpeg');
 
         $hasAppleToolbox = $this->platform->isWindows()
             ? false
-            : $this->ffmpeg('-hide_banner -encoders | grep hevc_videotoolbox');
-        $hasNvEncoder    = $this->ffmpeg('-hide_banner -encoders | ' . $grep . ' hevc_nvenc');
+            : $this->ffmpegHasEncoder('hevc_videotoolbox');
+        $hasNvEncoder    = $this->ffmpegHasEncoder('hevc_nvenc');
 
         if ($useCpu) {
             $this->activeEncoder = VideoEncoder::Cpu;
         } else {
-            if (empty($hasAppleToolbox) && empty($hasNvEncoder)) {
+            if (! $hasAppleToolbox && ! $hasNvEncoder) {
                 throw new RuntimeException('No hardware HEVC encoder found (neither Apple VideoToolbox nor NVIDIA NVENC)');
             }
 
-            $this->activeEncoder = ! empty($hasAppleToolbox) ? VideoEncoder::Apple : VideoEncoder::Nvidia;
+            $this->activeEncoder = $hasAppleToolbox ? VideoEncoder::Apple : VideoEncoder::Nvidia;
         }
 
         if ($hasNvEncoder) {
-            $temporalAqCheck     = $this->ffmpeg('-h encoder=hevc_nvenc 2>&1 | ' . $grep . ' temporal');
-            $this->hasTemporalAq = ! empty($temporalAqCheck);
+            $this->hasTemporalAq = $this->ffmpegHasOption('encoder=hevc_nvenc', 'temporal');
         } else {
             $this->hasTemporalAq = false;
         }
 
-        $vmafCheck     = $this->ffmpeg('-hide_banner -filters | ' . $grep . ' vmaf');
-        $this->hasVmaf = ! empty($vmafCheck);
+        $this->hasVmaf = $this->ffmpegHasFilter('vmaf');
     }
 
-    private function ffmpeg(string $args): string|false|null
+    private function ffmpegHasEncoder(string $encoder): bool
     {
-        return shell_exec($this->ffmpegPath . ' ' . $args);
+        $process = new Process([
+            $this->ffmpegPath,
+            '-hide_banner',
+            '-encoders',
+        ]);
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            return false;
+        }
+
+        return str_contains($process->getOutput(), $encoder);
+    }
+
+    private function ffmpegHasOption(string $target, string $option): bool
+    {
+        $process = new Process([
+            $this->ffmpegPath,
+            '-h',
+            $target,
+        ]);
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            return false;
+        }
+
+        return str_contains($process->getOutput(), $option);
+    }
+
+    private function ffmpegHasFilter(string $filter): bool
+    {
+        $process = new Process([
+            $this->ffmpegPath,
+            '-hide_banner',
+            '-filters',
+        ]);
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            return false;
+        }
+
+        return str_contains($process->getOutput(), $filter);
     }
 
     /** @throws RuntimeException */
     public function videoFileFromPath(string $filePath): VideoFile
     {
-        $mediaInfoStr = shell_exec(sprintf(
-            '%s -v error -select_streams v:0 -show_entries stream=width,height,bit_rate,pix_fmt,codec_name,color_space,color_primaries,color_transfer,duration -of json "%s"',
+        $process = new Process([
             $this->ffprobePath,
+            '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height,bit_rate,pix_fmt,codec_name,color_space,color_primaries,color_transfer,duration',
+            '-of', 'json',
             $filePath,
-        ));
-        if (! is_string($mediaInfoStr)) {
-            throw new RuntimeException('Failed to get video info, skipping');
+        ]);
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            throw new RuntimeException('Failed to get video info, skipping: ' . $process->getErrorOutput());
         }
+
+        $mediaInfoStr = $process->getOutput();
 
         try {
             $mediaInfo = json_decode($mediaInfoStr, true, 512, JSON_THROW_ON_ERROR);
@@ -135,7 +167,7 @@ final readonly class Ffmpeg
             pixFmt           : $stream['pix_fmt'],
             codecName        : $stream['codec_name'],
             duration         : (float) $stream['duration'],
-            currentSizeKb    : (int) (filesize($filePath) / 1024),
+            currentSizeKb    : (int) ceil(filesize($filePath) / 1024),
             colorSpace       : $stream['color_space'] ?? null,
             colorPrimaries   : $stream['color_primaries'] ?? null,
             colorTransfer    : $stream['color_transfer'] ?? null,
@@ -229,13 +261,23 @@ final readonly class Ffmpeg
 
         // windows ffmpeg vmaf does not support /dev/stdout, need to use a temp file instead
         $vmafLogFile = 'var/vmaf.json';
-        $this->ffmpeg(sprintf(
-            '-hide_banner -loglevel error -i "%s" -i "%s" -lavfi "libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10" -f null -',
-            $processedFilePath,
-            $originalFilePath,
-            $vmafLogFile,
-            $this->platform->nCores,
-        ));
+
+        $process = new Process([
+            $this->ffmpegPath,
+            '-hide_banner',
+            '-loglevel', 'error',
+            '-i', $processedFilePath,
+            '-i', $originalFilePath,
+            '-lavfi', sprintf('libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10', $vmafLogFile, $this->platform->nCores),
+            '-f', 'null',
+            '-',
+        ]);
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            throw new RuntimeException('Failed to execute VMAF command: ' . $process->getErrorOutput());
+        }
+
         if (! is_file($vmafLogFile)) {
             throw new RuntimeException('Failed to execute VMAF command');
         }

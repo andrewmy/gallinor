@@ -6,5 +6,4 @@ parameters:
     ignoreErrors:
             -
                 identifiers:
-                    - varTag.nativeType # see src/Domain/Ffmpeg.php
                     - cast.double

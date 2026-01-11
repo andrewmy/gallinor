@@ -26,9 +26,10 @@ final readonly class ArwSummary
     ) {
     }
 
-    public function print(OutputInterface $output, CliHelper $helper): void
+    /** @return list<string> */
+    private function formatLines(CliHelper $helper): array
     {
-        $lines   = ['ARW Summary:'];
+        $lines = ['ARW Summary:'];
         $lines[] = sprintf('  Found: %d', $this->found);
 
         if ($this->archived !== null) {
@@ -63,6 +64,16 @@ final readonly class ArwSummary
             $lines[] = sprintf('  Savings: %s', $helper->formatBytes($savings));
         }
 
-        $output->writeln(implode("\n", $lines));
+        return $lines;
+    }
+
+    public function format(CliHelper $helper): string
+    {
+        return implode("\n", $this->formatLines($helper));
+    }
+
+    public function print(OutputInterface $output, CliHelper $helper): void
+    {
+        $output->writeln($this->format($helper));
     }
 }

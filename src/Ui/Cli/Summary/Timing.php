@@ -23,7 +23,8 @@ final readonly class Timing
     ) {
     }
 
-    public function print(OutputInterface $output): void
+    /** @return list<string> */
+    private function formatLines(): array
     {
         $lines = ['Timing:'];
 
@@ -57,6 +58,16 @@ final readonly class Timing
 
         $lines[] = sprintf('  Total: %.3fs', $this->total);
 
-        $output->writeln('<info>' . implode("\n", $lines) . '</info>');
+        return $lines;
+    }
+
+    public function format(): string
+    {
+        return implode("\n", $this->formatLines());
+    }
+
+    public function print(OutputInterface $output): void
+    {
+        $output->writeln('<info>' . $this->format() . '</info>');
     }
 }

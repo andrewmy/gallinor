@@ -25,9 +25,10 @@ final readonly class JpegSummary
     ) {
     }
 
-    public function print(OutputInterface $output, CliHelper $helper): void
+    /** @return list<string> */
+    private function formatLines(CliHelper $helper): array
     {
-        $lines   = ['JPEG Summary:'];
+        $lines = ['JPEG Summary:'];
         $lines[] = sprintf('  Found: %d', $this->found);
 
         if ($this->processed !== null) {
@@ -58,6 +59,16 @@ final readonly class JpegSummary
             $lines[] = sprintf('  Savings: %s', $helper->formatBytes($savings));
         }
 
-        $output->writeln(implode("\n", $lines));
+        return $lines;
+    }
+
+    public function format(CliHelper $helper): string
+    {
+        return implode("\n", $this->formatLines($helper));
+    }
+
+    public function print(OutputInterface $output, CliHelper $helper): void
+    {
+        $output->writeln($this->format($helper));
     }
 }

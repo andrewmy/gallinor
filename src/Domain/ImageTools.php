@@ -5,16 +5,12 @@ declare(strict_types=1);
 namespace App\Domain;
 
 use RuntimeException;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Process\Process;
 
 use function ceil;
-use function escapeshellarg;
-use function exec;
-use function file_exists;
 use function filesize;
-use function implode;
-use function sprintf;
 use function trim;
-use function unlink;
 
 final readonly class ImageTools
 {
@@ -22,8 +18,10 @@ final readonly class ImageTools
     public string $avifdecPath;
     public string $ssimulacra2Path;
 
-    public function __construct(private Platform $platform)
-    {
+    public function __construct(
+        private Platform $platform,
+        private readonly Filesystem $fs = new Filesystem(),
+    ) {
         $this->avifencPath     = $this->platform->findTool('avifenc');
         $this->avifdecPath     = $this->platform->findTool('avifdec');
         $this->ssimulacra2Path = $this->platform->findTool('ssimulacra2');
@@ -36,29 +34,33 @@ final readonly class ImageTools
      */
     public function encodeToAvif(string $sourcePath, string $targetPath, int $cqLevel): void
     {
-        $cmd = sprintf(
-            '%s -s 6 -j 8 -y 420 -d 10 -a tune=iq -a end-usage=q -a cq-level=%d %s %s 2>&1',
-            escapeshellarg($this->avifencPath),
-            $cqLevel,
-            escapeshellarg($sourcePath),
-            escapeshellarg($targetPath),
-        );
+        $process = new Process([
+            $this->avifencPath,
+            '-s', '6',
+            '-j', '8',
+            '-y', '420',
+            '-d', '10',
+            '-a', 'tune=iq',
+            '-a', 'end-usage=q',
+            '-a', "cq-level=$cqLevel",
+            $sourcePath,
+            $targetPath,
+        ]);
 
-        $output = [];
-        exec($cmd, $output, $exitCode);
+        $process->run();
 
-        if ($exitCode === 0) {
+        if ($process->isSuccessful()) {
             return;
         }
 
-        if (file_exists($targetPath)) {
-            unlink($targetPath);
+        if ($this->fs->exists($targetPath)) {
+            $this->fs->remove($targetPath);
         }
 
         throw new RuntimeException(sprintf(
             "avifenc failed with exit code %d:\n%s",
-            $exitCode,
-            implode("\n", $output),
+            $process->getExitCode(),
+            $process->getErrorOutput(),
         ));
     }
 
@@ -69,21 +71,20 @@ final readonly class ImageTools
      */
     public function decodeAvifToPng(string $avifPath, string $pngPath): void
     {
-        $cmd = sprintf(
-            '%s --png-compress 0 %s %s 2>&1',
-            escapeshellarg($this->avifdecPath),
-            escapeshellarg($avifPath),
-            escapeshellarg($pngPath),
-        );
+        $process = new Process([
+            $this->avifdecPath,
+            '--png-compress', '0',
+            $avifPath,
+            $pngPath,
+        ]);
 
-        $output = [];
-        exec($cmd, $output, $exitCode);
+        $process->run();
 
-        if ($exitCode !== 0) {
+        if (! $process->isSuccessful()) {
             throw new RuntimeException(sprintf(
                 "avifdec failed with exit code %d:\n%s",
-                $exitCode,
-                implode("\n", $output),
+                $process->getExitCode(),
+                $process->getErrorOutput(),
             ));
         }
     }
@@ -97,25 +98,23 @@ final readonly class ImageTools
      */
     public function ssimulacra2Score(string $originalPath, string $decodedPngPath): float
     {
-        $cmd = sprintf(
-            '%s %s %s 2>&1',
-            escapeshellarg($this->ssimulacra2Path),
-            escapeshellarg($originalPath),
-            escapeshellarg($decodedPngPath),
-        );
+        $process = new Process([
+            $this->ssimulacra2Path,
+            $originalPath,
+            $decodedPngPath,
+        ]);
 
-        $output = [];
-        exec($cmd, $output, $exitCode);
+        $process->run();
 
-        if ($exitCode !== 0) {
+        if (! $process->isSuccessful()) {
             throw new RuntimeException(sprintf(
                 "ssimulacra2 failed with exit code %d:\n%s",
-                $exitCode,
-                implode("\n", $output),
+                $process->getExitCode(),
+                $process->getErrorOutput(),
             ));
         }
 
-        return (float) trim($output[0] ?? '0');
+        return (float) trim($process->getOutput());
     }
 
     /**

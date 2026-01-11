@@ -336,7 +336,7 @@ final class Squeeze extends Command
                     continue;
                 }
 
-                $imageFile = new ImageFile($filePath);
+                $imageFile = new ImageFile($filePath, $file->getSize());
 
                 if ($imageFile->hasOptimized()) {
                     $output->writeln(sprintf('  Skipping (AVIF exists): %s', $this->cliHelper->link($filePath)));

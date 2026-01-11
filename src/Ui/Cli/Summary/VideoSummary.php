@@ -23,7 +23,8 @@ final readonly class VideoSummary
     ) {
     }
 
-    public function print(OutputInterface $output, CliHelper $helper): void
+    /** @return list<string> */
+    private function formatLines(CliHelper $helper): array
     {
         $lines = ['Video Summary:'];
 
@@ -51,6 +52,16 @@ final readonly class VideoSummary
         $lines[] = sprintf('  Size after: %s', $helper->formatBytes($this->sizeAfter));
         $lines[] = sprintf('  Savings: %s', $helper->formatBytes($this->sizeBefore - $this->sizeAfter));
 
-        $output->writeln(implode("\n", $lines));
+        return $lines;
+    }
+
+    public function format(CliHelper $helper): string
+    {
+        return implode("\n", $this->formatLines($helper));
+    }
+
+    public function print(OutputInterface $output, CliHelper $helper): void
+    {
+        $output->writeln($this->format($helper));
     }
 }

@@ -5,12 +5,11 @@ declare(strict_types=1);
 namespace App\Domain;
 
 use RuntimeException;
+use Symfony\Component\Process\Process;
 
-use function escapeshellarg;
 use function explode;
 use function in_array;
 use function max;
-use function shell_exec;
 use function sprintf;
 use function trim;
 
@@ -24,17 +23,31 @@ final readonly class Platform
     public string $os;
     public int $nCores;
 
-    public function __construct()
-    {
-        $this->os = PHP_OS_FAMILY;
+    public function __construct(
+        string|null $os = null,
+        int|null $nCores = null,
+    ) {
+        $this->os = $os ?? PHP_OS_FAMILY;
         if (! in_array($this->os, [self::OS_DARWIN, self::OS_WINDOWS], true)) {
             throw new RuntimeException('This script only supports macOS and Windows systems.');
         }
 
-        $this->nCores = max(1, match ($this->os) {
-            self::OS_DARWIN => (int) shell_exec('sysctl -n hw.ncpu'),
-            self::OS_WINDOWS => (int) shell_exec('powershell -Command "(Get-CimInstance -ClassName Win32_Processor).NumberOfCores"'),
-        });
+        $this->nCores = $nCores ?? $this->detectNCores();
+    }
+
+    private function detectNCores(): int
+    {
+        $process = $this->os === self::OS_DARWIN
+            ? new Process(['sysctl', '-n', 'hw.ncpu'])
+            : new Process(['powershell', '-Command', '(Get-CimInstance -ClassName Win32_Processor).NumberOfCores']);
+
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            return 1; // Fallback
+        }
+
+        return max(1, (int) trim($process->getOutput()));
     }
 
     public function isWindows(): bool
@@ -50,8 +63,16 @@ final readonly class Platform
     public function findTool(string $tool): string
     {
         $which  = $this->isWindows() ? 'where.exe' : 'which';
-        $result = trim((string) shell_exec(sprintf('%s %s 2>/dev/null', $which, escapeshellarg($tool))));
+        $process = new Process([$which, $tool]);
+        $process->run();
 
+        if (! $process->isSuccessful()) {
+            throw new RuntimeException(sprintf('Required tool not found: %s', $tool));
+        }
+
+        $result = trim($process->getOutput());
+
+        // On Windows, 'where' returns multiple lines, take the first
         if ($this->isWindows()) {
             $lines  = explode("\n", $result);
             $result = trim($lines[0]);

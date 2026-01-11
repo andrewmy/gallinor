@@ -268,7 +268,7 @@ final class RemoveOriginals extends Command
                     continue;
                 }
 
-                $imageFile = new ImageFile($filePath);
+                $imageFile = new ImageFile($filePath, $file->getSize());
 
                 if (! $imageFile->hasOptimized()) {
                     $output->writeln(sprintf('  Skipping (no AVIF): %s', $this->cliHelper->link($filePath)));

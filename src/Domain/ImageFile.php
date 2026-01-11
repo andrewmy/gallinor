@@ -7,7 +7,6 @@ namespace App\Domain;
 use function basename;
 use function dirname;
 use function file_exists;
-use function filesize;
 use function pathinfo;
 
 use const DIRECTORY_SEPARATOR;
@@ -15,13 +14,11 @@ use const PATHINFO_FILENAME;
 
 final readonly class ImageFile
 {
-    public int $size;
-
     public function __construct(
         public string $path,
+        public int $size,
         public bool $isPortraitOrLivePhoto = false,
     ) {
-        $this->size = (int) filesize($path);
     }
 
     public function optimizedPath(): string

@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace App\Domain;
 
 use RuntimeException;
+use Symfony\Component\Process\Process;
 
-use function escapeshellarg;
-use function exec;
 use function explode;
-use function shell_exec;
 use function sprintf;
 use function trim;
 
@@ -19,20 +17,7 @@ class Exiftool
 
     public function __construct(private Platform $platform)
     {
-        $which = $this->platform->isWindows() ? 'where.exe' : 'which';
-
-        $result = trim((string) shell_exec(sprintf('%s exiftool 2>/dev/null', $which)));
-
-        if ($this->platform->isWindows()) {
-            $lines  = explode("\n", $result);
-            $result = trim($lines[0]);
-        }
-
-        if ($result === '') {
-            throw new RuntimeException('Required tool not found: exiftool');
-        }
-
-        $this->exiftoolPath = $result;
+        $this->exiftoolPath = $this->platform->findTool('exiftool');
     }
 
     public function path(): string
@@ -43,24 +28,32 @@ class Exiftool
     /** @return array<string, true> Filenames (with path) to skip */
     public function findPortraitAndLivePhotos(string $dir): array
     {
-        $cmd = sprintf(
-            '%s -if %s -p %s -ext jpg -ext jpeg %s 2>/dev/null',
-            escapeshellarg($this->exiftoolPath),
-            escapeshellarg('$DepthMapData or $EmbeddedVideoFile'),
-            escapeshellarg('$directory/$filename'),
-            escapeshellarg($dir),
-        );
+        $process = new Process([
+            $this->exiftoolPath,
+            '-if', '$DepthMapData or $EmbeddedVideoFile',
+            '-p', '$directory/$filename',
+            '-ext', 'jpg',
+            '-ext', 'jpeg',
+            $dir,
+        ]);
 
-        $result = [];
-        exec($cmd, $result, $exitCode);
+        $process->run();
 
-        if ($exitCode !== 0 || $result === []) {
+        if (! $process->isSuccessful()) {
+            return [];
+        }
+
+        $output = $process->getOutput();
+        if ($output === '') {
             return [];
         }
 
         $skipSet = [];
-        foreach ($result as $filename) {
-            $skipSet[trim($filename)] = true;
+        foreach (explode("\n", trim($output)) as $filename) {
+            $filename = trim($filename);
+            if ($filename !== '') {
+                $skipSet[$filename] = true;
+            }
         }
 
         return $skipSet;
