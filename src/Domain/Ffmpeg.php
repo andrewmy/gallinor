@@ -6,6 +6,7 @@ namespace App\Domain;
 
 use JsonException;
 use RuntimeException;
+use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
 
 use function array_merge;
@@ -22,8 +23,6 @@ use function is_file;
 use function is_string;
 use function json_decode;
 use function sprintf;
-use function trim;
-use function unlink;
 
 use const JSON_THROW_ON_ERROR;
 
@@ -75,11 +74,7 @@ final readonly class Ffmpeg
         ]);
         $process->run();
 
-        if (! $process->isSuccessful()) {
-            return false;
-        }
-
-        return str_contains($process->getOutput(), $encoder);
+        return $process->isSuccessful() && str_contains($process->getOutput(), $encoder);
     }
 
     private function ffmpegHasOption(string $target, string $option): bool
@@ -91,11 +86,7 @@ final readonly class Ffmpeg
         ]);
         $process->run();
 
-        if (! $process->isSuccessful()) {
-            return false;
-        }
-
-        return str_contains($process->getOutput(), $option);
+        return $process->isSuccessful() && str_contains($process->getOutput(), $option);
     }
 
     private function ffmpegHasFilter(string $filter): bool
@@ -107,11 +98,7 @@ final readonly class Ffmpeg
         ]);
         $process->run();
 
-        if (! $process->isSuccessful()) {
-            return false;
-        }
-
-        return str_contains($process->getOutput(), $filter);
+        return $process->isSuccessful() && str_contains($process->getOutput(), $filter);
     }
 
     /** @throws RuntimeException */
@@ -125,11 +112,7 @@ final readonly class Ffmpeg
             '-of', 'json',
             $filePath,
         ]);
-        $process->run();
-
-        if (! $process->isSuccessful()) {
-            throw new RuntimeException('Failed to get video info, skipping: ' . $process->getErrorOutput());
-        }
+        $process->mustRun();
 
         $mediaInfoStr = $process->getOutput();
 
@@ -272,14 +255,10 @@ final readonly class Ffmpeg
             '-f', 'null',
             '-',
         ]);
-        $process->run();
-
-        if (! $process->isSuccessful()) {
-            throw new RuntimeException('Failed to execute VMAF command: ' . $process->getErrorOutput());
-        }
+        $process->mustRun();
 
         if (! is_file($vmafLogFile)) {
-            throw new RuntimeException('Failed to execute VMAF command');
+            throw new RuntimeException('VMAF log file was not created');
         }
 
         try {

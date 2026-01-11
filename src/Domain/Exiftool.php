@@ -8,7 +8,6 @@ use RuntimeException;
 use Symfony\Component\Process\Process;
 
 use function explode;
-use function sprintf;
 use function trim;
 
 class Exiftool
@@ -36,7 +35,6 @@ class Exiftool
             '-ext', 'jpeg',
             $dir,
         ]);
-
         $process->run();
 
         if (! $process->isSuccessful()) {

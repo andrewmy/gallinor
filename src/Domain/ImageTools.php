@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain;
 
 use RuntimeException;
-use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
 use function ceil;
@@ -20,7 +19,6 @@ final readonly class ImageTools
 
     public function __construct(
         private Platform $platform,
-        private readonly Filesystem $fs = new Filesystem(),
     ) {
         $this->avifencPath     = $this->platform->findTool('avifenc');
         $this->avifdecPath     = $this->platform->findTool('avifdec');
@@ -46,22 +44,7 @@ final readonly class ImageTools
             $sourcePath,
             $targetPath,
         ]);
-
-        $process->run();
-
-        if ($process->isSuccessful()) {
-            return;
-        }
-
-        if ($this->fs->exists($targetPath)) {
-            $this->fs->remove($targetPath);
-        }
-
-        throw new RuntimeException(sprintf(
-            "avifenc failed with exit code %d:\n%s",
-            $process->getExitCode(),
-            $process->getErrorOutput(),
-        ));
+        $process->mustRun();
     }
 
     /**
@@ -77,16 +60,7 @@ final readonly class ImageTools
             $avifPath,
             $pngPath,
         ]);
-
-        $process->run();
-
-        if (! $process->isSuccessful()) {
-            throw new RuntimeException(sprintf(
-                "avifdec failed with exit code %d:\n%s",
-                $process->getExitCode(),
-                $process->getErrorOutput(),
-            ));
-        }
+        $process->mustRun();
     }
 
     /**
@@ -103,16 +77,7 @@ final readonly class ImageTools
             $originalPath,
             $decodedPngPath,
         ]);
-
-        $process->run();
-
-        if (! $process->isSuccessful()) {
-            throw new RuntimeException(sprintf(
-                "ssimulacra2 failed with exit code %d:\n%s",
-                $process->getExitCode(),
-                $process->getErrorOutput(),
-            ));
-        }
+        $process->mustRun();
 
         return (float) trim($process->getOutput());
     }

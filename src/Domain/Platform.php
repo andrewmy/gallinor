@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain;
 
 use RuntimeException;
+use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
 
 use function explode;
@@ -41,9 +42,9 @@ final readonly class Platform
             ? new Process(['sysctl', '-n', 'hw.ncpu'])
             : new Process(['powershell', '-Command', '(Get-CimInstance -ClassName Win32_Processor).NumberOfCores']);
 
-        $process->run();
-
-        if (! $process->isSuccessful()) {
+        try {
+            $process->mustRun();
+        } catch (ProcessFailedException) {
             return 1; // Fallback
         }
 
@@ -62,13 +63,9 @@ final readonly class Platform
      */
     public function findTool(string $tool): string
     {
-        $which  = $this->isWindows() ? 'where.exe' : 'which';
+        $which = $this->isWindows() ? 'where.exe' : 'which';
         $process = new Process([$which, $tool]);
-        $process->run();
-
-        if (! $process->isSuccessful()) {
-            throw new RuntimeException(sprintf('Required tool not found: %s', $tool));
-        }
+        $process->mustRun();
 
         $result = trim($process->getOutput());
 
