@@ -124,9 +124,9 @@ final class Squeeze extends Command
 
         $output->writeln(sprintf(
             "\n\nProjection:\n  Current size: %s\n  Projected size: %s\n  Projected savings: %s\n  Skipped: %d",
-            $this->cliHelper->formatKb($totalCurrentSize),
-            $this->cliHelper->formatKb($totalProjectedSize),
-            $this->cliHelper->formatKb($totalCurrentSize - $totalProjectedSize),
+            $this->cliHelper->formatBytes($totalCurrentSize * 1024),
+            $this->cliHelper->formatBytes($totalProjectedSize * 1024),
+            $this->cliHelper->formatBytes(($totalCurrentSize - $totalProjectedSize) * 1024),
             $totalSkippedFiles,
         ));
         $gatherTime = microtime(true);
@@ -158,7 +158,7 @@ final class Squeeze extends Command
             $statusCallback = static function (int $bitrate, float $vmafScore, int $savedKb) use ($progressBar, $fileName, &$totalSavings, $cliHelper): void {
                 $runningTotal = $totalSavings + $savedKb;
                 $progressBar->setMessage(
-                    sprintf('%s | %sk, VMAF=%.1f, saved %s (total: %s)', $fileName, $bitrate, $vmafScore, $cliHelper->formatKb($savedKb), $cliHelper->formatKb($runningTotal)),
+                    sprintf('%s | %sk, VMAF=%.1f, saved %s (total: %s)', $fileName, $bitrate, $vmafScore, $cliHelper->formatBytes($savedKb * 1024), $cliHelper->formatBytes($runningTotal * 1024)),
                     'status',
                 );
                 $progressBar->display();
@@ -172,7 +172,7 @@ final class Squeeze extends Command
                 $savings       = $file->currentSizeKb - $processedSize;
                 $totalSavings += $savings;
                 $progressBar->setMessage(
-                    sprintf('%s | VMAF=%.1f, saved %s (total: %s)', $fileName, $vmafScore, $cliHelper->formatKb($savings), $cliHelper->formatKb($totalSavings)),
+                    sprintf('%s | VMAF=%.1f, saved %s (total: %s)', $fileName, $vmafScore, $cliHelper->formatBytes($savings * 1024), $cliHelper->formatBytes($totalSavings * 1024)),
                     'status',
                 );
             } catch (Throwable $exception) {
@@ -282,9 +282,9 @@ final class Squeeze extends Command
                 $videoFile->height,
                 number_format((int) ($videoFile->bitRate / 1024), thousands_separator: ' '),
                 $videoFile->pixFmt,
-                $this->cliHelper->formatKb($videoFile->currentSizeKb),
-                $this->cliHelper->formatKb($sizeEstimate),
-                $this->cliHelper->formatKb($videoFile->currentSizeKb - $sizeEstimate),
+                $this->cliHelper->formatBytes($videoFile->currentSizeKb * 1024),
+                $this->cliHelper->formatBytes($sizeEstimate * 1024),
+                $this->cliHelper->formatBytes(($videoFile->currentSizeKb - $sizeEstimate) * 1024),
             ));
         }
 
@@ -421,8 +421,8 @@ final class Squeeze extends Command
         if ($output->isVerbose()) {
             $output->writeln(sprintf(
                 'Encoded: %s (saved %s)',
-                $this->cliHelper->formatKb($processedSizeKb),
-                $this->cliHelper->formatKb($file->currentSizeKb - $processedSizeKb),
+                $this->cliHelper->formatBytes($processedSizeKb * 1024),
+                $this->cliHelper->formatBytes(($file->currentSizeKb - $processedSizeKb) * 1024),
             ));
         }
 

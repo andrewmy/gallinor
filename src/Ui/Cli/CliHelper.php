@@ -43,9 +43,4 @@ final class CliHelper
 
         return sprintf('%s KB', number_format((int) ($bytes / 1024), thousands_separator: ' '));
     }
-
-    public function formatKb(int $kb): string
-    {
-        return $this->formatBytes($kb * 1024);
-    }
 }

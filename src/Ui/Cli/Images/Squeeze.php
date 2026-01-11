@@ -232,7 +232,7 @@ final class Squeeze extends Command
                     $totalArwsArchived += $fileCount;
 
                     $arwProgressBar->setMessage(
-                        sprintf('%s | %s', $dirName, $cliHelper->formatKb($archiveSize)),
+                        sprintf('%s | %s', $dirName, $cliHelper->formatBytes($archiveSize * 1024)),
                         'status',
                     );
                 } catch (Throwable $exception) {
