@@ -22,6 +22,7 @@ final readonly class ArwSummary
         public int|null $sizeBefore = null,
         public int|null $sizeAfter = null,
         public int|null $removedSize = null,
+        public int|null $replacementSize = null,
     ) {
     }
 
@@ -58,7 +59,8 @@ final readonly class ArwSummary
 
         if ($this->removedSize !== null) {
             $lines[] = sprintf('  Removed size: %s', $helper->formatBytes($this->removedSize));
-            $lines[] = sprintf('  Savings: %s', $helper->formatBytes($this->removedSize));
+            $savings = $this->removedSize - ($this->replacementSize ?? 0);
+            $lines[] = sprintf('  Savings: %s', $helper->formatBytes($savings));
         }
 
         $output->writeln(implode("\n", $lines));

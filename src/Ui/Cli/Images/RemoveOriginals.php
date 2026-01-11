@@ -109,6 +109,7 @@ final class RemoveOriginals extends Command
                 found: $stats['jpegsFound'],
                 skipped: $stats['jpegsSkipped'],
                 removedSize: $jpegSpaceToFree,
+                replacementSize: $stats['avifReplacementSize'],
             ))->print($output, $this->cliHelper);
 
             $output->writeln('');
@@ -117,6 +118,7 @@ final class RemoveOriginals extends Command
                 skipped: $stats['arwsSkipped'],
                 notArchived: $stats['arwsNotArchived'],
                 removedSize: $arwSpaceToFree,
+                replacementSize: $stats['archiveReplacementSize'],
             ))->print($output, $this->cliHelper);
 
             $output->writeln('');
@@ -174,6 +176,7 @@ final class RemoveOriginals extends Command
             removed: $jpegsRemoved,
             errored: $jpegsErrored,
             removedSize: $jpegSpaceFreed,
+            replacementSize: $stats['avifReplacementSize'],
         ))->print($output, $this->cliHelper);
 
         $output->writeln('');
@@ -184,6 +187,7 @@ final class RemoveOriginals extends Command
             removed: $arwsRemoved,
             errored: $arwsErrored,
             removedSize: $arwSpaceFreed,
+            replacementSize: $stats['archiveReplacementSize'],
         ))->print($output, $this->cliHelper);
 
         $output->writeln('');
@@ -210,7 +214,7 @@ final class RemoveOriginals extends Command
     /**
      * @param list<string> $directories
      *
-     * @return array{list<string>, list<string>, array<string, list<string>>, array{jpegsFound: int, jpegsSkipped: int, arwsFound: int, arwsSkipped: int, arwsNotArchived: int}}
+     * @return array{list<string>, list<string>, array<string, list<string>>, array{jpegsFound: int, jpegsSkipped: int, arwsFound: int, arwsSkipped: int, arwsNotArchived: int, avifReplacementSize: int, archiveReplacementSize: int}}
      */
     private function gatherFiles(array $directories, OutputInterface $output): array
     {
@@ -224,6 +228,8 @@ final class RemoveOriginals extends Command
             'arwsFound' => 0,
             'arwsSkipped' => 0,
             'arwsNotArchived' => 0,
+            'avifReplacementSize' => 0,
+            'archiveReplacementSize' => 0,
         ];
 
         /** @var array<string, true> $processedDirs */
@@ -231,6 +237,9 @@ final class RemoveOriginals extends Command
 
         /** @var array<string, array<string, true>> $archivedFilesCache */
         $archivedFilesCache = [];
+
+        /** @var array<string, true> $archiveSizesCounted */
+        $archiveSizesCounted = [];
 
         foreach ($this->cliHelper->scanDirectories($directories, $output) as $file) {
             $filePath  = $file->getPathname();
@@ -266,7 +275,8 @@ final class RemoveOriginals extends Command
                     continue;
                 }
 
-                $jpegsToRemove[] = $filePath;
+                $jpegsToRemove[]               = $filePath;
+                $stats['avifReplacementSize'] += (int) filesize($avifPath);
                 $output->writeln(sprintf('  Will remove: %s', $this->cliHelper->link($filePath)));
                 continue;
             }
@@ -289,6 +299,12 @@ final class RemoveOriginals extends Command
             }
 
             $arwsToRemove[] = $filePath;
+
+            if (! isset($archiveSizesCounted[$dir])) {
+                $archiveSizesCounted[$dir]        = true;
+                $stats['archiveReplacementSize'] += $this->getArchiveSizeInDir($dir);
+            }
+
             $output->writeln(sprintf('  Will remove: %s', $this->cliHelper->link($filePath)));
         }
 
@@ -328,5 +344,24 @@ final class RemoveOriginals extends Command
         }
 
         return $archivedFiles;
+    }
+
+    private function getArchiveSizeInDir(string $dir): int
+    {
+        $archives = glob($dir . DIRECTORY_SEPARATOR . 'raws-*.tar.xz');
+        if ($archives === false || $archives === []) {
+            return 0;
+        }
+
+        $totalSize = 0;
+        foreach ($archives as $archive) {
+            if (preg_match('/raws-\d+\.tar\.xz$/', $archive) !== 1) {
+                continue;
+            }
+
+            $totalSize += (int) filesize($archive);
+        }
+
+        return $totalSize;
     }
 }
