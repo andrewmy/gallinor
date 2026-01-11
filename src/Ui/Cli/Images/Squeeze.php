@@ -27,7 +27,6 @@ use function array_any;
 use function array_filter;
 use function array_map;
 use function basename;
-use function ceil;
 use function count;
 use function dirname;
 use function escapeshellarg;
@@ -221,7 +220,7 @@ final class Squeeze extends Command
 
                 $arwDirSizeBefore = 0;
                 foreach ($arwFiles as $arwFile) {
-                    $arwDirSizeBefore += (int) ceil(filesize($arwFile) / 1024);
+                    $arwDirSizeBefore += filesize($arwFile);
                 }
 
                 $totalArwSizeBefore += $arwDirSizeBefore;
@@ -232,7 +231,7 @@ final class Squeeze extends Command
                     $totalArwsArchived += $fileCount;
 
                     $arwProgressBar->setMessage(
-                        sprintf('%s | %s', $dirName, $cliHelper->formatBytes($archiveSize * 1024)),
+                        sprintf('%s | %s', $dirName, $cliHelper->formatBytes($archiveSize)),
                         'status',
                     );
                 } catch (Throwable $exception) {
@@ -270,8 +269,8 @@ final class Squeeze extends Command
         (new ArwSummary(
             found: $totalArwsFound,
             archived: $totalArwsArchived,
-            sizeBefore: $totalArwSizeBefore * 1024,
-            sizeAfter: $totalArchiveSize * 1024,
+            sizeBefore: $totalArwSizeBefore,
+            sizeAfter: $totalArchiveSize,
         ))->print($output, $this->cliHelper);
 
         $output->writeln('');
@@ -386,7 +385,7 @@ final class Squeeze extends Command
         return array_any($files, static fn (string $file): bool => preg_match('/raws-\d+\.tar\.xz$/', $file) === 1);
     }
 
-    /** @param callable(int, float, int): void $statusCallback Called with (cqLevel, score, savedKb) during quality search */
+    /** @param callable(int, float, int): void $statusCallback Called with (cqLevel, score, saved) during quality search */
     private function processJpeg(ImageFile $file, OutputInterface $output, callable $statusCallback): ImageProcessingResult|null
     {
         $tmpAvif = $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '.avif';
@@ -459,7 +458,7 @@ final class Squeeze extends Command
     /**
      * @param list<string> $arwFiles
      *
-     * @return int Archive size in KB
+     * @return int Archive size in bytes
      */
     private function archiveArws(string $dir, array $arwFiles, OutputInterface $output): int
     {
@@ -545,7 +544,7 @@ final class Squeeze extends Command
                 'archive_path' => $archivePath,
             ]);
 
-            return (int) ceil(filesize($archivePath) / 1024);
+            return (int) filesize($archivePath);
         } finally {
             if (file_exists($listFile)) {
                 unlink($listFile);

@@ -24,7 +24,6 @@ use Throwable;
 
 use function array_reduce;
 use function basename;
-use function ceil;
 use function copy;
 use function count;
 use function exec;
@@ -113,7 +112,7 @@ final class Squeeze extends Command
 
         $totalCurrentSize   = array_reduce(
             $fileList,
-            static fn (int $carry, VideoFile $file) => $carry + $file->currentSizeKb,
+            static fn (int $carry, VideoFile $file) => $carry + $file->currentSize,
             0,
         );
         $totalProjectedSize = array_reduce(
@@ -124,9 +123,9 @@ final class Squeeze extends Command
 
         $output->writeln(sprintf(
             "\n\nProjection:\n  Current size: %s\n  Projected size: %s\n  Projected savings: %s\n  Skipped: %d",
-            $this->cliHelper->formatBytes($totalCurrentSize * 1024),
-            $this->cliHelper->formatBytes($totalProjectedSize * 1024),
-            $this->cliHelper->formatBytes(($totalCurrentSize - $totalProjectedSize) * 1024),
+            $this->cliHelper->formatBytes($totalCurrentSize),
+            $this->cliHelper->formatBytes($totalProjectedSize),
+            $this->cliHelper->formatBytes($totalCurrentSize - $totalProjectedSize),
             $totalSkippedFiles,
         ));
         $gatherTime = microtime(true);
@@ -155,10 +154,10 @@ final class Squeeze extends Command
             $progressBar->setMessage($fileName, 'status');
             $progressBar->display();
 
-            $statusCallback = static function (int $bitrate, float $vmafScore, int $savedKb) use ($progressBar, $fileName, &$totalSavings, $cliHelper): void {
-                $runningTotal = $totalSavings + $savedKb;
+            $statusCallback = static function (int $bitrate, float $vmafScore, int $saved) use ($progressBar, $fileName, &$totalSavings, $cliHelper): void {
+                $runningTotal = $totalSavings + $saved;
                 $progressBar->setMessage(
-                    sprintf('%s | %sk, VMAF=%.1f, saved %s (total: %s)', $fileName, $bitrate, $vmafScore, $cliHelper->formatBytes($savedKb * 1024), $cliHelper->formatBytes($runningTotal * 1024)),
+                    sprintf('%s | %sk, VMAF=%.1f, saved %s (total: %s)', $fileName, $bitrate, $vmafScore, $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)),
                     'status',
                 );
                 $progressBar->display();
@@ -169,10 +168,10 @@ final class Squeeze extends Command
                 $totalProcessedSize                  += $processedSize;
                 $totalQcTime                         += $qcTime;
 
-                $savings       = $file->currentSizeKb - $processedSize;
+                $savings       = $file->currentSize - $processedSize;
                 $totalSavings += $savings;
                 $progressBar->setMessage(
-                    sprintf('%s | VMAF=%.1f, saved %s (total: %s)', $fileName, $vmafScore, $cliHelper->formatBytes($savings * 1024), $cliHelper->formatBytes($totalSavings * 1024)),
+                    sprintf('%s | VMAF=%.1f, saved %s (total: %s)', $fileName, $vmafScore, $cliHelper->formatBytes($savings), $cliHelper->formatBytes($totalSavings)),
                     'status',
                 );
             } catch (Throwable $exception) {
@@ -195,8 +194,8 @@ final class Squeeze extends Command
 
         $output->writeln('');
         (new VideoSummary(
-            sizeBefore: $totalCurrentSize * 1024,
-            sizeAfter: $totalProcessedSize * 1024,
+            sizeBefore: $totalCurrentSize,
+            sizeAfter: $totalProcessedSize,
             processed: $fileCount,
             skipped: $totalSkippedFiles,
             errored: $totalErroredFiles,
@@ -282,9 +281,9 @@ final class Squeeze extends Command
                 $videoFile->height,
                 number_format((int) ($videoFile->bitRate / 1024), thousands_separator: ' '),
                 $videoFile->pixFmt,
-                $this->cliHelper->formatBytes($videoFile->currentSizeKb * 1024),
-                $this->cliHelper->formatBytes($sizeEstimate * 1024),
-                $this->cliHelper->formatBytes(($videoFile->currentSizeKb - $sizeEstimate) * 1024),
+                $this->cliHelper->formatBytes($videoFile->currentSize),
+                $this->cliHelper->formatBytes($sizeEstimate),
+                $this->cliHelper->formatBytes($videoFile->currentSize - $sizeEstimate),
             ));
         }
 
@@ -297,9 +296,9 @@ final class Squeeze extends Command
     }
 
     /**
-     * @param callable(int, float, int): void $statusCallback Called with (bitrate, vmafScore, savedKb)
+     * @param callable(int, float, int): void $statusCallback Called with (bitrate, vmafScore, saved)
      *
-     * @return array{int, float, float} [processedSizeKb, qcTime, vmafScore]
+     * @return array{int, float, float} [processedSize, qcTime, vmafScore]
      */
     private function processFile(
         VideoFile $file,
@@ -319,12 +318,12 @@ final class Squeeze extends Command
                 ));
             }
 
-            return [$file->currentSizeKb, 0.0, 100.0];
+            return [$file->currentSize, 0.0, 100.0];
         }
 
         $retryCount = 0;
         do {
-            [$tempFilePath, $processedSizeKb] = $this->encode($file, $output, $baseBitrate);
+            [$tempFilePath, $processedSize] = $this->encode($file, $output, $baseBitrate);
 
             $startTime = microtime(true);
             $vmafScore = $this->ffmpeg->vmafScore(
@@ -333,7 +332,7 @@ final class Squeeze extends Command
             );
             $qcTime   += microtime(true) - $startTime;
 
-            $statusCallback($baseBitrate, $vmafScore, $file->currentSizeKb - $processedSizeKb);
+            $statusCallback($baseBitrate, $vmafScore, $file->currentSize - $processedSize);
 
             if ($output->isVerbose()) {
                 $output->writeln(sprintf('VMAF score: %.2f (bitrate: %sk)', $vmafScore, $baseBitrate));
@@ -373,18 +372,18 @@ final class Squeeze extends Command
 
         $this->logger->info('Processed file', [
             'original_file' => $file->path,
-            'original_size_kb' => $file->currentSizeKb,
+            'original_size' => $file->currentSize,
             'processed_file' => $newFilePath,
-            'processed_size_kb' => $processedSizeKb,
+            'processed_size' => $processedSize,
             'base_bitrate_kbps' => $baseBitrate,
             'vmaf_score' => $vmafScore,
             'retry_count' => $retryCount,
         ]);
 
-        return [$processedSizeKb, $qcTime, $vmafScore];
+        return [$processedSize, $qcTime, $vmafScore];
     }
 
-    /** @return array{string, int} */
+    /** @return array{string, int} [tempFilePath, processedSize] */
     private function encode(
         VideoFile $file,
         OutputInterface $output,
@@ -417,15 +416,15 @@ final class Squeeze extends Command
             ));
         }
 
-        $processedSizeKb = (int) ceil(filesize($tempFilePath) / 1024);
+        $processedSize = (int) filesize($tempFilePath);
         if ($output->isVerbose()) {
             $output->writeln(sprintf(
                 'Encoded: %s (saved %s)',
-                $this->cliHelper->formatBytes($processedSizeKb * 1024),
-                $this->cliHelper->formatBytes(($file->currentSizeKb - $processedSizeKb) * 1024),
+                $this->cliHelper->formatBytes($processedSize),
+                $this->cliHelper->formatBytes($file->currentSize - $processedSize),
             ));
         }
 
-        return [$tempFilePath, $processedSizeKb];
+        return [$tempFilePath, $processedSize];
     }
 }

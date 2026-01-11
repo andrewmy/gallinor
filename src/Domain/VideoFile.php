@@ -24,7 +24,7 @@ final readonly class VideoFile
         public string $pixFmt,
         public string $codecName,
         public float $duration,
-        public int $currentSizeKb,
+        public int $currentSize,
         public string|null $colorSpace = null,
         public string|null $colorPrimaries = null,
         public string|null $colorTransfer = null,
@@ -62,6 +62,6 @@ final readonly class VideoFile
 
     public function sizeEstimate(int $bitrate): int
     {
-        return (int) ceil($bitrate * $this->duration / 8);
+        return (int) ceil($bitrate * $this->duration / 8 / 1024);
     }
 }

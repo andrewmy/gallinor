@@ -10,7 +10,6 @@ use Symfony\Component\Process\Process;
 
 use function array_merge;
 use function assert;
-use function ceil;
 use function escapeshellarg;
 use function file_get_contents;
 use function filesize;
@@ -156,7 +155,7 @@ final readonly class Ffmpeg
             pixFmt           : $stream['pix_fmt'],
             codecName        : $stream['codec_name'],
             duration         : (float) $stream['duration'],
-            currentSizeKb    : (int) ceil(filesize($filePath) / 1024),
+            currentSize      : (int) filesize($filePath),
             colorSpace       : $stream['color_space'] ?? null,
             colorPrimaries   : $stream['color_primaries'] ?? null,
             colorTransfer    : $stream['color_transfer'] ?? null,
