@@ -10,6 +10,7 @@ use App\Domain\FilesystemScanner;
 use App\Domain\Platform;
 use App\Domain\VideoEncoder;
 use App\Domain\VideoFile;
+use App\Domain\VideoFinder;
 use App\Ui\Cli\CliHelper;
 use App\Ui\Cli\Summary\Timing;
 use App\Ui\Cli\Summary\VideoSummary;
@@ -34,7 +35,6 @@ use function microtime;
 use function number_format;
 use function rename;
 use function sprintf;
-use function str_ends_with;
 use function sys_get_temp_dir;
 use function uniqid;
 use function unlink;
@@ -59,6 +59,8 @@ final class Squeeze extends Command
         parent::__construct();
     }
 
+    private VideoFinder $videoFinder;
+
     /** @param list<string> $directories */
     public function __invoke(
         OutputInterface $output,
@@ -73,8 +75,9 @@ final class Squeeze extends Command
 
         $startTime = microtime(true);
         try {
-            $this->platform = new Platform();
-            $this->ffmpeg   = new Ffmpeg($useCpu, $this->platform);
+            $this->platform   = new Platform();
+            $this->ffmpeg     = new Ffmpeg($useCpu, $this->platform);
+            $this->videoFinder = new VideoFinder($this->ffmpeg);
         } catch (Throwable $exception) {
             $output->writeln('<error>' . $exception->getMessage() . '</error>');
 
@@ -225,30 +228,17 @@ final class Squeeze extends Command
         $fileList          = [];
         $totalSkippedFiles = 0;
 
-        foreach ($this->scanner->scanDirectories($directories) as $file) {
-            if ($file->getExtension() !== 'mp4') {
-                continue;
-            }
-
-            $filePath = $file->getPathname();
-            if (
-                str_ends_with($filePath, '.' . VideoFile::OPTIMAL_SUFFIX . '.mp4')
-                || str_ends_with($filePath, '.tmp.mp4')
-            ) {
-                $output->writeln(sprintf('Skipping auxiliary file: %s', $this->cliHelper->link($filePath)));
+        $files = $this->scanner->scanDirectories($directories);
+        $videos = $this->videoFinder->findVideos(
+            $files,
+            function (string $filePath, string $errorMessage) use ($output, &$totalSkippedFiles): void {
+                $output->writeln(sprintf('<error>%s</error>', $errorMessage));
                 $totalSkippedFiles++;
-                continue;
-            }
+            },
+        );
 
-            $output->writeln(sprintf("\nFile: %s", $this->cliHelper->link($filePath)));
-
-            try {
-                $videoFile = $this->ffmpeg->videoFileFromPath($filePath);
-            } catch (Throwable $exception) {
-                $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
-                $totalSkippedFiles++;
-                continue;
-            }
+        foreach ($videos as $videoFile) {
+            $output->writeln(sprintf("\nFile: %s", $this->cliHelper->link($videoFile->path)));
 
             try {
                 if ($this->isBitrateAcceptable($videoFile, $videoFile->baseBitrate())) {
@@ -307,7 +297,6 @@ final class Squeeze extends Command
     ): array {
         $baseBitrate = $file->baseBitrate();
         $qcTime      = 0.0;
-        $vmafScore   = 0.0;
 
         if ($this->isBitrateAcceptable($file, $baseBitrate)) {
             if ($output->isVerbose()) {
