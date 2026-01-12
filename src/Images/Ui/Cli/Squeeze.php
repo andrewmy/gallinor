@@ -12,11 +12,11 @@ use App\Images\Domain\ImageFile;
 use App\Images\Domain\ImageFileCollector;
 use App\Images\Domain\ImageProcessingResult;
 use App\Images\Domain\ImageTools;
+use App\Images\Domain\RawArchiver;
 use App\Shared\Domain\Platform;
 use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
 use Psr\Log\LoggerInterface;
-use RuntimeException;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -24,23 +24,12 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
-use function array_map;
 use function basename;
 use function count;
-use function escapeshellarg;
-use function exec;
-use function file_exists;
-use function file_put_contents;
 use function filesize;
-use function implode;
 use function microtime;
-use function rename;
 use function sprintf;
-use function sys_get_temp_dir;
-use function uniqid;
-use function unlink;
 
-use const DIRECTORY_SEPARATOR;
 use const PHP_EOL;
 
 #[AsCommand(name: 'images:squeeze', description: 'Re-encode JPEGs to optimal AVIFs, XZ the ARWs')]
@@ -50,11 +39,7 @@ final class Squeeze extends Command
     private ImageTools $imageTools;
     private CqLevelCalculator $cqCalculator;
     private Exiftool $exiftool;
-    private string $runId;
-    private string $tmpDir;
-
-    /** @var array<string, string> Tool paths for xz and tar (archiving) */
-    private array $toolPaths = [];
+    private RawArchiver $rawArchiver;
 
     public function __construct(
         private readonly LoggerInterface $logger,
@@ -80,8 +65,6 @@ final class Squeeze extends Command
 
         try {
             $this->platform     = new Platform();
-            $this->runId        = uniqid('gallinor-', true);
-            $this->tmpDir       = sys_get_temp_dir();
             $this->imageTools   = new ImageTools($this->platform);
             $this->cqCalculator = new CqLevelCalculator($this->imageTools);
 
@@ -89,8 +72,9 @@ final class Squeeze extends Command
             $output->writeln(sprintf('<info>Found avifdec: %s</info>', $this->imageTools->avifdecPath));
             $output->writeln(sprintf('<info>Found ssimulacra2: %s</info>', $this->imageTools->ssimulacra2Path));
 
-            $this->validateArchiveTools($output);
-            $this->exiftool = new Exiftool($this->platform);
+            $xzPath            = $this->validateArchiveTools($output);
+            $this->rawArchiver = new RawArchiver($this->platform, $xzPath, $this->logger);
+            $this->exiftool    = new Exiftool($this->platform);
             $output->writeln(sprintf('<info>Found exiftool: %s</info>', $this->exiftool->path()));
         } catch (Throwable $exception) {
             $output->writeln('<error>' . $exception->getMessage() . '</error>');
@@ -224,7 +208,7 @@ final class Squeeze extends Command
                 $totalArwSizeBefore += $arwDirSizeBefore;
 
                 try {
-                    $archiveSize        = $this->archiveArws($dir, $arwFiles);
+                    $archiveSize        = $this->rawArchiver->archive($dir, $arwFiles);
                     $totalArchiveSize  += $archiveSize;
                     $totalArwsArchived += $fileCount;
 
@@ -248,8 +232,6 @@ final class Squeeze extends Command
         }
 
         $totalArchiveTime = microtime(true) - $archiveStartTime;
-
-        $this->cleanup();
 
         $endTime = microtime(true);
 
@@ -282,14 +264,24 @@ final class Squeeze extends Command
         return self::SUCCESS;
     }
 
-    private function validateArchiveTools(OutputInterface $output): void
+    /** @return string Path to xz tool */
+    private function validateArchiveTools(OutputInterface $output): string
     {
         $requiredTools = ['xz', 'tar'];
+        $xzPath        = '';
 
         foreach ($requiredTools as $tool) {
-            $this->toolPaths[$tool] = $this->platform->findTool($tool);
-            $output->writeln(sprintf('<info>Found %s: %s</info>', $tool, $this->toolPaths[$tool]));
+            $path = $this->platform->findTool($tool);
+            $output->writeln(sprintf('<info>Found %s: %s</info>', $tool, $path));
+
+            if ($tool !== 'xz') {
+                continue;
+            }
+
+            $xzPath = $path;
         }
+
+        return $xzPath;
     }
 
     /** @param callable(int, float, int): void $statusCallback Called with (cqLevel, score, saved) during quality search */
@@ -306,118 +298,5 @@ final class Squeeze extends Command
         }
 
         return $result;
-    }
-
-    /**
-     * @param list<string> $arwFiles
-     *
-     * @return int Archive size in bytes
-     */
-    private function archiveArws(string $dir, array $arwFiles): int
-    {
-        $count       = count($arwFiles);
-        $archiveName = sprintf('raws-%d.tar.xz', $count);
-        $archivePath = $dir . DIRECTORY_SEPARATOR . $archiveName;
-        $listFile    = $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '-arwlist.txt';
-
-        $fileNames = array_map(basename(...), $arwFiles);
-        file_put_contents($listFile, implode("\n", $fileNames));
-
-        try {
-            if ($this->platform->isWindows()) {
-                // two-step process
-                $tarPath = $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '.tar';
-
-                $tarCmd = sprintf(
-                    'tar -cf %s -C %s -T %s 2>&1',
-                    escapeshellarg($tarPath),
-                    escapeshellarg($dir),
-                    escapeshellarg($listFile),
-                );
-
-                $tarOutput = [];
-                exec($tarCmd, $tarOutput, $tarExitCode);
-
-                if ($tarExitCode !== 0) {
-                    throw new RuntimeException(sprintf(
-                        "tar failed with exit code %d:\n%s",
-                        $tarExitCode,
-                        implode("\n", $tarOutput),
-                    ));
-                }
-
-                $xzCmd = sprintf('%s -9 -T0 %s 2>&1', escapeshellarg($this->toolPaths['xz']), escapeshellarg($tarPath));
-
-                $xzOutput = [];
-                exec($xzCmd, $xzOutput, $xzExitCode);
-
-                if ($xzExitCode !== 0) {
-                    if (file_exists($tarPath)) {
-                        unlink($tarPath);
-                    }
-
-                    throw new RuntimeException(sprintf(
-                        "xz failed with exit code %d:\n%s",
-                        $xzExitCode,
-                        implode("\n", $xzOutput),
-                    ));
-                }
-
-                $compressedTar = $tarPath . '.xz';
-                rename($compressedTar, $archivePath);
-            } else {
-                // yay pipe
-                $cmd = sprintf(
-                    'tar -cf - -C %s -T %s | %s -9 -T0 > %s 2>&1',
-                    escapeshellarg($dir),
-                    escapeshellarg($listFile),
-                    escapeshellarg($this->toolPaths['xz']),
-                    escapeshellarg($archivePath),
-                );
-
-                $cmdOutput = [];
-                exec($cmd, $cmdOutput, $cmdExitCode);
-
-                if ($cmdExitCode !== 0) {
-                    if (file_exists($archivePath)) {
-                        unlink($archivePath);
-                    }
-
-                    throw new RuntimeException(sprintf(
-                        "Archive creation failed with exit code %d:\n%s",
-                        $cmdExitCode,
-                        implode("\n", $cmdOutput),
-                    ));
-                }
-            }
-
-            $this->logger->info('Archived ARWs', [
-                'directory' => $dir,
-                'file_count' => $count,
-                'archive_path' => $archivePath,
-            ]);
-
-            return (int) filesize($archivePath);
-        } finally {
-            if (file_exists($listFile)) {
-                unlink($listFile);
-            }
-        }
-    }
-
-    private function cleanup(): void
-    {
-        $filesToClean = [
-            $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '.tar',
-            $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '-arwlist.txt',
-        ];
-
-        foreach ($filesToClean as $file) {
-            if (! file_exists($file)) {
-                continue;
-            }
-
-            unlink($file);
-        }
     }
 }

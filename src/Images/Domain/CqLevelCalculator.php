@@ -16,7 +16,7 @@ use function unlink;
 
 use const DIRECTORY_SEPARATOR;
 
-final class CqLevelCalculator
+final readonly class CqLevelCalculator
 {
     private const float MIN_SSIM_SCORE = 85.0;
     private const int CQ_LEVEL_START   = 20;
@@ -24,7 +24,7 @@ final class CqLevelCalculator
     private const int CQ_LEVEL_STEP    = 2;
 
     public function __construct(
-        private readonly ImageTools $imageTools,
+        private ImageTools $imageTools,
     ) {
     }
 
