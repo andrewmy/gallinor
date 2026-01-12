@@ -9,7 +9,7 @@ use Symfony\Component\Process\Process;
 use function explode;
 use function trim;
 
-class Exiftool
+final readonly class Exiftool
 {
     private string $exiftoolPath;
 

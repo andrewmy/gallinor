@@ -90,17 +90,17 @@ final class Rename extends Command
 
         if ($dryRun) {
             $output->writeln('');
-            (new VideoSummary(
+            new VideoSummary(
                 sizeBefore: $totalOldSize,
                 sizeAfter: $totalNewSize,
                 found: count($filesToRename),
-            ))->print($output, $this->cliHelper);
+            )->print($output, $this->cliHelper);
 
             $output->writeln('');
-            (new Timing(
+            new Timing(
                 total: $gatherTime - $startTime,
                 gather: $gatherTime - $startTime,
-            ))->print($output);
+            )->print($output);
 
             return self::SUCCESS;
         }
@@ -121,20 +121,20 @@ final class Rename extends Command
         $endTime = microtime(true);
 
         $output->writeln('');
-        (new VideoSummary(
+        new VideoSummary(
             sizeBefore: $totalOldSize,
             sizeAfter: $totalNewSize,
             found: count($filesToRename),
             renamed: $renamed,
             errored: $errored,
-        ))->print($output, $this->cliHelper);
+        )->print($output, $this->cliHelper);
 
         $output->writeln('');
-        (new Timing(
+        new Timing(
             total: $endTime - $startTime,
             gather: $gatherTime - $startTime,
             rename: $endTime - $gatherTime,
-        ))->print($output);
+        )->print($output);
 
         return self::SUCCESS;
     }

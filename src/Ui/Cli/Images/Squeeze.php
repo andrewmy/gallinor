@@ -167,28 +167,33 @@ final class Squeeze extends Command
 
                 if ($result === null) {
                     $totalJpegsSkipped++;
-                    $progressBar->setMessage(sprintf('%s | <comment>Skipped</comment> (total: %s)', $fileName, $cliHelper->formatBytes($totalSavings)), 'status');
-                } else {
-                    $totalJpegSizeAfter += $result->avifSize;
-                    $totalQcTime        += $result->qcTime;
-                    $totalJpegsProcessed++;
-
-                    $savings       = $result->savings($imageFile->size);
-                    $totalSavings += $savings;
-                    $progressBar->setMessage(
-                        sprintf('%s | cq=%d, score=%.1f, saved %s (total: %s)', $fileName, $result->cqLevel, $result->qualityScore, $cliHelper->formatBytes($savings), $cliHelper->formatBytes($totalSavings)),
-                        'status',
-                    );
-
-                    $this->logger->info('Processed JPEG', [
-                        'original_file' => $imageFile->path,
-                        'original_size' => $imageFile->size,
-                        'avif_file' => $imageFile->optimizedPath(),
-                        'avif_size' => $result->avifSize,
-                        'cq_level' => $result->cqLevel,
-                        'quality_score' => $result->qualityScore,
-                    ]);
+                    $progressBar->clear();
+                    $output->write('<comment>Skipped: </comment>');
+                    $output->writeln($this->cliHelper->link($imageFile->path));
+                    $progressBar->display();
+                    $progressBar->advance();
+                    continue;
                 }
+
+                $totalJpegSizeAfter += $result->avifSize;
+                $totalQcTime        += $result->qcTime;
+                $totalJpegsProcessed++;
+
+                $savings       = $result->savings($imageFile->size);
+                $totalSavings += $savings;
+                $progressBar->setMessage(
+                    sprintf('%s | cq=%d, score=%.1f, saved %s (total: %s)', $fileName, $result->cqLevel, $result->qualityScore, $cliHelper->formatBytes($savings), $cliHelper->formatBytes($totalSavings)),
+                    'status',
+                );
+
+                $this->logger->info('Processed JPEG', [
+                    'original_file' => $imageFile->path,
+                    'original_size' => $imageFile->size,
+                    'avif_file' => $imageFile->optimizedPath(),
+                    'avif_size' => $result->avifSize,
+                    'cq_level' => $result->cqLevel,
+                    'quality_score' => $result->qualityScore,
+                ]);
             } catch (Throwable $exception) {
                 $progressBar->setMessage(sprintf('%s | <error>Error</error>', $fileName), 'status');
                 $progressBar->clear();
@@ -256,31 +261,31 @@ final class Squeeze extends Command
         $endTime = microtime(true);
 
         $output->writeln('');
-        (new JpegSummary(
+        new JpegSummary(
             found: $totalJpegsFound,
             processed: $totalJpegsProcessed,
             skipped: $totalJpegsSkipped,
             errored: $totalJpegsErrored,
             sizeBefore: $totalJpegSizeBefore,
             sizeAfter: $totalJpegSizeAfter,
-        ))->print($output, $this->cliHelper);
+        )->print($output, $this->cliHelper);
 
         $output->writeln('');
-        (new ArwSummary(
+        new ArwSummary(
             found: $totalArwsFound,
             archived: $totalArwsArchived,
             sizeBefore: $totalArwSizeBefore,
             sizeAfter: $totalArchiveSize,
-        ))->print($output, $this->cliHelper);
+        )->print($output, $this->cliHelper);
 
         $output->writeln('');
-        (new Timing(
+        new Timing(
             total: $endTime - $startTime,
             init: $initTime - $startTime,
             gather: $gatherTime - $initTime,
             qc: $totalQcTime,
             archiving: $totalArchiveTime,
-        ))->print($output);
+        )->print($output);
 
         return self::SUCCESS;
     }
@@ -467,7 +472,7 @@ final class Squeeze extends Command
         $archivePath = $dir . DIRECTORY_SEPARATOR . $archiveName;
         $listFile    = $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '-arwlist.txt';
 
-        $fileNames = array_map(static fn (string $path) => basename($path), $arwFiles);
+        $fileNames = array_map(basename(...), $arwFiles);
         file_put_contents($listFile, implode("\n", $fileNames));
 
         try {

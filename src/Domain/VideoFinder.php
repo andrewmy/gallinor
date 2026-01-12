@@ -14,16 +14,18 @@ final readonly class VideoFinder
 {
     public function __construct(
         private Ffmpeg $ffmpeg,
-    ) {}
+    ) {
+    }
 
     /**
      * Find video files from directory scan
      *
-     * @param Generator<SplFileInfo> $files
+     * @param Generator<SplFileInfo>              $files
      * @param callable(string, string): void|null $errorCallback Called with (filePath, errorMessage) for invalid videos
+     *
      * @return Generator<VideoFile>
      */
-    public function findVideos(Generator $files, ?callable $errorCallback = null): Generator
+    public function findVideos(Generator $files, callable|null $errorCallback = null): Generator
     {
         foreach ($files as $file) {
             if (! $this->isVideoFile($file)) {

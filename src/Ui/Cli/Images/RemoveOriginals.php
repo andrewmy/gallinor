@@ -95,9 +95,11 @@ final class RemoveOriginals extends Command
             ));
         }
 
-        $jpegSpaceToFree = 0;
+        $jpegSpaceToFree     = 0;
+        $avifReplacementSize = 0;
         foreach ($jpegsToRemove as $imageFile) {
-            $jpegSpaceToFree += $imageFile->size;
+            $jpegSpaceToFree     += $imageFile->size;
+            $avifReplacementSize += (int) filesize($imageFile->optimizedPath());
         }
 
         $arwSpaceToFree = 0;

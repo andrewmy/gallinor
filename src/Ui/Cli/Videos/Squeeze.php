@@ -75,8 +75,8 @@ final class Squeeze extends Command
 
         $startTime = microtime(true);
         try {
-            $this->platform   = new Platform();
-            $this->ffmpeg     = new Ffmpeg($useCpu, $this->platform);
+            $this->platform    = new Platform();
+            $this->ffmpeg      = new Ffmpeg($useCpu, $this->platform);
             $this->videoFinder = new VideoFinder($this->ffmpeg);
         } catch (Throwable $exception) {
             $output->writeln('<error>' . $exception->getMessage() . '</error>');
@@ -136,11 +136,11 @@ final class Squeeze extends Command
 
         if ($dryRun) {
             $output->writeln('');
-            (new Timing(
+            new Timing(
                 total: $gatherTime - $startTime,
                 init: $initTime - $startTime,
                 gather: $gatherTime - $initTime,
-            ))->print($output);
+            )->print($output);
 
             return self::SUCCESS;
         }
@@ -167,9 +167,19 @@ final class Squeeze extends Command
             };
 
             try {
-                [$processedSize, $qcTime, $vmafScore] = $this->processFile($file, $output, $statusCallback);
-                $totalProcessedSize                  += $processedSize;
-                $totalQcTime                         += $qcTime;
+                [$processedSize, $qcTime, $vmafScore, $skipped] = $this->processFile($file, $output, $statusCallback);
+
+                if ($skipped) {
+                    $progressBar->clear();
+                    $output->write('<comment>Skipped (bitrate acceptable): </comment>');
+                    $output->writeln($this->cliHelper->link($file->path));
+                    $progressBar->display();
+                    $progressBar->advance();
+                    continue;
+                }
+
+                $totalProcessedSize += $processedSize;
+                $totalQcTime        += $qcTime;
 
                 $savings       = $file->currentSize - $processedSize;
                 $totalSavings += $savings;
@@ -196,22 +206,22 @@ final class Squeeze extends Command
         $processTime = microtime(true);
 
         $output->writeln('');
-        (new VideoSummary(
+        new VideoSummary(
             sizeBefore: $totalCurrentSize,
             sizeAfter: $totalProcessedSize,
             processed: $fileCount,
             skipped: $totalSkippedFiles,
             errored: $totalErroredFiles,
-        ))->print($output, $this->cliHelper);
+        )->print($output, $this->cliHelper);
 
         $output->writeln('');
-        (new Timing(
+        new Timing(
             total: $processTime - $startTime,
             init: $initTime - $startTime,
             gather: $gatherTime - $initTime,
             process: $processTime - $gatherTime,
             qc: $totalQcTime,
-        ))->print($output);
+        )->print($output);
 
         return self::SUCCESS;
     }
@@ -228,10 +238,10 @@ final class Squeeze extends Command
         $fileList          = [];
         $totalSkippedFiles = 0;
 
-        $files = $this->scanner->scanDirectories($directories);
+        $files  = $this->scanner->scanDirectories($directories);
         $videos = $this->videoFinder->findVideos(
             $files,
-            function (string $filePath, string $errorMessage) use ($output, &$totalSkippedFiles): void {
+            static function (string $filePath, string $errorMessage) use ($output, &$totalSkippedFiles): void {
                 $output->writeln(sprintf('<error>%s</error>', $errorMessage));
                 $totalSkippedFiles++;
             },
@@ -288,7 +298,7 @@ final class Squeeze extends Command
     /**
      * @param callable(int, float, int): void $statusCallback Called with (bitrate, vmafScore, saved)
      *
-     * @return array{int, float, float} [processedSize, qcTime, vmafScore]
+     * @return array{int, float, float, bool} [processedSize, qcTime, vmafScore, skipped]
      */
     private function processFile(
         VideoFile $file,
@@ -299,15 +309,7 @@ final class Squeeze extends Command
         $qcTime      = 0.0;
 
         if ($this->isBitrateAcceptable($file, $baseBitrate)) {
-            if ($output->isVerbose()) {
-                $output->writeln(sprintf(
-                    '<info>File bitrate %s Kbps is acceptable with base bitrate %s Kbps, skipping.</info>',
-                    (int) ($file->bitRate / 1024),
-                    $baseBitrate,
-                ));
-            }
-
-            return [$file->currentSize, 0.0, 100.0];
+            return [$file->currentSize, 0.0, 100.0, true];
         }
 
         $retryCount = 0;
@@ -369,7 +371,7 @@ final class Squeeze extends Command
             'retry_count' => $retryCount,
         ]);
 
-        return [$processedSize, $qcTime, $vmafScore];
+        return [$processedSize, $qcTime, $vmafScore, false];
     }
 
     /** @return array{string, int} [tempFilePath, processedSize] */
