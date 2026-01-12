@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Ui\Cli\Images;
 
+use App\Domain\AvifFilter;
 use App\Domain\Exiftool;
 use App\Domain\FilesystemScanner;
-use App\Domain\ImageFile;
+use App\Domain\ImageFileCollector;
 use App\Domain\Platform;
 use App\Ui\Cli\CliHelper;
 use App\Ui\Cli\Summary\ArwSummary;
@@ -51,6 +52,7 @@ final class RemoveOriginals extends Command
         private readonly LoggerInterface $logger,
         private readonly CliHelper $cliHelper,
         private readonly FilesystemScanner $scanner,
+        private readonly ImageFileCollector $collector,
     ) {
         parent::__construct();
     }
@@ -82,7 +84,13 @@ final class RemoveOriginals extends Command
         $output->writeln(sprintf('<info>Init time: %.3fs</info>', $initTime - $startTime));
         $output->writeln('');
 
-        [$jpegsToRemove, $arwsToRemove, $arwWarnings, $stats] = $this->gatherFiles($directories, $output);
+        $jpegCollection = $this->collector->collectFromDirectories(
+            $directories,
+            $output,
+            AvifFilter::OnlyWith,
+        );
+
+        [$arwsToRemove, $arwWarnings, $arwStats] = $this->verifyArchivedArws($directories, $output);
 
         $gatherTime = microtime(true);
         $output->writeln(sprintf('<info>Gather time: %.3fs</info>', $gatherTime - $initTime));
@@ -97,7 +105,7 @@ final class RemoveOriginals extends Command
 
         $jpegSpaceToFree     = 0;
         $avifReplacementSize = 0;
-        foreach ($jpegsToRemove as $imageFile) {
+        foreach ($jpegCollection->jpegs as $imageFile) {
             $jpegSpaceToFree     += $imageFile->size;
             $avifReplacementSize += (int) filesize($imageFile->optimizedPath());
         }
@@ -109,28 +117,28 @@ final class RemoveOriginals extends Command
 
         if ($dryRun) {
             $output->writeln('');
-            (new JpegSummary(
-                found: $stats['jpegsFound'],
-                skipped: $stats['jpegsSkipped'],
+            new JpegSummary(
+                found: $jpegCollection->stats->jpegsFound,
+                skipped: $jpegCollection->stats->jpegsSkipped,
                 removedSize: $jpegSpaceToFree,
-                replacementSize: $stats['avifReplacementSize'],
-            ))->print($output, $this->cliHelper);
+                replacementSize: $avifReplacementSize,
+            )->print($output, $this->cliHelper);
 
             $output->writeln('');
-            (new ArwSummary(
-                found: $stats['arwsFound'],
-                skipped: $stats['arwsSkipped'],
-                notArchived: $stats['arwsNotArchived'],
+            new ArwSummary(
+                found: $arwStats['arwsFound'],
+                skipped: $arwStats['arwsSkipped'],
+                notArchived: $arwStats['arwsNotArchived'],
                 removedSize: $arwSpaceToFree,
-                replacementSize: $stats['archiveReplacementSize'],
-            ))->print($output, $this->cliHelper);
+                replacementSize: $arwStats['archiveReplacementSize'],
+            )->print($output, $this->cliHelper);
 
             $output->writeln('');
-            (new Timing(
+            new Timing(
                 total: $gatherTime - $startTime,
                 init: $initTime - $startTime,
                 gather: $gatherTime - $initTime,
-            ))->print($output);
+            )->print($output);
 
             return self::SUCCESS;
         }
@@ -139,7 +147,7 @@ final class RemoveOriginals extends Command
         $jpegSpaceFreed = 0;
         $jpegsErrored   = 0;
 
-        foreach ($jpegsToRemove as $imageFile) {
+        foreach ($jpegCollection->jpegs as $imageFile) {
             try {
                 $size = $imageFile->size;
                 unlink($imageFile->path);
@@ -173,34 +181,40 @@ final class RemoveOriginals extends Command
 
         $endTime = microtime(true);
 
+        // actual removal summary
+        $avifReplacementSize = 0;
+        foreach ($jpegCollection->jpegs as $imageFile) {
+            $avifReplacementSize += (int) filesize($imageFile->optimizedPath());
+        }
+
         $output->writeln('');
-        (new JpegSummary(
-            found: $stats['jpegsFound'],
-            skipped: $stats['jpegsSkipped'],
+        new JpegSummary(
+            found: $jpegCollection->stats->jpegsFound,
+            skipped: $jpegCollection->stats->jpegsSkipped,
             removed: $jpegsRemoved,
             errored: $jpegsErrored,
             removedSize: $jpegSpaceFreed,
-            replacementSize: $stats['avifReplacementSize'],
-        ))->print($output, $this->cliHelper);
+            replacementSize: $avifReplacementSize,
+        )->print($output, $this->cliHelper);
 
         $output->writeln('');
-        (new ArwSummary(
-            found: $stats['arwsFound'],
-            skipped: $stats['arwsSkipped'],
-            notArchived: $stats['arwsNotArchived'],
+        new ArwSummary(
+            found: $arwStats['arwsFound'],
+            skipped: $arwStats['arwsSkipped'],
+            notArchived: $arwStats['arwsNotArchived'],
             removed: $arwsRemoved,
             errored: $arwsErrored,
             removedSize: $arwSpaceFreed,
-            replacementSize: $stats['archiveReplacementSize'],
-        ))->print($output, $this->cliHelper);
+            replacementSize: $arwStats['archiveReplacementSize'],
+        )->print($output, $this->cliHelper);
 
         $output->writeln('');
-        (new Timing(
+        new Timing(
             total: $endTime - $startTime,
             init: $initTime - $startTime,
             gather: $gatherTime - $initTime,
             remove: $endTime - $gatherTime,
-        ))->print($output);
+        )->print($output);
 
         return self::SUCCESS;
     }
@@ -218,26 +232,17 @@ final class RemoveOriginals extends Command
     /**
      * @param list<string> $directories
      *
-     * @return array{list<ImageFile>, list<string>, array<string, list<string>>, array{jpegsFound: int, jpegsSkipped: int, arwsFound: int, arwsSkipped: int, arwsNotArchived: int, avifReplacementSize: int, archiveReplacementSize: int}}
+     * @return array{list<string>, array<string, list<string>>, array{arwsFound: int, arwsSkipped: int, arwsNotArchived: int, archiveReplacementSize: int}}
      */
-    private function gatherFiles(array $directories, OutputInterface $output): array
+    private function verifyArchivedArws(array $directories, OutputInterface $output): array
     {
-        $jpegsToRemove = [];
-        $arwsToRemove  = [];
-        $arwWarnings   = [];
-        $skipSet       = [];
-        $stats         = [
-            'jpegsFound' => 0,
-            'jpegsSkipped' => 0,
+        $arwsToRemove = [];
+        $arwWarnings  = [];
+        $stats        = [
             'arwsFound' => 0,
-            'arwsSkipped' => 0,
             'arwsNotArchived' => 0,
-            'avifReplacementSize' => 0,
             'archiveReplacementSize' => 0,
         ];
-
-        /** @var array<string, true> $processedDirs */
-        $processedDirs = [];
 
         /** @var array<string, array<string, true>> $archivedFilesCache */
         $archivedFilesCache = [];
@@ -250,39 +255,7 @@ final class RemoveOriginals extends Command
             $extension = strtolower($file->getExtension());
             $dir       = dirname($filePath);
 
-            if (! isset($processedDirs[$dir])) {
-                $processedDirs[$dir] = true;
-                $found               = $this->exiftool->findPortraitAndLivePhotos($dir);
-                if ($found !== []) {
-                    $output->writeln(sprintf('  Found %d Portrait/Live Photos in: %s', count($found), $dir));
-                    $skipSet += $found;
-                }
-            }
-
-            if (! in_array($extension, ['jpg', 'jpeg', 'arw'], true)) {
-                continue;
-            }
-
-            if (in_array($extension, ['jpg', 'jpeg'], true)) {
-                $stats['jpegsFound']++;
-
-                if (isset($skipSet[$filePath])) {
-                    $output->writeln(sprintf('  Skipping (Portrait/Live): %s', $this->cliHelper->link($filePath)));
-                    $stats['jpegsSkipped']++;
-                    continue;
-                }
-
-                $imageFile = new ImageFile($filePath, $file->getSize());
-
-                if (! $imageFile->hasOptimized()) {
-                    $output->writeln(sprintf('  Skipping (no AVIF): %s', $this->cliHelper->link($filePath)));
-                    $stats['jpegsSkipped']++;
-                    continue;
-                }
-
-                $jpegsToRemove[]               = $imageFile;
-                $stats['avifReplacementSize'] += (int) filesize($imageFile->optimizedPath());
-                $output->writeln(sprintf('  Will remove: %s', $this->cliHelper->link($filePath)));
+            if ($extension !== 'arw') {
                 continue;
             }
 
@@ -313,7 +286,10 @@ final class RemoveOriginals extends Command
             $output->writeln(sprintf('  Will remove: %s', $this->cliHelper->link($filePath)));
         }
 
-        return [$jpegsToRemove, $arwsToRemove, $arwWarnings, $stats];
+        // Count ARWs in directories with archives as "skipped" (they're archived, not removed individually)
+        $stats['arwsSkipped'] = count($arwsToRemove);
+
+        return [$arwsToRemove, $arwWarnings, $stats];
     }
 
     /** @return array<string, true> */

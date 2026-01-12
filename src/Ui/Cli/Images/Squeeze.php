@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Ui\Cli\Images;
 
+use App\Domain\AvifFilter;
 use App\Domain\Exiftool;
-use App\Domain\FilesystemScanner;
 use App\Domain\ImageFile;
+use App\Domain\ImageFileCollector;
 use App\Domain\ImageProcessingResult;
 use App\Domain\ImageTools;
 use App\Domain\Platform;
@@ -23,25 +24,18 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
-use function array_any;
-use function array_filter;
 use function array_map;
 use function basename;
 use function count;
-use function dirname;
 use function escapeshellarg;
 use function exec;
 use function file_exists;
 use function file_put_contents;
 use function filesize;
-use function glob;
 use function implode;
-use function in_array;
 use function microtime;
-use function preg_match;
 use function rename;
 use function sprintf;
-use function strtolower;
 use function sys_get_temp_dir;
 use function uniqid;
 use function unlink;
@@ -69,7 +63,7 @@ final class Squeeze extends Command
     public function __construct(
         private readonly LoggerInterface $logger,
         private readonly CliHelper $cliHelper,
-        private readonly FilesystemScanner $scanner,
+        private readonly ImageFileCollector $collector,
     ) {
         parent::__construct();
     }
@@ -111,6 +105,7 @@ final class Squeeze extends Command
         $output->writeln('');
 
         $totalJpegsProcessed = 0;
+        $totalJpegsSkipped   = 0;
         $totalJpegsErrored   = 0;
         $totalJpegSizeBefore = 0;
         $totalJpegSizeAfter  = 0;
@@ -119,11 +114,11 @@ final class Squeeze extends Command
         $totalArchiveSize    = 0;
         $totalQcTime         = 0.0;
 
-        [$jpegList, $arwsByDir, $gatherStats] = $this->gatherFiles($directories, $output);
-
-        $totalJpegsFound   = $gatherStats['jpegsFound'];
-        $totalJpegsSkipped = $gatherStats['jpegsSkipped'];
-        $totalArwsFound    = $gatherStats['arwsFound'];
+        $collection = $this->collector->collectFromDirectories(
+            $directories,
+            $output,
+            AvifFilter::OnlyWithout,
+        );
 
         $gatherTime = microtime(true);
         $output->writeln(sprintf('<info>Gather time: %.3fs</info>', $gatherTime - $initTime));
@@ -131,14 +126,14 @@ final class Squeeze extends Command
         if ($dryRun) {
             $output->writeln(sprintf(
                 "\n<info>Dry run complete. Found %d JPEGs to process, %d ARW directories to archive.</info>",
-                count($jpegList),
-                count($arwsByDir),
+                count($collection->jpegs),
+                count($collection->arwsByDir),
             ));
 
             return self::SUCCESS;
         }
 
-        $jpegCount   = count($jpegList);
+        $jpegCount   = count($collection->jpegs);
         $progressBar = $this->cliHelper->createProgressBar($output, $jpegCount, 'JPEGs');
         $progressBar->start();
 
@@ -146,7 +141,7 @@ final class Squeeze extends Command
 
         $cliHelper = $this->cliHelper;
 
-        foreach ($jpegList as $imageFile) {
+        foreach ($collection->jpegs as $imageFile) {
             $fileName = $imageFile->filename();
             $progressBar->setMessage($fileName, 'status');
             $progressBar->display();
@@ -211,13 +206,13 @@ final class Squeeze extends Command
         $output->writeln('');
 
         $archiveStartTime = microtime(true);
-        $arwDirCount      = count($arwsByDir);
+        $arwDirCount      = count($collection->arwsByDir);
 
         if ($arwDirCount > 0) {
             $arwProgressBar = $this->cliHelper->createProgressBar($output, $arwDirCount, 'ARW dirs');
             $arwProgressBar->start();
 
-            foreach ($arwsByDir as $dir => $arwFiles) {
+            foreach ($collection->arwsByDir as $dir => $arwFiles) {
                 $dirName   = basename($dir);
                 $fileCount = count($arwFiles);
                 $arwProgressBar->setMessage(sprintf('%s (%d files)', $dirName, $fileCount), 'status');
@@ -262,9 +257,9 @@ final class Squeeze extends Command
 
         $output->writeln('');
         new JpegSummary(
-            found: $totalJpegsFound,
+            found: $collection->stats->jpegsFound,
             processed: $totalJpegsProcessed,
-            skipped: $totalJpegsSkipped,
+            skipped: $collection->stats->jpegsSkipped + $totalJpegsSkipped,
             errored: $totalJpegsErrored,
             sizeBefore: $totalJpegSizeBefore,
             sizeAfter: $totalJpegSizeAfter,
@@ -272,7 +267,7 @@ final class Squeeze extends Command
 
         $output->writeln('');
         new ArwSummary(
-            found: $totalArwsFound,
+            found: $collection->stats->arwsFound,
             archived: $totalArwsArchived,
             sizeBefore: $totalArwSizeBefore,
             sizeAfter: $totalArchiveSize,
@@ -298,96 +293,6 @@ final class Squeeze extends Command
             $this->toolPaths[$tool] = $this->platform->findTool($tool);
             $output->writeln(sprintf('<info>Found %s: %s</info>', $tool, $this->toolPaths[$tool]));
         }
-    }
-
-    /**
-     * @param list<string> $directories
-     *
-     * @return array{list<ImageFile>, array<string, list<string>>, array{jpegsFound: int, jpegsSkipped: int, arwsFound: int}}
-     */
-    private function gatherFiles(array $directories, OutputInterface $output): array
-    {
-        $jpegList  = [];
-        $arwsByDir = [];
-        $skipSet   = [];
-        $stats     = ['jpegsFound' => 0, 'jpegsSkipped' => 0, 'arwsFound' => 0];
-
-        /** @var array<string, true> $processedDirs */
-        $processedDirs = [];
-
-        foreach ($this->scanner->scanDirectories($directories) as $file) {
-            $filePath  = $file->getPathname();
-            $extension = strtolower($file->getExtension());
-            $dir       = dirname($filePath);
-
-            if (! isset($processedDirs[$dir])) {
-                $processedDirs[$dir] = true;
-                $found               = $this->exiftool->findPortraitAndLivePhotos($dir);
-                if ($found !== []) {
-                    $output->writeln(sprintf('  Found %d Portrait/Live Photos in: %s', count($found), $dir));
-                    $skipSet += $found;
-                }
-            }
-
-            if (! in_array($extension, ['jpg', 'jpeg', 'arw'], true)) {
-                continue;
-            }
-
-            if (in_array($extension, ['jpg', 'jpeg'], true)) {
-                $stats['jpegsFound']++;
-
-                if (isset($skipSet[$filePath])) {
-                    $output->writeln(sprintf('  Skipping (Portrait/Live): %s', $this->cliHelper->link($filePath)));
-                    $stats['jpegsSkipped']++;
-                    continue;
-                }
-
-                $imageFile = new ImageFile($filePath, $file->getSize());
-
-                if ($imageFile->hasOptimized()) {
-                    $output->writeln(sprintf('  Skipping (AVIF exists): %s', $this->cliHelper->link($filePath)));
-                    $stats['jpegsSkipped']++;
-                    continue;
-                }
-
-                $jpegList[] = $imageFile;
-                continue;
-            }
-
-            $stats['arwsFound']++;
-
-            if (! isset($arwsByDir[$dir])) {
-                if ($this->archiveExistsInDir($dir)) {
-                    $output->writeln(sprintf('  Skipping ARWs in dir (archive exists): %s', $this->cliHelper->link($dir)));
-                    $arwsByDir[$dir] = []; // Mark as processed but empty
-                    continue;
-                }
-
-                $arwsByDir[$dir] = [];
-            }
-
-            if ($arwsByDir[$dir] !== []) {
-                $arwsByDir[$dir][] = $filePath;
-            } elseif (! $this->archiveExistsInDir($dir)) {
-                $arwsByDir[$dir][] = $filePath;
-            }
-        }
-
-        // Filter out empty dirs
-        $arwsByDir = array_filter($arwsByDir, static fn (array $files) => $files !== []);
-
-        return [$jpegList, $arwsByDir, $stats];
-    }
-
-    private function archiveExistsInDir(string $dir): bool
-    {
-        $files = glob($dir . DIRECTORY_SEPARATOR . 'raws-*.tar.xz');
-
-        if ($files === false) {
-            return false;
-        }
-
-        return array_any($files, static fn (string $file): bool => preg_match('/raws-\d+\.tar\.xz$/', $file) === 1);
     }
 
     /** @param callable(int, float, int): void $statusCallback Called with (cqLevel, score, saved) during quality search */

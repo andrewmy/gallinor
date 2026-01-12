@@ -3,6 +3,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Exiftool;
+use App\Domain\ImageFileCollector;
+use App\Domain\Platform;
 use App\Infrastructure\SymfonyFilesystemScanner;
 use App\Ui\Cli\CliHelper;
 use App\Ui\Cli\Images\RemoveOriginals as ImagesRemoveOriginals;
@@ -21,11 +24,15 @@ $logger    = new Logger('app', [new StreamHandler('var/app.log', Level::Debug)])
 $scanner   = new SymfonyFilesystemScanner(new Filesystem());
 $cliHelper = new CliHelper();
 
+$platform           = new Platform();
+$exiftool           = new Exiftool($platform);
+$imageFileCollector = new ImageFileCollector($scanner, $exiftool);
+
 $app = new Application();
 $app->addCommands([
     new VideosSqueeze($logger, $cliHelper, $scanner),
     new VideosRename($cliHelper, $scanner),
-    new ImagesSqueeze($logger, $cliHelper, $scanner),
-    new ImagesRemoveOriginals($logger, $cliHelper, $scanner),
+    new ImagesSqueeze($logger, $cliHelper, $imageFileCollector),
+    new ImagesRemoveOriginals($logger, $cliHelper, $scanner, $imageFileCollector),
 ]);
 $app->run();
