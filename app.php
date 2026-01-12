@@ -3,15 +3,15 @@
 
 declare(strict_types=1);
 
-use App\Domain\Exiftool;
-use App\Domain\ImageFileCollector;
-use App\Domain\Platform;
-use App\Infrastructure\SymfonyFilesystemScanner;
-use App\Ui\Cli\CliHelper;
-use App\Ui\Cli\Images\RemoveOriginals as ImagesRemoveOriginals;
-use App\Ui\Cli\Images\Squeeze as ImagesSqueeze;
-use App\Ui\Cli\Videos\Rename as VideosRename;
-use App\Ui\Cli\Videos\Squeeze as VideosSqueeze;
+use App\Images\Domain\Exiftool;
+use App\Images\Domain\ImageFileCollector;
+use App\Images\Ui\Cli\RemoveOriginals as ImagesRemoveOriginals;
+use App\Images\Ui\Cli\Squeeze as ImagesSqueeze;
+use App\Shared\Domain\Platform;
+use App\Shared\Infrastructure\SymfonyFilesystemScanner;
+use App\Shared\Ui\Cli\CliHelper;
+use App\Video\Ui\Cli\Rename as VideosRename;
+use App\Video\Ui\Cli\Squeeze as VideosSqueeze;
 use Monolog\Handler\StreamHandler;
 use Monolog\Level;
 use Monolog\Logger;
