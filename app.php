@@ -3,6 +3,7 @@
 
 declare(strict_types=1);
 
+use App\Images\Domain\ArchiveVerifier;
 use App\Images\Domain\Exiftool;
 use App\Images\Domain\ImageFileCollector;
 use App\Images\Ui\Cli\RemoveOriginals as ImagesRemoveOriginals;
@@ -27,12 +28,13 @@ $cliHelper = new CliHelper();
 $platform           = new Platform();
 $exiftool           = new Exiftool($platform);
 $imageFileCollector = new ImageFileCollector($scanner, $exiftool);
+$archiveVerifier    = new ArchiveVerifier($platform);
 
 $app = new Application();
 $app->addCommands([
     new VideosSqueeze($logger, $cliHelper, $scanner),
     new VideosRename($cliHelper, $scanner),
     new ImagesSqueeze($logger, $cliHelper, $imageFileCollector),
-    new ImagesRemoveOriginals($logger, $cliHelper, $scanner, $imageFileCollector),
+    new ImagesRemoveOriginals($logger, $cliHelper, $scanner, $imageFileCollector, $archiveVerifier),
 ]);
 $app->run();
