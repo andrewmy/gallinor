@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Images\Ui\Cli;
 
 use App\Images\Domain\AvifFilter;
+use App\Images\Domain\CalculationSkipReason;
+use App\Images\Domain\CqLevelCalculator;
 use App\Images\Domain\Exiftool;
 use App\Images\Domain\ImageFile;
 use App\Images\Domain\ImageFileCollector;
@@ -44,13 +46,9 @@ use const PHP_EOL;
 #[AsCommand(name: 'images:squeeze', description: 'Re-encode JPEGs to optimal AVIFs, XZ the ARWs')]
 final class Squeeze extends Command
 {
-    private const float MIN_SSIM_SCORE = 85.0;
-    private const int CQ_LEVEL_START   = 20;
-    private const int CQ_LEVEL_END     = 2;
-    private const int CQ_LEVEL_STEP    = 2;
-
     private Platform $platform;
     private ImageTools $imageTools;
+    private CqLevelCalculator $cqCalculator;
     private Exiftool $exiftool;
     private string $runId;
     private string $tmpDir;
@@ -81,10 +79,11 @@ final class Squeeze extends Command
         $startTime = microtime(true);
 
         try {
-            $this->platform   = new Platform();
-            $this->runId      = uniqid('gallinor-', true);
-            $this->tmpDir     = sys_get_temp_dir();
-            $this->imageTools = new ImageTools($this->platform);
+            $this->platform     = new Platform();
+            $this->runId        = uniqid('gallinor-', true);
+            $this->tmpDir       = sys_get_temp_dir();
+            $this->imageTools   = new ImageTools($this->platform);
+            $this->cqCalculator = new CqLevelCalculator($this->imageTools);
 
             $output->writeln(sprintf('<info>Found avifenc: %s</info>', $this->imageTools->avifencPath));
             $output->writeln(sprintf('<info>Found avifdec: %s</info>', $this->imageTools->avifdecPath));
@@ -158,11 +157,12 @@ final class Squeeze extends Command
 
                 $result = $this->processJpeg($imageFile, $output, $statusCallback);
 
-                if ($result === null) {
+                if ($result instanceof CalculationSkipReason) {
                     $totalJpegsSkipped++;
                     $progressBar->clear();
                     $output->write('<comment>Skipped: </comment>');
-                    $output->writeln($this->cliHelper->link($imageFile->path));
+                    $output->write($this->cliHelper->link($imageFile->path));
+                    $output->writeln(sprintf(' <comment>(%s)</comment>', $result->value));
                     $progressBar->display();
                     $progressBar->advance();
                     continue;
@@ -224,7 +224,7 @@ final class Squeeze extends Command
                 $totalArwSizeBefore += $arwDirSizeBefore;
 
                 try {
-                    $archiveSize        = $this->archiveArws($dir, $arwFiles, $output);
+                    $archiveSize        = $this->archiveArws($dir, $arwFiles);
                     $totalArchiveSize  += $archiveSize;
                     $totalArwsArchived += $fileCount;
 
@@ -293,73 +293,19 @@ final class Squeeze extends Command
     }
 
     /** @param callable(int, float, int): void $statusCallback Called with (cqLevel, score, saved) during quality search */
-    private function processJpeg(ImageFile $file, OutputInterface $output, callable $statusCallback): ImageProcessingResult|null
+    private function processJpeg(ImageFile $file, OutputInterface $output, callable $statusCallback): ImageProcessingResult|CalculationSkipReason
     {
-        $tmpAvif = $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '.avif';
-        $tmpPng  = $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '.png';
-
-        $totalQcTime = 0.0;
-
-        for ($cqLevel = self::CQ_LEVEL_START; $cqLevel >= self::CQ_LEVEL_END; $cqLevel -= self::CQ_LEVEL_STEP) {
-            $this->imageTools->encodeToAvif($file->path, $tmpAvif, $cqLevel);
-            $this->imageTools->decodeAvifToPng($tmpAvif, $tmpPng);
-
-            $qcStartTime  = microtime(true);
-            $score        = $this->imageTools->ssimulacra2Score($file->path, $tmpPng);
-            $totalQcTime += microtime(true) - $qcStartTime;
-
-            $currentAvifSize = (int) filesize($tmpAvif);
-            $statusCallback($cqLevel, $score, $file->size - $currentAvifSize);
-
-            if ($output->isVerbose()) {
-                $output->writeln(sprintf('  cq-level=%d, score=%.2f', $cqLevel, $score));
-            }
-
-            if ($score >= self::MIN_SSIM_SCORE) {
-                if ($currentAvifSize >= $file->size) {
-                    if ($output->isVerbose()) {
-                        $output->writeln(sprintf(
-                            '  <comment>AVIF not smaller (%s >= %s), skipping</comment>',
-                            $this->cliHelper->formatBytes($currentAvifSize),
-                            $this->cliHelper->formatBytes($file->size),
-                        ));
-                    }
-
-                    unlink($tmpAvif);
-
-                    return null;
-                }
-
-                rename($tmpAvif, $file->optimizedPath());
-
-                return new ImageProcessingResult(
-                    avifSize: $currentAvifSize,
-                    cqLevel: $cqLevel,
-                    qualityScore: $score,
-                    qcTime: $totalQcTime,
-                );
-            }
-
-            if ($cqLevel <= self::CQ_LEVEL_END) {
-                continue;
-            }
-
-            if ($output->isVerbose()) {
-                $output->writeln(sprintf('  Score %.2f < %.2f, trying higher quality...', $score, self::MIN_SSIM_SCORE));
-            }
-
-            unlink($tmpAvif);
-        }
-
         if ($output->isVerbose()) {
-            $output->writeln(sprintf('<comment>  Could not achieve score >= %.2f even at cq-level=%d</comment>', self::MIN_SSIM_SCORE, self::CQ_LEVEL_END));
+            $output->writeln(sprintf('  <comment>Searching for optimal CQ level...</comment>'));
         }
 
-        if (file_exists($tmpAvif)) {
-            unlink($tmpAvif);
+        $result = $this->cqCalculator->calculate($file, $statusCallback);
+
+        if ($result instanceof ImageProcessingResult && $output->isVerbose()) {
+            $output->writeln(sprintf('  <info>Found optimal: cq-level=%d, score=%.2f</info>', $result->cqLevel, $result->qualityScore));
         }
 
-        return null;
+        return $result;
     }
 
     /**
@@ -367,7 +313,7 @@ final class Squeeze extends Command
      *
      * @return int Archive size in bytes
      */
-    private function archiveArws(string $dir, array $arwFiles, OutputInterface $output): int
+    private function archiveArws(string $dir, array $arwFiles): int
     {
         $count       = count($arwFiles);
         $archiveName = sprintf('raws-%d.tar.xz', $count);
@@ -462,8 +408,6 @@ final class Squeeze extends Command
     private function cleanup(): void
     {
         $filesToClean = [
-            $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '.avif',
-            $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '.png',
             $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '.tar',
             $this->tmpDir . DIRECTORY_SEPARATOR . $this->runId . '-arwlist.txt',
         ];
