@@ -166,7 +166,7 @@ final readonly class Ffmpeg
     public function commandForFile(
         VideoFile $file,
         int $baseBitrate,
-        float $maxBitrateSpikes,
+        float $maxBitrateSpike,
         string $tempFilePath,
     ): string {
         $params = [
@@ -219,7 +219,7 @@ final readonly class Ffmpeg
 
         if ($this->activeEncoder === Encoder::Nvidia) {
             $params = array_merge($params, [
-                sprintf('-maxrate:v %dk', $baseBitrate * $maxBitrateSpikes),
+                sprintf('-maxrate:v %dk', $baseBitrate * $maxBitrateSpike),
                 '-preset p7',
                 '-rc vbr',
                 '-spatial_aq 1',

@@ -13,8 +13,8 @@ use App\Video\Domain\Exceptions\UnsupportedResolution;
 use App\Video\Domain\Ffmpeg;
 use App\Video\Domain\VideoFile;
 use App\Video\Domain\VideoFinder;
+use App\Video\Domain\VideoProcessor;
 use Psr\Log\LoggerInterface;
-use RuntimeException;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -24,32 +24,17 @@ use Throwable;
 
 use function array_reduce;
 use function basename;
-use function copy;
 use function count;
-use function exec;
 use function file_exists;
-use function filesize;
-use function implode;
 use function microtime;
 use function number_format;
-use function rename;
 use function sprintf;
-use function sys_get_temp_dir;
-use function uniqid;
-use function unlink;
 
-use const DIRECTORY_SEPARATOR;
 use const PHP_EOL;
 
 #[AsCommand(name: 'videos:squeeze', description: 'Re-encode videos to optimal bitrate')]
 final class Squeeze extends Command
 {
-    private Platform $platform;
-    private Ffmpeg $ffmpeg;
-    private float $maxBitrateOverhead = 1.1;
-    private float $maxBitrateSpikes   = 1.25;
-    private float $minVmafScore       = 90.0;
-
     public function __construct(
         private readonly LoggerInterface $logger,
         private readonly CliHelper $cliHelper,
@@ -74,25 +59,26 @@ final class Squeeze extends Command
 
         $startTime = microtime(true);
         try {
-            $this->platform    = new Platform();
-            $this->ffmpeg      = new Ffmpeg($useCpu, $this->platform);
-            $this->videoFinder = new VideoFinder($this->ffmpeg);
+            $platform          = new Platform();
+            $ffmpeg            = new Ffmpeg($useCpu, $platform);
+            $this->videoFinder = new VideoFinder($ffmpeg);
+            $processor         = new VideoProcessor($ffmpeg, $this->logger);
         } catch (Throwable $exception) {
             $output->writeln('<error>' . $exception->getMessage() . '</error>');
 
             return self::FAILURE;
         }
 
-        $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores));
-        $output->writeln(sprintf('<info>Using encoder: %s</info>', $this->ffmpeg->activeEncoder->value));
-        if ($this->ffmpeg->activeEncoder === Encoder::Nvidia) {
+        $output->writeln(sprintf('<info>Available cores: %d</info>', $platform->nCores));
+        $output->writeln(sprintf('<info>Using encoder: %s</info>', $ffmpeg->activeEncoder->value));
+        if ($ffmpeg->activeEncoder === Encoder::Nvidia) {
             $output->writeln(sprintf(
                 '<info>NVENC Temporal AQ: %s</info>',
-                $this->ffmpeg->hasTemporalAq ? 'available' : 'not available',
+                $ffmpeg->hasTemporalAq ? 'available' : 'not available',
             ));
         }
 
-        if (! $this->ffmpeg->hasVmaf) {
+        if (! $ffmpeg->hasVmaf) {
             $output->writeln('<error>VMAF is not available. Quality checking is required. Aborting.</error>');
 
             return self::FAILURE;
@@ -166,9 +152,9 @@ final class Squeeze extends Command
             };
 
             try {
-                [$processedSize, $qcTime, $vmafScore, $skipped] = $this->processFile($file, $output, $statusCallback);
+                $result = $processor->processVideo($file, false, $statusCallback);
 
-                if ($skipped) {
+                if ($result->skipped) {
                     $progressBar->clear();
                     $output->write('<comment>Skipped (bitrate acceptable): </comment>');
                     $output->writeln($this->cliHelper->link($file->path));
@@ -177,13 +163,23 @@ final class Squeeze extends Command
                     continue;
                 }
 
-                $totalProcessedSize += $processedSize;
-                $totalQcTime        += $qcTime;
+                if (! $result->success) {
+                    $progressBar->setMessage(sprintf('%s | <error>Quality check failed</error>', $fileName), 'status');
+                    $progressBar->clear();
+                    $output->writeln(sprintf('<error>%s: Could not achieve target VMAF score</error>', $fileName));
+                    $progressBar->display();
+                    $totalErroredFiles++;
+                    $progressBar->advance();
+                    continue;
+                }
 
-                $savings       = $file->currentSize - $processedSize;
+                $totalProcessedSize += $result->newSize;
+                $totalQcTime        += $result->qcTime;
+
+                $savings       = $result->savings();
                 $totalSavings += $savings;
                 $progressBar->setMessage(
-                    sprintf('%s | VMAF=%.1f, saved %s (total: %s)', $fileName, $vmafScore, $cliHelper->formatBytes($savings), $cliHelper->formatBytes($totalSavings)),
+                    sprintf('%s | VMAF=%.1f, saved %s (total: %s)', $fileName, $result->vmafScore, $cliHelper->formatBytes($savings), $cliHelper->formatBytes($totalSavings)),
                     'status',
                 );
             } catch (Throwable $exception) {
@@ -237,7 +233,8 @@ final class Squeeze extends Command
         $fileList          = [];
         $totalSkippedFiles = 0;
 
-        $files  = $this->scanner->scanDirectories($directories);
+        $files = $this->scanner->scanDirectories($directories);
+
         $videos = $this->videoFinder->findVideos(
             $files,
             static function (string $filePath, string $errorMessage) use ($output, &$totalSkippedFiles): void {
@@ -250,7 +247,7 @@ final class Squeeze extends Command
             $output->writeln(sprintf("\nFile: %s", $this->cliHelper->link($videoFile->path)));
 
             try {
-                if ($this->isBitrateAcceptable($videoFile, $videoFile->baseBitrate())) {
+                if (VideoProcessor::isBitrateAcceptable($videoFile, $videoFile->baseBitrate())) {
                     $output->writeln(sprintf('Bitrate %s Kbps is acceptable, no action needed.', $videoFile->bitRate));
                     $totalSkippedFiles++;
                     continue;
@@ -287,134 +284,5 @@ final class Squeeze extends Command
         }
 
         return [$fileList, $totalSkippedFiles];
-    }
-
-    private function isBitrateAcceptable(VideoFile $file, int $baseBitrate): bool
-    {
-        return (int) ($file->bitRate / 1024) <= $baseBitrate * $this->maxBitrateOverhead;
-    }
-
-    /**
-     * @param callable(int, float, int): void $statusCallback Called with (bitrate, vmafScore, saved)
-     *
-     * @return array{int, float, float, bool} [processedSize, qcTime, vmafScore, skipped]
-     */
-    private function processFile(
-        VideoFile $file,
-        OutputInterface $output,
-        callable $statusCallback,
-    ): array {
-        $baseBitrate = $file->baseBitrate();
-        $qcTime      = 0.0;
-
-        if ($this->isBitrateAcceptable($file, $baseBitrate)) {
-            return [$file->currentSize, 0.0, 100.0, true];
-        }
-
-        $retryCount = 0;
-        do {
-            [$tempFilePath, $processedSize] = $this->encode($file, $output, $baseBitrate);
-
-            $startTime = microtime(true);
-            $vmafScore = $this->ffmpeg->vmafScore(
-                originalFilePath: $file->path,
-                processedFilePath: $tempFilePath,
-            );
-            $qcTime   += microtime(true) - $startTime;
-
-            $statusCallback($baseBitrate, $vmafScore, $file->currentSize - $processedSize);
-
-            if ($output->isVerbose()) {
-                $output->writeln(sprintf('VMAF score: %.2f (bitrate: %sk)', $vmafScore, $baseBitrate));
-            }
-
-            $resultAccepted = true;
-            if ($vmafScore >= $this->minVmafScore) {
-                continue;
-            }
-
-            @unlink($tempFilePath);
-            $resultAccepted = false;
-            $retryCount++;
-
-            if ($output->isVerbose()) {
-                $output->writeln(sprintf(
-                    '<comment>VMAF %.2f < %.1f, retrying with bitrate %sk</comment>',
-                    $vmafScore,
-                    $this->minVmafScore,
-                    $baseBitrate + $file->bitrateStep(),
-                ));
-            }
-
-            $baseBitrate += $file->bitrateStep();
-        } while (! $resultAccepted);
-
-        $newFilePath = $file->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
-        // rename() fails across filesystems (temp vs target), fall back to copy+delete
-        if (! @rename($tempFilePath, $newFilePath)) {
-            copy($tempFilePath, $newFilePath);
-            @unlink($tempFilePath);
-        }
-
-        if ($output->isVerbose()) {
-            $output->writeln(sprintf('<info>Saved: %s</info>', $this->cliHelper->link($newFilePath)));
-        }
-
-        $this->logger->info('Processed file', [
-            'original_file' => $file->path,
-            'original_size' => $file->currentSize,
-            'processed_file' => $newFilePath,
-            'processed_size' => $processedSize,
-            'base_bitrate_kbps' => $baseBitrate,
-            'vmaf_score' => $vmafScore,
-            'retry_count' => $retryCount,
-        ]);
-
-        return [$processedSize, $qcTime, $vmafScore, false];
-    }
-
-    /** @return array{string, int} [tempFilePath, processedSize] */
-    private function encode(
-        VideoFile $file,
-        OutputInterface $output,
-        int $baseBitrate,
-    ): array {
-        // Encode to system temp directory - if process is interrupted,
-        // the partial file won't pollute the source directory.
-        $tempFilePath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('gallinor_') . '.mp4';
-
-        $ffmpegCmd = $this->ffmpeg->commandForFile($file, $baseBitrate, $this->maxBitrateSpikes, $tempFilePath);
-        if ($output->isVerbose()) {
-            $output->writeln(sprintf('Executing command: %s', $ffmpegCmd));
-        }
-
-        $ffmpegOutput = [];
-        exec($ffmpegCmd, $ffmpegOutput, $ffmpegExitCode);
-        if ($output->isVerbose()) {
-            foreach ($ffmpegOutput as $line) {
-                $output->writeln(sprintf('<comment>%s</comment>', $line));
-            }
-        }
-
-        if ($ffmpegExitCode !== 0) {
-            @unlink($tempFilePath);
-
-            throw new RuntimeException(sprintf(
-                "ffmpeg command failed with exit code %s:\n%s",
-                $ffmpegExitCode,
-                implode("\n", $ffmpegOutput),
-            ));
-        }
-
-        $processedSize = (int) filesize($tempFilePath);
-        if ($output->isVerbose()) {
-            $output->writeln(sprintf(
-                'Encoded: %s (saved %s)',
-                $this->cliHelper->formatBytes($processedSize),
-                $this->cliHelper->formatBytes($file->currentSize - $processedSize),
-            ));
-        }
-
-        return [$tempFilePath, $processedSize];
     }
 }
