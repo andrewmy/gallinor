@@ -39,6 +39,7 @@ final class Squeeze extends Command
         private readonly LoggerInterface $logger,
         private readonly CliHelper $cliHelper,
         private readonly FilesystemScanner $scanner,
+        private readonly Timing $timing,
     ) {
         parent::__construct();
     }
@@ -56,6 +57,7 @@ final class Squeeze extends Command
         array $directories = [],
     ): int {
         $output->writeln(sprintf('<info>Dry run: %s</info>%s', $dryRun ? 'Yes' : 'No', PHP_EOL));
+        $output->writeln(sprintf('<info>Init time: %s</info>%s', $this->timing->formatInit(), PHP_EOL));
 
         $startTime = microtime(true);
         try {
@@ -83,9 +85,6 @@ final class Squeeze extends Command
 
             return self::FAILURE;
         }
-
-        $initTime = microtime(true);
-        $output->writeln(sprintf('<info>Init time: %.3fs</info>', $initTime - $startTime));
 
         $output->writeln('');
 
@@ -117,15 +116,14 @@ final class Squeeze extends Command
             $totalSkippedFiles,
         ));
         $gatherTime = microtime(true);
-        $output->writeln(sprintf('<info>Gather time: %.3fs</info>', $gatherTime - $initTime));
+        $output->writeln(sprintf('<info>Gather time: %.3fs</info>', $gatherTime - $startTime));
 
         if ($dryRun) {
             $output->writeln('');
-            new Timing(
-                total: $gatherTime - $startTime,
-                init: $initTime - $startTime,
-                gather: $gatherTime - $initTime,
-            )->print($output);
+            $this->timing
+                ->withGather($gatherTime - $startTime)
+                ->withTotal($this->timing->initSeconds() + $gatherTime - $startTime)
+                ->print($output);
 
             return self::SUCCESS;
         }
@@ -210,13 +208,12 @@ final class Squeeze extends Command
         )->print($output, $this->cliHelper);
 
         $output->writeln('');
-        new Timing(
-            total: $processTime - $startTime,
-            init: $initTime - $startTime,
-            gather: $gatherTime - $initTime,
-            process: $processTime - $gatherTime,
-            qc: $totalQcTime,
-        )->print($output);
+        $this->timing
+            ->withGather($gatherTime - $startTime)
+            ->withProcess($processTime - $gatherTime)
+            ->withQc($totalQcTime)
+            ->withTotal($this->timing->initSeconds() + $processTime - $startTime)
+            ->print($output);
 
         return self::SUCCESS;
     }

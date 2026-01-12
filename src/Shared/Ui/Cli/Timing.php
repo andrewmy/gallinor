@@ -7,12 +7,13 @@ namespace App\Shared\Ui\Cli;
 use Symfony\Component\Console\Output\OutputInterface;
 
 use function implode;
+use function microtime;
 use function sprintf;
 
 final readonly class Timing
 {
     public function __construct(
-        public float $total,
+        public float $total = 0,
         public float|null $init = null,
         public float|null $gather = null,
         public float|null $process = null,
@@ -20,7 +21,71 @@ final readonly class Timing
         public float|null $archiving = null,
         public float|null $rename = null,
         public float|null $remove = null,
+        private float|null $startTime = null,
     ) {
+    }
+
+    public static function start(float $startTime): self
+    {
+        return new self(startTime: $startTime);
+    }
+
+    public function recordInit(): self
+    {
+        return new self(
+            total: 0,
+            init: microtime(true) - $this->startTime,
+        );
+    }
+
+    public function initSeconds(): float
+    {
+        return $this->init ?? 0.0;
+    }
+
+    public function formatInit(): string
+    {
+        return self::formatSecs($this->initSeconds());
+    }
+
+    public function withTotal(float $total): self
+    {
+        return $this->with('total', $total);
+    }
+
+    public function withGather(float $seconds): self
+    {
+        return $this->with('gather', $seconds);
+    }
+
+    public function withProcess(float $seconds): self
+    {
+        return $this->with('process', $seconds);
+    }
+
+    public function withQc(float $seconds): self
+    {
+        return $this->with('qc', $seconds);
+    }
+
+    public function withArchiving(float $seconds): self
+    {
+        return $this->with('archiving', $seconds);
+    }
+
+    public function withRename(float $seconds): self
+    {
+        return $this->with('rename', $seconds);
+    }
+
+    public function withRemove(float $seconds): self
+    {
+        return $this->with('remove', $seconds);
+    }
+
+    public function print(OutputInterface $output): void
+    {
+        $output->writeln('<info>' . implode("\n", $this->formatLines()) . '</info>');
     }
 
     /** @return list<string> */
@@ -29,45 +94,48 @@ final readonly class Timing
         $lines = ['Timing:'];
 
         if ($this->init !== null) {
-            $lines[] = sprintf('  Init: %.3fs', $this->init);
+            $lines[] = sprintf('  Init: %s', self::formatSecs($this->init));
         }
 
         if ($this->gather !== null) {
-            $lines[] = sprintf('  Gather: %.3fs', $this->gather);
+            $lines[] = sprintf('  Gather: %s', self::formatSecs($this->gather));
         }
 
         if ($this->process !== null) {
-            $lines[] = sprintf('  Process: %.3fs', $this->process);
+            $lines[] = sprintf('  Process: %s', self::formatSecs($this->process));
         }
 
         if ($this->qc !== null) {
-            $lines[] = sprintf('  QC: %.3fs', $this->qc);
+            $lines[] = sprintf('  QC: %s', self::formatSecs($this->qc));
         }
 
         if ($this->archiving !== null) {
-            $lines[] = sprintf('  Archiving: %.3fs', $this->archiving);
+            $lines[] = sprintf('  Archiving: %s', self::formatSecs($this->archiving));
         }
 
         if ($this->rename !== null) {
-            $lines[] = sprintf('  Rename: %.3fs', $this->rename);
+            $lines[] = sprintf('  Rename: %s', self::formatSecs($this->rename));
         }
 
         if ($this->remove !== null) {
-            $lines[] = sprintf('  Remove: %.3fs', $this->remove);
+            $lines[] = sprintf('  Remove: %s', self::formatSecs($this->remove));
         }
 
-        $lines[] = sprintf('  Total: %.3fs', $this->total);
+        $lines[] = sprintf('  Total: %s', self::formatSecs($this->total));
 
         return $lines;
     }
 
-    public function format(): string
+    private function with(string $property, float $value): self
     {
-        return implode("\n", $this->formatLines());
+        $clone              = clone $this;
+        $clone->{$property} = $value;
+
+        return $clone;
     }
 
-    public function print(OutputInterface $output): void
+    private static function formatSecs(float $seconds): string
     {
-        $output->writeln('<info>' . $this->format() . '</info>');
+        return sprintf('%.3fs', $seconds);
     }
 }

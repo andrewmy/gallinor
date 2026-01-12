@@ -62,6 +62,7 @@ final class Squeeze extends Command
         private readonly LoggerInterface $logger,
         private readonly CliHelper $cliHelper,
         private readonly ImageFileCollector $collector,
+        private readonly Timing $timing,
     ) {
         parent::__construct();
     }
@@ -75,6 +76,7 @@ final class Squeeze extends Command
         array $directories = [],
     ): int {
         $output->writeln(sprintf('<info>Dry run: %s</info>%s', $dryRun ? 'Yes' : 'No', PHP_EOL));
+        $output->writeln(sprintf('<info>Init time: %s</info>%s', $this->timing->formatInit(), PHP_EOL));
 
         $startTime = microtime(true);
 
@@ -98,8 +100,6 @@ final class Squeeze extends Command
         }
 
         $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores));
-        $initTime = microtime(true);
-        $output->writeln(sprintf('<info>Init time: %.3fs</info>', $initTime - $startTime));
         $output->writeln('');
 
         $totalJpegsProcessed = 0;
@@ -119,7 +119,7 @@ final class Squeeze extends Command
         );
 
         $gatherTime = microtime(true);
-        $output->writeln(sprintf('<info>Gather time: %.3fs</info>', $gatherTime - $initTime));
+        $output->writeln(sprintf('<info>Gather time: %.3fs</info>', $gatherTime - $startTime));
 
         if ($dryRun) {
             $output->writeln(sprintf(
@@ -272,13 +272,12 @@ final class Squeeze extends Command
         )->print($output, $this->cliHelper);
 
         $output->writeln('');
-        new Timing(
-            total: $endTime - $startTime,
-            init: $initTime - $startTime,
-            gather: $gatherTime - $initTime,
-            qc: $totalQcTime,
-            archiving: $totalArchiveTime,
-        )->print($output);
+        $this->timing
+            ->withGather($gatherTime - $startTime)
+            ->withQc($totalQcTime)
+            ->withArchiving($totalArchiveTime)
+            ->withTotal($this->timing->initSeconds() + $endTime - $startTime)
+            ->print($output);
 
         return self::SUCCESS;
     }

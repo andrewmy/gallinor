@@ -35,6 +35,7 @@ final class RemoveOriginals extends Command
         private readonly FilesystemScanner $scanner,
         private readonly ImageFileCollector $collector,
         private readonly ArchiveVerifier $archiveVerifier,
+        private readonly Timing $timing,
     ) {
         parent::__construct();
     }
@@ -48,9 +49,9 @@ final class RemoveOriginals extends Command
         array $directories = [],
     ): int {
         $output->writeln(sprintf('<info>Dry run: %s</info>%s', $dryRun ? 'Yes' : 'No', PHP_EOL));
+        $output->writeln(sprintf('<info>Init time: %s</info>%s', $this->timing->formatInit(), PHP_EOL));
 
         $startTime = microtime(true);
-        $initTime  = $startTime;
 
         $jpegCollection = $this->collector->collectFromDirectories(
             $directories,
@@ -64,7 +65,7 @@ final class RemoveOriginals extends Command
         );
 
         $gatherTime = microtime(true);
-        $output->writeln(sprintf('<info>Gather time: %.3fs</info>', $gatherTime - $initTime));
+        $output->writeln(sprintf('<info>Gather time: %.3fs</info>', $gatherTime - $startTime));
 
         foreach ($verificationResult->unarchivedArws as $dir => $files) {
             $output->writeln(sprintf(
@@ -108,11 +109,10 @@ final class RemoveOriginals extends Command
             )->print($output, $this->cliHelper);
 
             $output->writeln('');
-            new Timing(
-                total: $gatherTime - $startTime,
-                init: $initTime - $startTime,
-                gather: $gatherTime - $initTime,
-            )->print($output);
+            $this->timing
+                ->withGather($gatherTime - $startTime)
+                ->withTotal($this->timing->initSeconds() + $gatherTime - $startTime)
+                ->print($output);
 
             return self::SUCCESS;
         }
@@ -183,12 +183,11 @@ final class RemoveOriginals extends Command
         )->print($output, $this->cliHelper);
 
         $output->writeln('');
-        new Timing(
-            total: $endTime - $startTime,
-            init: $initTime - $startTime,
-            gather: $gatherTime - $initTime,
-            remove: $endTime - $gatherTime,
-        )->print($output);
+        $this->timing
+            ->withGather($gatherTime - $startTime)
+            ->withRemove($endTime - $gatherTime)
+            ->withTotal($this->timing->initSeconds() + $endTime - $startTime)
+            ->print($output);
 
         return self::SUCCESS;
     }

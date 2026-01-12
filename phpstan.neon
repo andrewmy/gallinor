@@ -2,6 +2,7 @@ parameters:
     level: max
     paths:
         - src
+        - app.php
     tmpDir: var
     ignoreErrors:
             -

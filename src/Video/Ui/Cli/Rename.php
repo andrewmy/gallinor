@@ -31,6 +31,7 @@ final class Rename extends Command
     public function __construct(
         private readonly CliHelper $cliHelper,
         private readonly FilesystemScanner $scanner,
+        private readonly Timing $timing,
     ) {
         parent::__construct();
     }
@@ -44,6 +45,7 @@ final class Rename extends Command
         array $directories = [],
     ): int {
         $output->writeln(sprintf('<info>Dry run: %s</info>%s', $dryRun ? 'Yes' : 'No', PHP_EOL));
+        $output->writeln(sprintf('<info>Init time: %s</info>%s', $this->timing->formatInit(), PHP_EOL));
 
         $startTime = microtime(true);
 
@@ -96,10 +98,10 @@ final class Rename extends Command
             )->print($output, $this->cliHelper);
 
             $output->writeln('');
-            new Timing(
-                total: $gatherTime - $startTime,
-                gather: $gatherTime - $startTime,
-            )->print($output);
+            $this->timing
+                ->withGather($gatherTime - $startTime)
+                ->withTotal($this->timing->initSeconds() + $gatherTime - $startTime)
+                ->print($output);
 
             return self::SUCCESS;
         }
@@ -129,11 +131,11 @@ final class Rename extends Command
         )->print($output, $this->cliHelper);
 
         $output->writeln('');
-        new Timing(
-            total: $endTime - $startTime,
-            gather: $gatherTime - $startTime,
-            rename: $endTime - $gatherTime,
-        )->print($output);
+        $this->timing
+            ->withGather($gatherTime - $startTime)
+            ->withRename($endTime - $gatherTime)
+            ->withTotal($this->timing->initSeconds() + $endTime - $startTime)
+            ->print($output);
 
         return self::SUCCESS;
     }
