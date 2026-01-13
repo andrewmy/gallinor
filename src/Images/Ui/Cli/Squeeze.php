@@ -8,9 +8,11 @@ use App\Images\Domain\AvifFilter;
 use App\Images\Domain\CalculationSkipReason;
 use App\Images\Domain\CqLevelCalculator;
 use App\Images\Domain\Exiftool;
+use App\Images\Domain\ImageCollection;
 use App\Images\Domain\ImageFile;
 use App\Images\Domain\ImageFileCollector;
-use App\Images\Domain\ImageProcessingResult;
+use App\Images\Domain\ImageProcessor;
+use App\Images\Domain\ImageProcessorResult;
 use App\Images\Domain\ImageTools;
 use App\Images\Domain\RawArchiver;
 use App\Shared\Domain\Platform;
@@ -37,8 +39,7 @@ final class Squeeze extends Command
 {
     private Platform $platform;
     private ImageTools $imageTools;
-    private CqLevelCalculator $cqCalculator;
-    private Exiftool $exiftool;
+    private ImageProcessor $imageProcessor;
     private RawArchiver $rawArchiver;
 
     public function __construct(
@@ -64,9 +65,11 @@ final class Squeeze extends Command
         $startTime = microtime(true);
 
         try {
-            $this->platform     = new Platform();
-            $this->imageTools   = new ImageTools($this->platform);
-            $this->cqCalculator = new CqLevelCalculator($this->imageTools);
+            $this->platform       = new Platform();
+            $this->imageTools     = new ImageTools($this->platform);
+            $this->imageProcessor = new ImageProcessor(
+                new CqLevelCalculator($this->imageTools),
+            );
 
             $output->writeln(sprintf('<info>Found avifenc: %s</info>', $this->imageTools->avifencPath));
             $output->writeln(sprintf('<info>Found avifdec: %s</info>', $this->imageTools->avifdecPath));
@@ -74,8 +77,7 @@ final class Squeeze extends Command
 
             $xzPath            = $this->validateArchiveTools($output);
             $this->rawArchiver = new RawArchiver($this->platform, $xzPath, $this->logger);
-            $this->exiftool    = new Exiftool($this->platform);
-            $output->writeln(sprintf('<info>Found exiftool: %s</info>', $this->exiftool->path()));
+            $output->writeln(sprintf('<info>Found exiftool: %s</info>', (new Exiftool($this->platform))->path()));
         } catch (Throwable $exception) {
             $output->writeln('<error>' . $exception->getMessage() . '</error>');
 
@@ -84,16 +86,6 @@ final class Squeeze extends Command
 
         $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores));
         $output->writeln('');
-
-        $totalJpegsProcessed = 0;
-        $totalJpegsSkipped   = 0;
-        $totalJpegsErrored   = 0;
-        $totalJpegSizeBefore = 0;
-        $totalJpegSizeAfter  = 0;
-        $totalArwsArchived   = 0;
-        $totalArwSizeBefore  = 0;
-        $totalArchiveSize    = 0;
-        $totalQcTime         = 0.0;
 
         $collection = $this->collector->collectFromDirectories(
             $directories,
@@ -114,154 +106,163 @@ final class Squeeze extends Command
             return self::SUCCESS;
         }
 
-        $jpegCount   = count($collection->jpegs);
-        $progressBar = $this->cliHelper->createProgressBar($output, $jpegCount, 'JPEGs');
+        $jpegResult = $this->processJpegs($output, $collection->jpegs);
+
+        $arwResult = $this->archiveArws($output, $collection);
+
+        $endTime = microtime(true);
+
+        $this->printSummaries($output, $collection, $jpegResult, $arwResult, $startTime, $gatherTime, $endTime);
+
+        return self::SUCCESS;
+    }
+
+    /** @param array<ImageFile> $jpegs */
+    private function processJpegs(OutputInterface $output, array $jpegs): ImageProcessorResult
+    {
+        $progressBar = $this->cliHelper->createProgressBar($output, count($jpegs), 'JPEGs');
         $progressBar->start();
 
         $totalSavings = 0;
+        $cliHelper    = $this->cliHelper;
 
-        $cliHelper = $this->cliHelper;
-
-        foreach ($collection->jpegs as $imageFile) {
-            $fileName = $imageFile->filename();
-            $progressBar->setMessage($fileName, 'status');
+        $statusCallback = static function (int $cqLevel, float $score, int $saved) use ($progressBar, &$totalSavings, $cliHelper): void {
+            $runningTotal = $totalSavings + $saved;
+            $progressBar->setMessage(
+                sprintf('cq=%d, score=%.1f, saved %s (total: %s)', $cqLevel, $score, $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)),
+                'status',
+            );
             $progressBar->display();
+        };
 
-            $statusCallback = static function (int $cqLevel, float $score, int $saved) use ($progressBar, $fileName, &$totalSavings, $cliHelper): void {
-                $runningTotal = $totalSavings + $saved;
-                $progressBar->setMessage(
-                    sprintf('%s | cq=%d, score=%.1f, saved %s (total: %s)', $fileName, $cqLevel, $score, $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)),
-                    'status',
-                );
-                $progressBar->display();
-            };
+        $errorCallback = static function (string $fileName, string $error) use ($progressBar, $output): void {
+            $progressBar->setMessage(sprintf('%s | <error>Error</error>', $fileName), 'status');
+            $progressBar->clear();
+            $output->writeln(sprintf('<error>%s: %s</error>', $fileName, $error));
+            $progressBar->display();
+        };
 
-            try {
-                $totalJpegSizeBefore += $imageFile->size;
+        $skipCallback = static function (string $fileName, CalculationSkipReason $reason) use ($progressBar, $output): void {
+            $progressBar->setMessage(sprintf('%s | <comment>Skipped</comment>', $fileName), 'status');
+            $progressBar->clear();
+            $output->writeln(sprintf('<comment>Skipped: %s (%s)</comment>', $fileName, $reason->value));
+            $progressBar->display();
+        };
 
-                $result = $this->processJpeg($imageFile, $output, $statusCallback);
-
-                if ($result instanceof CalculationSkipReason) {
-                    $totalJpegsSkipped++;
-                    $progressBar->clear();
-                    $output->write('<comment>Skipped: </comment>');
-                    $output->write($this->cliHelper->link($imageFile->path));
-                    $output->writeln(sprintf(' <comment>(%s)</comment>', $result->value));
-                    $progressBar->display();
-                    $progressBar->advance();
-                    continue;
-                }
-
-                $totalJpegSizeAfter += $result->avifSize;
-                $totalQcTime        += $result->qcTime;
-                $totalJpegsProcessed++;
-
-                $savings       = $result->savings($imageFile->size);
-                $totalSavings += $savings;
-                $progressBar->setMessage(
-                    sprintf('%s | cq=%d, score=%.1f, saved %s (total: %s)', $fileName, $result->cqLevel, $result->qualityScore, $cliHelper->formatBytes($savings), $cliHelper->formatBytes($totalSavings)),
-                    'status',
-                );
-
-                $this->logger->info('Processed JPEG', [
-                    'original_file' => $imageFile->path,
-                    'original_size' => $imageFile->size,
-                    'avif_file' => $imageFile->optimizedPath(),
-                    'avif_size' => $result->avifSize,
-                    'cq_level' => $result->cqLevel,
-                    'quality_score' => $result->qualityScore,
-                ]);
-            } catch (Throwable $exception) {
-                $progressBar->setMessage(sprintf('%s | <error>Error</error>', $fileName), 'status');
-                $progressBar->clear();
-                $output->writeln(sprintf('<error>%s: %s</error>', $fileName, $exception->getMessage()));
-                $progressBar->display();
-
-                $totalJpegsErrored++;
-            }
-
-            $progressBar->advance();
-        }
+        $result = $this->imageProcessor->process($jpegs, $statusCallback, $errorCallback, $skipCallback);
 
         $progressBar->setMessage('Done', 'status');
         $progressBar->finish();
         $output->writeln('');
 
-        $archiveStartTime = microtime(true);
-        $arwDirCount      = count($collection->arwsByDir);
+        return $result;
+    }
 
-        if ($arwDirCount > 0) {
-            $arwProgressBar = $this->cliHelper->createProgressBar($output, $arwDirCount, 'ARW dirs');
-            $arwProgressBar->start();
+    /** @return array{archived: int, sizeBefore: int, sizeAfter: int} */
+    private function archiveArws(OutputInterface $output, ImageCollection $collection): array
+    {
+        $arwsByDir   = $collection->arwsByDir;
+        $arwDirCount = count($arwsByDir);
 
-            foreach ($collection->arwsByDir as $dir => $arwFiles) {
-                $dirName   = basename($dir);
-                $fileCount = count($arwFiles);
-                $arwProgressBar->setMessage(sprintf('%s (%d files)', $dirName, $fileCount), 'status');
-                $arwProgressBar->display();
+        $archived   = 0;
+        $sizeBefore = 0;
+        $sizeAfter  = 0;
 
-                $arwDirSizeBefore = 0;
-                foreach ($arwFiles as $arwFile) {
-                    $arwDirSizeBefore += filesize($arwFile);
-                }
-
-                $totalArwSizeBefore += $arwDirSizeBefore;
-
-                try {
-                    $archiveSize        = $this->rawArchiver->archive($dir, $arwFiles);
-                    $totalArchiveSize  += $archiveSize;
-                    $totalArwsArchived += $fileCount;
-
-                    $arwProgressBar->setMessage(
-                        sprintf('%s | %s', $dirName, $cliHelper->formatBytes($archiveSize)),
-                        'status',
-                    );
-                } catch (Throwable $exception) {
-                    $arwProgressBar->setMessage(sprintf('%s | <error>Error</error>', $dirName), 'status');
-                    $arwProgressBar->clear();
-                    $output->writeln(sprintf('<error>%s: %s</error>', $dirName, $exception->getMessage()));
-                    $arwProgressBar->display();
-                }
-
-                $arwProgressBar->advance();
-            }
-
-            $arwProgressBar->setMessage('Done', 'status');
-            $arwProgressBar->finish();
-            $output->writeln('');
+        if ($arwDirCount === 0) {
+            return ['archived' => 0, 'sizeBefore' => 0, 'sizeAfter' => 0];
         }
 
-        $totalArchiveTime = microtime(true) - $archiveStartTime;
+        $archiveStartTime = microtime(true);
+        $arwProgressBar   = $this->cliHelper->createProgressBar($output, $arwDirCount, 'ARW dirs');
+        $arwProgressBar->start();
 
-        $endTime = microtime(true);
+        foreach ($arwsByDir as $dir => $arwFiles) {
+            $dirName   = basename($dir);
+            $fileCount = count($arwFiles);
+            $arwProgressBar->setMessage(sprintf('%s (%d files)', $dirName, $fileCount), 'status');
+            $arwProgressBar->display();
+
+            $dirSizeBefore = 0;
+            foreach ($arwFiles as $arwFile) {
+                $dirSizeBefore += filesize($arwFile);
+            }
+
+            $sizeBefore += $dirSizeBefore;
+
+            try {
+                $archiveSize = $this->rawArchiver->archive($dir, $arwFiles);
+                $sizeAfter  += $archiveSize;
+                $archived   += $fileCount;
+
+                $arwProgressBar->setMessage(
+                    sprintf('%s | %s', $dirName, $this->cliHelper->formatBytes($archiveSize)),
+                    'status',
+                );
+            } catch (Throwable $exception) {
+                $arwProgressBar->setMessage(sprintf('%s | <error>Error</error>', $dirName), 'status');
+                $arwProgressBar->clear();
+                $output->writeln(sprintf('<error>%s: %s</error>', $dirName, $exception->getMessage()));
+                $arwProgressBar->display();
+            }
+
+            $arwProgressBar->advance();
+        }
+
+        $arwProgressBar->setMessage('Done', 'status');
+        $arwProgressBar->finish();
+        $output->writeln('');
+
+        return [
+            'archived'   => $archived,
+            'sizeBefore' => $sizeBefore,
+            'sizeAfter'  => $sizeAfter,
+        ];
+    }
+
+    /** @param array{archived: int, sizeBefore: int, sizeAfter: int} $arwResult */
+    private function printSummaries(
+        OutputInterface $output,
+        ImageCollection $collection,
+        ImageProcessorResult $jpegResult,
+        array $arwResult,
+        float $startTime,
+        float $gatherTime,
+        float $endTime,
+    ): void {
+        $output->writeln('');
+
+        $output->writeln('JPEG Summary:');
+        $output->writeln(sprintf('  Found: %d', $collection->stats->jpegsFound));
+        $output->writeln(sprintf('  Processed: %d', $jpegResult->processedCount()));
+        $output->writeln(sprintf('  Skipped: %d', $collection->stats->jpegsSkipped + $jpegResult->skippedCount()));
+        $output->writeln(sprintf('  Errored: %d', $jpegResult->erroredCount()));
+
+        if ($jpegResult->processedCount() > 0) {
+            $output->writeln(sprintf('  Size before: %s', $this->cliHelper->formatBytes($jpegResult->totalBytesBefore())));
+            $output->writeln(sprintf('  Size after: %s', $this->cliHelper->formatBytes($jpegResult->totalBytesAfter())));
+            $output->writeln(sprintf('  Savings: %s', $this->cliHelper->formatBytes($jpegResult->totalBytesSaved())));
+        }
 
         $output->writeln('');
-        new JpegSummary(
-            found: $collection->stats->jpegsFound,
-            processed: $totalJpegsProcessed,
-            skipped: $collection->stats->jpegsSkipped + $totalJpegsSkipped,
-            errored: $totalJpegsErrored,
-            sizeBefore: $totalJpegSizeBefore,
-            sizeAfter: $totalJpegSizeAfter,
-        )->print($output, $this->cliHelper);
+
+        $output->writeln('ARW Summary:');
+        $output->writeln(sprintf('  Found: %d', $collection->stats->arwsFound));
+        $output->writeln(sprintf('  Archived: %d', $arwResult['archived']));
+
+        if ($arwResult['archived'] > 0) {
+            $output->writeln(sprintf('  Size before: %s', $this->cliHelper->formatBytes($arwResult['sizeBefore'])));
+            $output->writeln(sprintf('  Size after: %s', $this->cliHelper->formatBytes($arwResult['sizeAfter'])));
+            $output->writeln(sprintf('  Savings: %s', $this->cliHelper->formatBytes($arwResult['sizeBefore'] - $arwResult['sizeAfter'])));
+        }
 
         $output->writeln('');
-        new ArwSummary(
-            found: $collection->stats->arwsFound,
-            archived: $totalArwsArchived,
-            sizeBefore: $totalArwSizeBefore,
-            sizeAfter: $totalArchiveSize,
-        )->print($output, $this->cliHelper);
 
-        $output->writeln('');
         $this->timing
             ->withGather($gatherTime - $startTime)
-            ->withQc($totalQcTime)
-            ->withArchiving($totalArchiveTime)
+            ->withQc($jpegResult->totalQcTime())
+            ->withArchiving($endTime - $gatherTime - $jpegResult->totalQcTime())
             ->withTotal($this->timing->initSeconds() + $endTime - $startTime)
             ->print($output);
-
-        return self::SUCCESS;
     }
 
     /** @return string Path to xz tool */
@@ -282,21 +283,5 @@ final class Squeeze extends Command
         }
 
         return $xzPath;
-    }
-
-    /** @param callable(int, float, int): void $statusCallback Called with (cqLevel, score, saved) during quality search */
-    private function processJpeg(ImageFile $file, OutputInterface $output, callable $statusCallback): ImageProcessingResult|CalculationSkipReason
-    {
-        if ($output->isVerbose()) {
-            $output->writeln(sprintf('  <comment>Searching for optimal CQ level...</comment>'));
-        }
-
-        $result = $this->cqCalculator->calculate($file, $statusCallback);
-
-        if ($result instanceof ImageProcessingResult && $output->isVerbose()) {
-            $output->writeln(sprintf('  <info>Found optimal: cq-level=%d, score=%.2f</info>', $result->cqLevel, $result->qualityScore));
-        }
-
-        return $result;
     }
 }

@@ -91,22 +91,22 @@ final class RemoveOriginals extends Command
         }
 
         if ($dryRun) {
-            $output->writeln('');
-            new JpegSummary(
+            $this->printJpegSummary(
+                $output,
                 found: $jpegCollection->stats->jpegsFound,
                 skipped: $jpegCollection->stats->jpegsSkipped,
-                removedSize: $jpegSpaceToFree,
+                willFreeSize: $jpegSpaceToFree,
                 replacementSize: $avifReplacementSize,
-            )->print($output, $this->cliHelper);
+            );
 
-            $output->writeln('');
-            new ArwSummary(
+            $this->printArwSummary(
+                $output,
                 found: $arwStats['arwsFound'],
                 skipped: $arwStats['arwsSkipped'],
                 notArchived: $arwStats['arwsNotArchived'],
-                removedSize: $arwSpaceToFree,
+                willFreeSize: $arwSpaceToFree,
                 replacementSize: $arwStats['archiveReplacementSize'],
-            )->print($output, $this->cliHelper);
+            );
 
             $output->writeln('');
             $this->timing
@@ -161,26 +161,26 @@ final class RemoveOriginals extends Command
             $avifReplacementSize += (int) filesize($imageFile->optimizedPath());
         }
 
-        $output->writeln('');
-        new JpegSummary(
+        $this->printJpegSummary(
+            $output,
             found: $jpegCollection->stats->jpegsFound,
             skipped: $jpegCollection->stats->jpegsSkipped,
             removed: $jpegsRemoved,
             errored: $jpegsErrored,
-            removedSize: $jpegSpaceFreed,
+            freedSize: $jpegSpaceFreed,
             replacementSize: $avifReplacementSize,
-        )->print($output, $this->cliHelper);
+        );
 
-        $output->writeln('');
-        new ArwSummary(
+        $this->printArwSummary(
+            $output,
             found: $arwStats['arwsFound'],
             skipped: $arwStats['arwsSkipped'],
             notArchived: $arwStats['arwsNotArchived'],
             removed: $arwsRemoved,
             errored: $arwsErrored,
-            removedSize: $arwSpaceFreed,
+            freedSize: $arwSpaceFreed,
             replacementSize: $arwStats['archiveReplacementSize'],
-        )->print($output, $this->cliHelper);
+        );
 
         $output->writeln('');
         $this->timing
@@ -190,5 +190,101 @@ final class RemoveOriginals extends Command
             ->print($output);
 
         return self::SUCCESS;
+    }
+
+    private function printJpegSummary(
+        OutputInterface $output,
+        int $found,
+        int|null $skipped = null,
+        int|null $removed = null,
+        int|null $errored = null,
+        int|null $willFreeSize = null,
+        int|null $freedSize = null,
+        int|null $replacementSize = null,
+    ): void {
+        $output->writeln('');
+        $output->writeln('JPEG Summary:');
+        $output->writeln(sprintf('  Found: %d', $found));
+
+        if ($skipped !== null) {
+            $output->writeln(sprintf('  Skipped: %d', $skipped));
+        }
+
+        if ($removed !== null) {
+            $output->writeln(sprintf('  Removed: %d', $removed));
+        }
+
+        if ($errored !== null) {
+            $output->writeln(sprintf('  Errored: %d', $errored));
+        }
+
+        if ($willFreeSize !== null) {
+            $output->writeln(sprintf('  Will free: %s', $this->cliHelper->formatBytes($willFreeSize)));
+        }
+
+        if ($freedSize !== null) {
+            $output->writeln(sprintf('  Freed: %s', $this->cliHelper->formatBytes($freedSize)));
+        }
+
+        if ($replacementSize === null) {
+            return;
+        }
+
+        $output->writeln(sprintf('  Replacement: %s', $this->cliHelper->formatBytes($replacementSize)));
+        $savings = ($willFreeSize ?? $freedSize ?? 0) - $replacementSize;
+        $output->writeln(sprintf('  Savings: %s', $this->cliHelper->formatBytes($savings)));
+    }
+
+    private function printArwSummary(
+        OutputInterface $output,
+        int $found,
+        int|null $archived = null,
+        int|null $skipped = null,
+        int|null $notArchived = null,
+        int|null $removed = null,
+        int|null $errored = null,
+        int|null $willFreeSize = null,
+        int|null $freedSize = null,
+        int|null $replacementSize = null,
+    ): void {
+        $output->writeln('');
+        $output->writeln('ARW Summary:');
+        $output->writeln(sprintf('  Found: %d', $found));
+
+        if ($archived !== null) {
+            $output->writeln(sprintf('  Archived: %d', $archived));
+        }
+
+        if ($skipped !== null) {
+            $output->writeln(sprintf('  Skipped: %d', $skipped));
+        }
+
+        if ($notArchived !== null) {
+            $output->writeln(sprintf('  Not archived: %d', $notArchived));
+        }
+
+        if ($removed !== null) {
+            $output->writeln(sprintf('  Removed: %d', $removed));
+        }
+
+        if ($errored !== null) {
+            $output->writeln(sprintf('  Errored: %d', $errored));
+        }
+
+        if ($willFreeSize !== null) {
+            $output->writeln(sprintf('  Will free: %s', $this->cliHelper->formatBytes($willFreeSize)));
+        }
+
+        if ($freedSize !== null) {
+            $output->writeln(sprintf('  Freed: %s', $this->cliHelper->formatBytes($freedSize)));
+        }
+
+        if ($replacementSize === null) {
+            return;
+        }
+
+        $output->writeln(sprintf('  Archive replacement: %s', $this->cliHelper->formatBytes($replacementSize)));
+        $savings = ($willFreeSize ?? $freedSize ?? 0) - $replacementSize;
+        $output->writeln(sprintf('  Savings: %s', $this->cliHelper->formatBytes($savings)));
     }
 }
