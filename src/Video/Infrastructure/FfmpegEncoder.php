@@ -285,7 +285,7 @@ final readonly class FfmpegEncoder implements Encoder
         return (float) $vmafResult['pooled_metrics']['vmaf']['harmonic_mean'];
     }
 
-    /** @throws RuntimeException if VMAF is not available */
+    /** @throws RuntimeException if VMAF is not available. */
     public function describeCapabilities(callable $writer): void
     {
         if (! $this->hasVmaf) {
