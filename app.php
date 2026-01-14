@@ -12,6 +12,7 @@ use App\Shared\Domain\Platform;
 use App\Shared\Infrastructure\SymfonyFilesystemScanner;
 use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
+use App\Video\Domain\FfmpegFactory;
 use App\Video\Ui\Cli\Rename as VideosRename;
 use App\Video\Ui\Cli\Squeeze as VideosSqueeze;
 use Monolog\Handler\StreamHandler;
@@ -35,9 +36,11 @@ $archiveVerifier    = new ArchiveVerifier($platform);
 
 $timing = $timing->recordInit();
 
+$ffmpegFactory = new FfmpegFactory($platform);
+
 $app = new Application();
 $app->addCommands([
-    new VideosSqueeze($logger, $cliHelper, $scanner, $timing),
+    new VideosSqueeze($logger, $cliHelper, $scanner, $timing, $ffmpegFactory, $platform),
     new VideosRename($cliHelper, $scanner, $timing),
     new ImagesSqueeze($logger, $cliHelper, $imageFileCollector, $timing),
     new ImagesRemoveOriginals($logger, $cliHelper, $scanner, $imageFileCollector, $archiveVerifier, $timing),

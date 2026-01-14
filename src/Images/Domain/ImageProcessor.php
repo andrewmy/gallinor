@@ -14,7 +14,7 @@ final readonly class ImageProcessor
     }
 
     /**
-     * @param iterable<ImageFile>                                $images         JPEG files to process
+     * @param iterable<ImageFile>                           $images         JPEG files to process
      * @param callable(int, float, int): void               $statusCallback Called with (cqLevel, score, saved) during quality search
      * @param callable(string, string): void                $errorCallback  Called with (fileName, errorMessage) on error
      * @param callable(string, CalculationSkipReason): void $skipCallback   Called with (fileName, reason) when skipped

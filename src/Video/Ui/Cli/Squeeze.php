@@ -10,7 +10,7 @@ use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
 use App\Video\Domain\Encoder;
 use App\Video\Domain\Exceptions\UnsupportedResolution;
-use App\Video\Domain\Ffmpeg;
+use App\Video\Domain\FfmpegFactory;
 use App\Video\Domain\VideoFile;
 use App\Video\Domain\VideoFinder;
 use App\Video\Domain\VideoProcessor;
@@ -40,11 +40,14 @@ final class Squeeze extends Command
         private readonly CliHelper $cliHelper,
         private readonly FilesystemScanner $scanner,
         private readonly Timing $timing,
+        private readonly FfmpegFactory $ffmpegFactory,
+        private readonly Platform $platform,
     ) {
         parent::__construct();
     }
 
     private VideoFinder $videoFinder;
+    private VideoProcessor $processor;
 
     /** @param list<string> $directories */
     public function __invoke(
@@ -61,17 +64,18 @@ final class Squeeze extends Command
 
         $startTime = microtime(true);
         try {
-            $platform          = new Platform();
-            $ffmpeg            = new Ffmpeg($useCpu, $platform);
+            $ffmpeg            = $this->ffmpegFactory->create($useCpu);
             $this->videoFinder = new VideoFinder($ffmpeg);
-            $processor         = new VideoProcessor($ffmpeg, $this->logger);
+            $this->processor   = new VideoProcessor($ffmpeg, $this->logger);
         } catch (Throwable $exception) {
             $output->writeln('<error>' . $exception->getMessage() . '</error>');
 
             return self::FAILURE;
         }
 
-        $output->writeln(sprintf('<info>Available cores: %d</info>', $platform->nCores));
+        $factoryTime = microtime(true);
+
+        $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores));
         $output->writeln(sprintf('<info>Using encoder: %s</info>', $ffmpeg->activeEncoder->value));
         if ($ffmpeg->activeEncoder === Encoder::Nvidia) {
             $output->writeln(sprintf(
@@ -116,13 +120,13 @@ final class Squeeze extends Command
             $totalSkippedFiles,
         ));
         $gatherTime = microtime(true);
-        $output->writeln(sprintf('<info>Gather time: %.3fs</info>', $gatherTime - $startTime));
+        $output->writeln(sprintf('<info>Gather time: %.3fs</info>', $gatherTime - $factoryTime));
 
         if ($dryRun) {
             $output->writeln('');
+            $initTime = $this->timing->initSeconds() + $factoryTime - $startTime;
             $this->timing
-                ->withGather($gatherTime - $startTime)
-                ->withTotal($this->timing->initSeconds() + $gatherTime - $startTime)
+                ->withTotal($initTime + $gatherTime - $factoryTime)
                 ->print($output);
 
             return self::SUCCESS;
@@ -150,7 +154,7 @@ final class Squeeze extends Command
             };
 
             try {
-                $result = $processor->processVideo($file, false, $statusCallback);
+                $result = $this->processor->processVideo($file, false, $statusCallback);
 
                 if ($result->skipped) {
                     $progressBar->clear();
@@ -208,11 +212,12 @@ final class Squeeze extends Command
         )->print($output, $this->cliHelper);
 
         $output->writeln('');
+        $initTime = $this->timing->initSeconds() + $factoryTime - $startTime;
         $this->timing
-            ->withGather($gatherTime - $startTime)
+            ->withGather($gatherTime - $factoryTime)
             ->withProcess($processTime - $gatherTime)
             ->withQc($totalQcTime)
-            ->withTotal($this->timing->initSeconds() + $processTime - $startTime)
+            ->withTotal($initTime + $processTime - $factoryTime)
             ->print($output);
 
         return self::SUCCESS;
