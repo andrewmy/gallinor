@@ -74,6 +74,7 @@ final readonly class CqLevelCalculator
 
                 return new ImageProcessingResult(
                     avifSize: $currentAvifSize,
+                    originalSize: $file->size,
                     cqLevel: $cqLevel,
                     qualityScore: $score,
                     qcTime: $totalQcTime,

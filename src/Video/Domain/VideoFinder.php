@@ -13,7 +13,7 @@ use function str_ends_with;
 final readonly class VideoFinder
 {
     public function __construct(
-        private Ffmpeg $ffmpeg,
+        private Encoder $encoder,
     ) {
     }
 
@@ -39,7 +39,7 @@ final readonly class VideoFinder
             }
 
             try {
-                yield $this->ffmpeg->videoFileFromPath($filePath);
+                yield $this->encoder->videoFileFromPath($filePath);
             } catch (RuntimeException $exception) {
                 if ($errorCallback !== null) {
                     $errorCallback($filePath, $exception->getMessage());

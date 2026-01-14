@@ -33,7 +33,7 @@ final readonly class VideoProcessor
     private const float MAX_BITRATE_OVERHEAD = 1.1;
 
     public function __construct(
-        private Ffmpeg $ffmpeg,
+        private Encoder $encoder,
         private LoggerInterface $logger,
     ) {
     }
@@ -76,15 +76,14 @@ final readonly class VideoProcessor
             );
         }
 
-        $retryCount     = 0;
-        $qcTime         = 0.0;
-        $resultAccepted = false;
+        $retryCount = 0;
+        $qcTime     = 0.0;
 
-        while (! $resultAccepted) {
+        do {
             [$tempFilePath, $processedSize] = $this->encode($file, $baseBitrate);
 
             $startTime = microtime(true);
-            $vmafScore = $this->ffmpeg->vmafScore(
+            $vmafScore = $this->encoder->qualityScore(
                 originalFilePath: $file->path,
                 processedFilePath: $tempFilePath,
             );
@@ -126,7 +125,7 @@ final readonly class VideoProcessor
             }
 
             $baseBitrate += $bitrateStep;
-        }
+        } while (! $resultAccepted);
 
         $newFilePath = $file->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
         // rename() fails across filesystems (temp vs target), fall back to copy+delete
@@ -170,7 +169,7 @@ final readonly class VideoProcessor
         // the partial file won't pollute the source directory.
         $tempFilePath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('gallinor_', true) . '.mp4';
 
-        $ffmpegCmd = $this->ffmpeg->commandForFile($file, $baseBitrate, self::MAX_BITRATE_SPIKE, $tempFilePath);
+        $ffmpegCmd = $this->encoder->commandForFile($file, $baseBitrate, self::MAX_BITRATE_SPIKE, $tempFilePath);
 
         $ffmpegOutput   = [];
         $ffmpegExitCode = 0;

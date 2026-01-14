@@ -8,9 +8,8 @@ use App\Shared\Domain\FilesystemScanner;
 use App\Shared\Domain\Platform;
 use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
-use App\Video\Domain\Encoder;
+use App\Video\Domain\EncoderFactory;
 use App\Video\Domain\Exceptions\UnsupportedResolution;
-use App\Video\Domain\FfmpegFactory;
 use App\Video\Domain\VideoFile;
 use App\Video\Domain\VideoFinder;
 use App\Video\Domain\VideoProcessor;
@@ -40,7 +39,7 @@ final class Squeeze extends Command
         private readonly CliHelper $cliHelper,
         private readonly FilesystemScanner $scanner,
         private readonly Timing $timing,
-        private readonly FfmpegFactory $ffmpegFactory,
+        private readonly EncoderFactory $encoderFactory,
         private readonly Platform $platform,
     ) {
         parent::__construct();
@@ -64,9 +63,9 @@ final class Squeeze extends Command
 
         $startTime = microtime(true);
         try {
-            $ffmpeg            = $this->ffmpegFactory->create($useCpu);
-            $this->videoFinder = new VideoFinder($ffmpeg);
-            $this->processor   = new VideoProcessor($ffmpeg, $this->logger);
+            $encoder           = $this->encoderFactory->create($useCpu);
+            $this->videoFinder = new VideoFinder($encoder);
+            $this->processor   = new VideoProcessor($encoder, $this->logger);
         } catch (Throwable $exception) {
             $output->writeln('<error>' . $exception->getMessage() . '</error>');
 
@@ -76,16 +75,11 @@ final class Squeeze extends Command
         $factoryTime = microtime(true);
 
         $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores));
-        $output->writeln(sprintf('<info>Using encoder: %s</info>', $ffmpeg->activeEncoder->value));
-        if ($ffmpeg->activeEncoder === Encoder::Nvidia) {
-            $output->writeln(sprintf(
-                '<info>NVENC Temporal AQ: %s</info>',
-                $ffmpeg->hasTemporalAq ? 'available' : 'not available',
-            ));
-        }
 
-        if (! $ffmpeg->hasVmaf) {
-            $output->writeln('<error>VMAF is not available. Quality checking is required. Aborting.</error>');
+        try {
+            $encoder->describeCapabilities(static fn (string $line) => $output->writeln(sprintf('<info>%s</info>', $line)));
+        } catch (Throwable $exception) {
+            $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
 
             return self::FAILURE;
         }

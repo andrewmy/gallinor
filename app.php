@@ -16,7 +16,7 @@ use App\Shared\Domain\Platform;
 use App\Shared\Infrastructure\SymfonyFilesystemScanner;
 use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
-use App\Video\Domain\FfmpegFactory;
+use App\Video\Domain\EncoderFactory;
 use App\Video\Ui\Cli\Rename as VideosRename;
 use App\Video\Ui\Cli\Squeeze as VideosSqueeze;
 use Monolog\Handler\StreamHandler;
@@ -40,7 +40,7 @@ $archiveVerifier    = new ArchiveVerifier($platform);
 
 $timing = $timing->recordInit();
 
-$ffmpegFactory  = new FfmpegFactory($platform);
+$ffmpegFactory  = new EncoderFactory($platform);
 $imageTools     = new ImageTools($platform);
 $imageProcessor = new ImageProcessor(new CqLevelCalculator($imageTools));
 $rawArchiver    = new RawArchiver($platform, $logger);

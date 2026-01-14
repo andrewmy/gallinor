@@ -9,7 +9,12 @@
     <arg value="nps"/>
 
     <file>./src/</file>
+    <file>./tests/</file>
     <file>./app.php</file>
 
     <rule ref="Doctrine"/>
+    <!-- Allow snake_case for test methods (PHPUnit convention) -->
+    <rule ref="PSR1.Methods.CamelCapsMethodName.NotCamelCaps">
+        <exclude-pattern>*/tests/*</exclude-pattern>
+    </rule>
 </ruleset>

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Images\Domain;
 
 use function count;
-use function filesize;
 
 final class ImageProcessorResult
 {
@@ -40,8 +39,8 @@ final class ImageProcessorResult
     {
         $total = 0;
 
-        foreach ($this->processed as $path => $result) {
-            $total += (int) filesize($path);
+        foreach ($this->processed as $result) {
+            $total += $result->originalSize;
         }
 
         return $total;

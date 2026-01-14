@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
-namespace App\Video\Domain;
+namespace App\Video\Infrastructure;
 
 use App\Shared\Domain\Platform;
+use App\Video\Domain\Encoder;
+use App\Video\Domain\EncoderName;
+use App\Video\Domain\VideoFile;
 use JsonException;
 use RuntimeException;
 use Symfony\Component\Process\Process;
@@ -28,11 +31,11 @@ use function unlink;
 
 use const JSON_THROW_ON_ERROR;
 
-final readonly class Ffmpeg
+final readonly class FfmpegEncoder implements Encoder
 {
     private string $ffprobePath;
     private string $ffmpegPath;
-    public Encoder $activeEncoder;
+    public EncoderName $activeEncoder;
     public bool $hasTemporalAq;
     public bool $hasVmaf;
 
@@ -43,26 +46,20 @@ final readonly class Ffmpeg
         $this->ffprobePath = $this->platform->findTool('ffprobe');
         $this->ffmpegPath  = $this->platform->findTool('ffmpeg');
 
-        $hasAppleToolbox = $this->platform->isWindows()
-            ? false
-            : $this->ffmpegHasEncoder('hevc_videotoolbox');
+        $hasAppleToolbox = ! $this->platform->isWindows() && $this->ffmpegHasEncoder('hevc_videotoolbox');
         $hasNvEncoder    = $this->ffmpegHasEncoder('hevc_nvenc');
 
         if ($useCpu) {
-            $this->activeEncoder = Encoder::Cpu;
+            $this->activeEncoder = EncoderName::Cpu;
         } else {
             if (! $hasAppleToolbox && ! $hasNvEncoder) {
                 throw new RuntimeException('No hardware HEVC encoder found (neither Apple VideoToolbox nor NVIDIA NVENC)');
             }
 
-            $this->activeEncoder = $hasAppleToolbox ? Encoder::Apple : Encoder::Nvidia;
+            $this->activeEncoder = $hasAppleToolbox ? EncoderName::Apple : EncoderName::Nvidia;
         }
 
-        if ($hasNvEncoder) {
-            $this->hasTemporalAq = $this->ffmpegHasOption('encoder=hevc_nvenc', 'temporal');
-        } else {
-            $this->hasTemporalAq = false;
-        }
+        $this->hasTemporalAq = $hasNvEncoder && $this->ffmpegHasOption('encoder=hevc_nvenc', 'temporal');
 
         $this->hasVmaf = $this->ffmpegHasFilter('vmaf');
     }
@@ -176,7 +173,7 @@ final readonly class Ffmpeg
             '-stats',
         ];
 
-        if ($this->activeEncoder === Encoder::Nvidia) {
+        if ($this->activeEncoder === EncoderName::Nvidia) {
             $params = array_merge($params, [
                 '-hwaccel cuda',
                 '-hwaccel_output_format cuda',
@@ -196,7 +193,7 @@ final readonly class Ffmpeg
         ]);
 
         if (in_array($file->pixFmt, ['yuv420p', 'yuv420p10le'], true)) {
-            if ($this->activeEncoder !== Encoder::Nvidia) {
+            if ($this->activeEncoder !== EncoderName::Nvidia) {
                 $params[] = '-pix_fmt yuv420p10le';
             }
 
@@ -217,7 +214,7 @@ final readonly class Ffmpeg
             $params[] = '-color_trc ' . escapeshellarg($file->colorTransfer);
         }
 
-        if ($this->activeEncoder === Encoder::Nvidia) {
+        if ($this->activeEncoder === EncoderName::Nvidia) {
             $params = array_merge($params, [
                 sprintf('-maxrate:v %dk', $baseBitrate * $maxBitrateSpike),
                 '-preset p7',
@@ -228,9 +225,9 @@ final readonly class Ffmpeg
             if ($this->hasTemporalAq) {
                 $params[] = '-temporal-aq 1';
             }
-        } elseif ($this->activeEncoder === Encoder::Apple) {
+        } elseif ($this->activeEncoder === EncoderName::Apple) {
             $params[] = '-quality quality';
-        } elseif ($this->activeEncoder === Encoder::Cpu) {
+        } elseif ($this->activeEncoder === EncoderName::Cpu) {
             $params = array_merge($params, [
                 '-preset medium',
                 sprintf('-x265-params "pools=%s"', $this->platform->nCores),
@@ -242,7 +239,7 @@ final readonly class Ffmpeg
         return implode(' ', $params);
     }
 
-    public function vmafScore(string $originalFilePath, string $processedFilePath): float
+    public function qualityScore(string $originalFilePath, string $processedFilePath): float
     {
         if (! $this->hasVmaf) {
             throw new RuntimeException('VMAF filter is not available in ffmpeg');
@@ -286,5 +283,21 @@ final readonly class Ffmpeg
         }
 
         return (float) $vmafResult['pooled_metrics']['vmaf']['harmonic_mean'];
+    }
+
+    /** @throws RuntimeException if VMAF is not available */
+    public function describeCapabilities(callable $writer): void
+    {
+        if (! $this->hasVmaf) {
+            throw new RuntimeException('VMAF is not available. Quality checking is required.');
+        }
+
+        $writer(sprintf('Using encoder: %s', $this->activeEncoder->value));
+
+        if ($this->activeEncoder !== EncoderName::Nvidia || ! $this->hasTemporalAq) {
+            return;
+        }
+
+        $writer('NVENC Temporal AQ: available');
     }
 }
