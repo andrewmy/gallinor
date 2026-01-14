@@ -6,19 +6,15 @@ namespace App\Images\Ui\Cli;
 
 use App\Images\Domain\AvifFilter;
 use App\Images\Domain\CalculationSkipReason;
-use App\Images\Domain\CqLevelCalculator;
-use App\Images\Domain\Exiftool;
 use App\Images\Domain\ImageCollection;
 use App\Images\Domain\ImageFile;
 use App\Images\Domain\ImageFileCollector;
 use App\Images\Domain\ImageProcessor;
 use App\Images\Domain\ImageProcessorResult;
-use App\Images\Domain\ImageTools;
 use App\Images\Domain\RawArchiver;
 use App\Shared\Domain\Platform;
 use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
-use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -37,16 +33,13 @@ use const PHP_EOL;
 #[AsCommand(name: 'images:squeeze', description: 'Re-encode JPEGs to optimal AVIFs, XZ the ARWs')]
 final class Squeeze extends Command
 {
-    private Platform $platform;
-    private ImageTools $imageTools;
-    private ImageProcessor $imageProcessor;
-    private RawArchiver $rawArchiver;
-
     public function __construct(
-        private readonly LoggerInterface $logger,
         private readonly CliHelper $cliHelper,
         private readonly ImageFileCollector $collector,
         private readonly Timing $timing,
+        private readonly Platform $platform,
+        private readonly ImageProcessor $imageProcessor,
+        private readonly RawArchiver $rawArchiver,
     ) {
         parent::__construct();
     }
@@ -64,26 +57,7 @@ final class Squeeze extends Command
 
         $startTime = microtime(true);
 
-        try {
-            $this->platform       = new Platform();
-            $this->imageTools     = new ImageTools($this->platform);
-            $this->imageProcessor = new ImageProcessor(
-                new CqLevelCalculator($this->imageTools),
-            );
-
-            $output->writeln(sprintf('<info>Found avifenc: %s</info>', $this->imageTools->avifencPath));
-            $output->writeln(sprintf('<info>Found avifdec: %s</info>', $this->imageTools->avifdecPath));
-            $output->writeln(sprintf('<info>Found ssimulacra2: %s</info>', $this->imageTools->ssimulacra2Path));
-
-            $xzPath            = $this->validateArchiveTools($output);
-            $this->rawArchiver = new RawArchiver($this->platform, $xzPath, $this->logger);
-            $output->writeln(sprintf('<info>Found exiftool: %s</info>', (new Exiftool($this->platform))->path()));
-        } catch (Throwable $exception) {
-            $output->writeln('<error>' . $exception->getMessage() . '</error>');
-
-            return self::FAILURE;
-        }
-
+        $output->writeln('<info>Found: avifenc, avifdec, ssimulacra2, xz, tar</info>');
         $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores));
         $output->writeln('');
 
@@ -263,25 +237,5 @@ final class Squeeze extends Command
             ->withArchiving($endTime - $gatherTime - $jpegResult->totalQcTime())
             ->withTotal($this->timing->initSeconds() + $endTime - $startTime)
             ->print($output);
-    }
-
-    /** @return string Path to xz tool */
-    private function validateArchiveTools(OutputInterface $output): string
-    {
-        $requiredTools = ['xz', 'tar'];
-        $xzPath        = '';
-
-        foreach ($requiredTools as $tool) {
-            $path = $this->platform->findTool($tool);
-            $output->writeln(sprintf('<info>Found %s: %s</info>', $tool, $path));
-
-            if ($tool !== 'xz') {
-                continue;
-            }
-
-            $xzPath = $path;
-        }
-
-        return $xzPath;
     }
 }

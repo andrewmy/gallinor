@@ -31,11 +31,13 @@ use const DIRECTORY_SEPARATOR;
  */
 final readonly class RawArchiver
 {
+    public string $xzPath;
+
     public function __construct(
         private Platform $platform,
-        private string $xzPath,
         private LoggerInterface $logger,
     ) {
+        $this->xzPath = $this->platform->findTool('xz');
     }
 
     /**

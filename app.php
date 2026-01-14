@@ -4,8 +4,12 @@
 declare(strict_types=1);
 
 use App\Images\Domain\ArchiveVerifier;
+use App\Images\Domain\CqLevelCalculator;
 use App\Images\Domain\Exiftool;
 use App\Images\Domain\ImageFileCollector;
+use App\Images\Domain\ImageProcessor;
+use App\Images\Domain\ImageTools;
+use App\Images\Domain\RawArchiver;
 use App\Images\Ui\Cli\RemoveOriginals as ImagesRemoveOriginals;
 use App\Images\Ui\Cli\Squeeze as ImagesSqueeze;
 use App\Shared\Domain\Platform;
@@ -36,13 +40,16 @@ $archiveVerifier    = new ArchiveVerifier($platform);
 
 $timing = $timing->recordInit();
 
-$ffmpegFactory = new FfmpegFactory($platform);
+$ffmpegFactory  = new FfmpegFactory($platform);
+$imageTools     = new ImageTools($platform);
+$imageProcessor = new ImageProcessor(new CqLevelCalculator($imageTools));
+$rawArchiver    = new RawArchiver($platform, $logger);
 
 $app = new Application();
 $app->addCommands([
     new VideosSqueeze($logger, $cliHelper, $scanner, $timing, $ffmpegFactory, $platform),
     new VideosRename($cliHelper, $scanner, $timing),
-    new ImagesSqueeze($logger, $cliHelper, $imageFileCollector, $timing),
+    new ImagesSqueeze($cliHelper, $imageFileCollector, $timing, $platform, $imageProcessor, $rawArchiver),
     new ImagesRemoveOriginals($logger, $cliHelper, $scanner, $imageFileCollector, $archiveVerifier, $timing),
 ]);
 $app->run();
