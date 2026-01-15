@@ -88,6 +88,28 @@ final readonly class VideoProcessor
         do {
             [$tempFilePath, $processedSize] = $this->encode($file, $baseBitrate, $lineCallback);
 
+            // Check if encoded file is larger than original - skip if so
+            if ($processedSize >= $file->currentSize) {
+                @unlink($tempFilePath);
+                $this->logger->warning('Encoded file is larger than original, skipping', [
+                    'file' => $file->path,
+                    'original_size' => $file->currentSize,
+                    'encoded_size' => $processedSize,
+                ]);
+
+                return new VideoProcessResult(
+                    success: true,
+                    skipped: true,
+                    vmafScore: null,
+                    originalSize: $file->currentSize,
+                    newSize: 0,
+                    qcTime: 0.0,
+                    finalBitrate: $baseBitrate,
+                    retryCount: 0,
+                    outputPath: $file->path,
+                );
+            }
+
             $startTime = microtime(true);
             $vmafScore = $this->encoder->qualityScore(
                 originalFilePath: $file->path,
