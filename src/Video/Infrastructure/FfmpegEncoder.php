@@ -167,7 +167,7 @@ final readonly class FfmpegEncoder implements Encoder
         string $tempFilePath,
     ): string {
         $params = [
-            $this->ffmpegPath,
+            escapeshellarg($this->ffmpegPath),
             '-hide_banner',
             '-loglevel error',
             '-stats',
@@ -182,7 +182,7 @@ final readonly class FfmpegEncoder implements Encoder
 
         $params = array_merge($params, [
             '-fflags +genpts',
-            sprintf('-i "%s"', $file->path),
+            '-i ' . escapeshellarg($file->path),
             '-c:a copy',
             '-c:v ' . $this->activeEncoder->value,
             sprintf('-b:v %dk', $baseBitrate),
@@ -245,8 +245,10 @@ final readonly class FfmpegEncoder implements Encoder
             throw new RuntimeException('VMAF filter is not available in ffmpeg');
         }
 
+        $tempDir = sys_get_temp_dir();
         // Use system temp directory for VMAF log (windows ffmpeg vmaf does not support /dev/stdout)
-        $vmafLogFile = sys_get_temp_dir() . '/vmaf_' . uniqid('', true) . '.json';
+        $vmafLogFileName = 'vmaf_' . uniqid('', true) . '.json';
+        $vmafLogFile     = $tempDir . '/' . $vmafLogFileName;
 
         $process = new Process([
             $this->ffmpegPath,
@@ -258,11 +260,13 @@ final readonly class FfmpegEncoder implements Encoder
             '-i',
             $originalFilePath,
             '-lavfi',
-            sprintf('libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10', $vmafLogFile, $this->platform->nCores),
+            sprintf('libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10', $vmafLogFileName, $this->platform->nCores),
             '-f',
             'null',
             '-',
         ]);
+        // Set working directory to temp dir so we can use relative filename (avoids Windows drive letter colon issues)
+        $process->setWorkingDirectory($tempDir);
         $process->mustRun();
 
         if (! is_file($vmafLogFile)) {
