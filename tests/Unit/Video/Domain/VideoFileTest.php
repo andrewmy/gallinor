@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Video\Domain;
 
+use App\Tests\Unit\PathNormalizer;
 use App\Video\Domain\Exceptions\UnsupportedResolution;
 use App\Video\Domain\VideoFile;
 use PHPUnit\Framework\TestCase;
 
 final class VideoFileTest extends TestCase
 {
+    use PathNormalizer;
+
     private const string DEFAULT_PATH = '/path/to/video.mp4';
 
     public function test_suffixed_file_path_adds_suffix_before_extension(): void
@@ -25,7 +28,7 @@ final class VideoFileTest extends TestCase
             currentSize: 5_000_000,
         );
 
-        self::assertSame('/path/to/video.optimal.mp4', $video->suffixedFilePath('optimal'));
+        self::assertSame('/path/to/video.optimal.mp4', $this->normalizePath($video->suffixedFilePath('optimal')));
     }
 
     public function test_bitrate_step_for_720p(): void
