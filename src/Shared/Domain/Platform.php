@@ -63,6 +63,10 @@ final readonly class Platform
      */
     public function findTool(string $tool): string
     {
+        if ($this->isWindows() && $tool === 'ssimulacra2') {
+            $tool = 'ssimulacra2_rs';
+        }
+
         $which   = $this->isWindows() ? 'where.exe' : 'which';
         $process = new Process([$which, $tool]);
         $process->mustRun();

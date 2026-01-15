@@ -27,18 +27,22 @@ This is a CLI tool for reducing the size of your video and image gallery while m
     - macOS: `brew install ffmpeg`
   - For hardware acceleration:
     - macOS: Apple Silicon or Intel with VideoToolbox support
-    - Windows: NVidia GPU with NVENC support
+    - Win: NVidia GPU with NVENC support
   - For quality check — VMAF library installed and available in your system PATH, usually is in the box with ffmpeg
 - For images:
   - libavif
     - macOS: `brew install libavif`
-    - Windows: https://github.com/AOMediaCodec/libavif/releases
+    - Win: https://github.com/AOMediaCodec/libavif/releases
   - ssimulacra2
     - Rust
       - macOS: `brew install rust`
+      - Win:
+        - `winget install Rustlang.Rustup`
+        - https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2026 — choose ["Desktop C++](https://rust-lang.github.io/rustup/installation/windows-msvc.html)" there too
     - `cargo install ssimulacra2_rs --no-default-features`
   - exiftool
     - macOS: `brew install exiftool`
+    - Win: ` winget install OliverBetz.ExifTool`
   - For raws — xz
     - macOS: `brew install xz`
 
