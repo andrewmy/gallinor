@@ -81,6 +81,18 @@ php app.php images:squeeze /path/to/photos [/path2 /path3 ...] [--dry-run]
 
 Converts JPEGs to AVIF (saving alongside originals as `.avif`) and archives ARW files per directory as `raws-N.tar.xz`.
 
+## Development
+
+```shell
+make ci
+```
+
+or
+
+```shell
+just ci
+```
+
 ## Notes
 
 ### Video
