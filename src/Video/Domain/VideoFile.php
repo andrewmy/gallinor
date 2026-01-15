@@ -62,6 +62,6 @@ final readonly class VideoFile
 
     public function sizeEstimate(int $bitrate): int
     {
-        return (int) ceil($bitrate * $this->duration / 8 / 1024);
+        return (int) ceil($bitrate * $this->duration / 8 * 1024);
     }
 }

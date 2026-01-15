@@ -176,10 +176,10 @@ final class VideoFileTest extends TestCase
         );
 
         // For bitrate 8000 kbit/s, duration 60s:
-        // 8000 * 60 / 8 / 1024 = 58.59375, ceil = 59 MB
+        // 8000 * 60 / 8 * 1024 = 61,440,000 bytes
 
         $estimate = $video->sizeEstimate(8000);
 
-        self::assertSame(59, $estimate);
+        self::assertSame(61_440_000, $estimate);
     }
 }
