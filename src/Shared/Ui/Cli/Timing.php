@@ -128,10 +128,17 @@ final readonly class Timing
 
     private function with(string $property, float $value): self
     {
-        $clone              = clone $this;
-        $clone->{$property} = $value;
-
-        return $clone;
+        return new self(
+            total: $property === 'total' ? $value : $this->total,
+            init: $this->init,
+            gather: $property === 'gather' ? $value : $this->gather,
+            process: $property === 'process' ? $value : $this->process,
+            qc: $property === 'qc' ? $value : $this->qc,
+            archiving: $property === 'archiving' ? $value : $this->archiving,
+            rename: $property === 'rename' ? $value : $this->rename,
+            remove: $property === 'remove' ? $value : $this->remove,
+            startTime: $this->startTime,
+        );
     }
 
     private static function formatSecs(float $seconds): string
