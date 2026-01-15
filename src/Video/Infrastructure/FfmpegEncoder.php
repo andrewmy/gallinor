@@ -170,7 +170,8 @@ final readonly class FfmpegEncoder implements Encoder
             escapeshellarg($this->ffmpegPath),
             '-hide_banner',
             '-loglevel error',
-            '-stats',
+            '-progress',
+            'pipe:1',
         ];
 
         if ($this->activeEncoder === EncoderName::Nvidia) {

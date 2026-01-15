@@ -121,6 +121,32 @@ final class VideoProcessorTest extends TestCase
         $this->cleanTempFile($result->outputPath);
     }
 
+    public function test_line_callback_is_invoked_for_each_output_line(): void
+    {
+        $file = self::create1080pVideo(needsEncoding: true);
+
+        // Mock command that outputs multiple lines to stdout AND creates a file
+        $this->encoder->allows()
+            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::any())
+            ->andReturnUsing(static function ($file, $bitrate, $maxSpike, $tempPath) {
+                return sprintf('printf "%%s\\n%%s\\n%%s\\n" "line1" "line2" "line3" | tee %s', escapeshellarg($tempPath));
+            });
+
+        $this->encoder->allows()->qualityScore(Mockery::any(), Mockery::any())->andReturn(95.0);
+        $this->logger->allows()->info(Mockery::any(), Mockery::any());
+
+        $linesReceived = [];
+        $lineCallback  = static function (string $line) use (&$linesReceived): void {
+            $linesReceived[] = $line;
+        };
+
+        $result = $this->processor->processVideo($file, dryRun: false, lineCallback: $lineCallback);
+
+        self::assertSame(['line1', 'line2', 'line3'], $linesReceived);
+
+        $this->cleanTempFile($result->outputPath);
+    }
+
     public function test_retries_encoding_when_vmaf_score_is_too_low(): void
     {
         $file = self::create1080pVideo(needsEncoding: true);

@@ -24,10 +24,12 @@ use Throwable;
 use function array_reduce;
 use function basename;
 use function count;
+use function explode;
 use function file_exists;
 use function microtime;
 use function number_format;
 use function sprintf;
+use function str_contains;
 
 use const PHP_EOL;
 
@@ -138,17 +140,45 @@ final class Squeeze extends Command
             $progressBar->setMessage($fileName, 'status');
             $progressBar->display();
 
-            $statusCallback = static function (int $bitrate, float $vmafScore, int $saved) use ($progressBar, $fileName, &$totalSavings, $cliHelper): void {
-                $runningTotal = $totalSavings + $saved;
+            $progressData = [];
+            $lineCallback = static function (string $line) use ($progressBar, $fileName, &$progressData): void {
+                // Parse ffmpeg progress output (key=value format)
+                if (! str_contains($line, '=')) {
+                    return;
+                }
+
+                [$key, $value]      = explode('=', $line, 2);
+                $progressData[$key] = $value;
+
+                // Update status whenever we get frame data
+                if (! isset($progressData['frame'])) {
+                    return;
+                }
+
                 $progressBar->setMessage(
-                    sprintf('%s | %sk, VMAF=%.1f, saved %s (total: %s)', $fileName, $bitrate, $vmafScore, $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)),
+                    sprintf(
+                        '%s | frame=%s fps=%s size=%s time=%s speed=%s',
+                        $fileName,
+                        $progressData['frame'],
+                        $progressData['fps'] ?? 'N/A',
+                        $progressData['size'] ?? 'N/A',
+                        $progressData['time'] ?? 'N/A',
+                        $progressData['speed'] ?? 'N/A',
+                    ),
                     'status',
                 );
                 $progressBar->display();
             };
 
+            $statusCallback = static function (int $bitrate, float $vmafScore, int $saved) use ($output, $progressBar, $fileName, &$totalSavings, $cliHelper): void {
+                $runningTotal = $totalSavings + $saved;
+                $progressBar->clear();
+                $output->writeln(sprintf('%s | %sk, VMAF=%.1f, saved %s (total: %s)', $fileName, $bitrate, $vmafScore, $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)));
+                $progressBar->display();
+            };
+
             try {
-                $result = $this->processor->processVideo($file, false, $statusCallback);
+                $result = $this->processor->processVideo($file, false, $statusCallback, $lineCallback);
 
                 if ($result->skipped) {
                     $progressBar->clear();
@@ -174,10 +204,7 @@ final class Squeeze extends Command
 
                 $savings       = $result->savings();
                 $totalSavings += $savings;
-                $progressBar->setMessage(
-                    sprintf('%s | VMAF=%.1f, saved %s (total: %s)', $fileName, $result->vmafScore, $cliHelper->formatBytes($savings), $cliHelper->formatBytes($totalSavings)),
-                    'status',
-                );
+                // Status already logged by statusCallback
             } catch (Throwable $exception) {
                 $progressBar->setMessage(sprintf('%s | <error>Error</error>', $fileName), 'status');
                 $progressBar->clear();
