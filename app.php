@@ -12,7 +12,7 @@ use App\Images\Domain\ImageTools;
 use App\Images\Domain\RawArchiver;
 use App\Images\Ui\Cli\RemoveOriginals as ImagesRemoveOriginals;
 use App\Images\Ui\Cli\Squeeze as ImagesSqueeze;
-use App\Shared\Domain\Platform;
+use App\Shared\Infrastructure\NativePlatform;
 use App\Shared\Infrastructure\SymfonyFilesystemScanner;
 use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
@@ -33,7 +33,7 @@ $logger    = new Logger('app', [new StreamHandler('var/app.log', Level::Debug)])
 $scanner   = new SymfonyFilesystemScanner(new Filesystem());
 $cliHelper = new CliHelper();
 
-$platform           = new Platform();
+$platform           = new NativePlatform();
 $exiftool           = new Exiftool($platform);
 $imageFileCollector = new ImageFileCollector($scanner, $exiftool);
 $archiveVerifier    = new ArchiveVerifier($platform);

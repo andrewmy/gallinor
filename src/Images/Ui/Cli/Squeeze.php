@@ -58,7 +58,7 @@ final class Squeeze extends Command
         $startTime = microtime(true);
 
         $output->writeln('<info>Found: avifenc, avifdec, ssimulacra2, xz, tar</info>');
-        $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores));
+        $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores()));
         $output->writeln('');
 
         $collection = $this->collector->collectFromDirectories(

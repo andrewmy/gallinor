@@ -231,7 +231,7 @@ final readonly class FfmpegEncoder implements Encoder
         } elseif ($this->activeEncoder === EncoderName::Cpu) {
             $params = array_merge($params, [
                 '-preset medium',
-                sprintf('-x265-params "pools=%s"', $this->platform->nCores),
+                sprintf('-x265-params "pools=%s"', $this->platform->nCores()),
             ]);
         }
 
@@ -261,7 +261,7 @@ final readonly class FfmpegEncoder implements Encoder
             '-i',
             $originalFilePath,
             '-lavfi',
-            sprintf('libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10', $vmafLogFileName, $this->platform->nCores),
+            sprintf('libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10', $vmafLogFileName, $this->platform->nCores()),
             '-f',
             'null',
             '-',

@@ -77,7 +77,7 @@ final class Squeeze extends Command
 
         $factoryTime = microtime(true);
 
-        $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores));
+        $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores()));
 
         try {
             $encoder->describeCapabilities(static fn (string $line) => $output->writeln(sprintf('<info>%s</info>', $line)));
