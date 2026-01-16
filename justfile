@@ -28,5 +28,9 @@ markdown:
 test:
     php vendor/bin/phpunit
 
+# Check code coverage
+coverage-check: test
+    php vendor/bin/coverage-check var/coverage.xml 10
+
 # Full CI flow
-ci: composer-validate cbf require-check test stan security-check
+ci: composer-validate cbf require-check coverage-check stan security-check
