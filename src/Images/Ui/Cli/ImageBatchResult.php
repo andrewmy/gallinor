@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
-namespace App\Images\Domain;
+namespace App\Images\Ui\Cli;
+
+use App\Images\Domain\CalculationSkipReason;
+use App\Images\Domain\ImageProcessingResult;
 
 use function count;
 
-final class ImageProcessorResult
+final class ImageBatchResult
 {
     /**
      * @param array<string, ImageProcessingResult> $processed Map of JPEG path => result

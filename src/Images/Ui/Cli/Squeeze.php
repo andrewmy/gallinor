@@ -6,11 +6,10 @@ namespace App\Images\Ui\Cli;
 
 use App\Images\Domain\AvifFilter;
 use App\Images\Domain\CalculationSkipReason;
+use App\Images\Domain\CqLevelCalculator;
 use App\Images\Domain\ImageCollection;
 use App\Images\Domain\ImageFile;
 use App\Images\Domain\ImageFileCollector;
-use App\Images\Domain\ImageProcessor;
-use App\Images\Domain\ImageProcessorResult;
 use App\Images\Domain\RawArchiver;
 use App\Shared\Domain\Platform;
 use App\Shared\Ui\Cli\CliHelper;
@@ -38,7 +37,7 @@ final class Squeeze extends Command
         private readonly ImageFileCollector $collector,
         private readonly Timing $timing,
         private readonly Platform $platform,
-        private readonly ImageProcessor $imageProcessor,
+        private readonly CqLevelCalculator $cqCalculator,
         private readonly RawArchiver $rawArchiver,
     ) {
         parent::__construct();
@@ -92,7 +91,7 @@ final class Squeeze extends Command
     }
 
     /** @param array<ImageFile> $jpegs */
-    private function processJpegs(OutputInterface $output, array $jpegs): ImageProcessorResult
+    private function processJpegs(OutputInterface $output, array $jpegs): ImageBatchResult
     {
         $progressBar = $this->cliHelper->createProgressBar($output, count($jpegs), 'JPEGs');
         $progressBar->start();
@@ -100,34 +99,47 @@ final class Squeeze extends Command
         $totalSavings = 0;
         $cliHelper    = $this->cliHelper;
 
-        $statusCallback = static function (int $cqLevel, float $score, int $saved) use ($progressBar, &$totalSavings, $cliHelper): void {
-            $runningTotal = $totalSavings + $saved;
-            $progressBar->setMessage(
-                sprintf('cq=%d, score=%.1f, saved %s (total: %s)', $cqLevel, $score, $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)),
-                'status',
-            );
-            $progressBar->display();
-        };
+        $result = new ImageBatchResult();
 
-        $errorCallback = static function (string $fileName, string $error) use ($progressBar, $output): void {
-            $progressBar->setMessage(sprintf('%s | <error>Error</error>', $fileName), 'status');
-            $progressBar->clear();
-            $output->writeln(sprintf('<error>%s: %s</error>', $fileName, $error));
+        foreach ($jpegs as $image) {
+            $fileName = $image->filename();
+            $progressBar->setMessage($fileName, 'status');
             $progressBar->display();
-        };
 
-        $skipCallback = static function (string $fileName, CalculationSkipReason $reason) use ($progressBar, $output): void {
-            $progressBar->setMessage(sprintf('%s | <comment>Skipped</comment>', $fileName), 'status');
-            $progressBar->clear();
-            $output->writeln(sprintf('<comment>Skipped: %s (%s)</comment>', $fileName, $reason->value));
-            $progressBar->display();
-        };
+            $statusCallback = static function (int $cqLevel, float $score, int $saved) use ($progressBar, &$totalSavings, $cliHelper): void {
+                $runningTotal = $totalSavings + $saved;
+                $progressBar->setMessage(
+                    sprintf('cq=%d, score=%.1f, saved %s (total: %s)', $cqLevel, $score, $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)),
+                    'status',
+                );
+                $progressBar->display();
+            };
 
-        $afterImageCallback = static function () use ($progressBar): void {
+            try {
+                $outcome = $this->cqCalculator->calculate($image, $statusCallback);
+
+                if ($outcome instanceof CalculationSkipReason) {
+                    $result->skipped[$image->path] = $outcome;
+                    $progressBar->setMessage(sprintf('%s | <comment>Skipped</comment>', $fileName), 'status');
+                    $progressBar->clear();
+                    $output->writeln(sprintf('<comment>Skipped: %s (%s)</comment>', $fileName, $outcome->value));
+                    $progressBar->display();
+                    $progressBar->advance();
+                    continue;
+                }
+
+                $totalSavings                   += $outcome->originalSize - $outcome->avifSize;
+                $result->processed[$image->path] = $outcome;
+            } catch (Throwable $e) {
+                $result->errored[$image->path] = $e->getMessage();
+                $progressBar->setMessage(sprintf('%s | <error>Error</error>', $fileName), 'status');
+                $progressBar->clear();
+                $output->writeln(sprintf('<error>%s: %s</error>', $fileName, $e->getMessage()));
+                $progressBar->display();
+            }
+
             $progressBar->advance();
-        };
-
-        $result = $this->imageProcessor->process($jpegs, $statusCallback, $errorCallback, $skipCallback, $afterImageCallback);
+        }
 
         $progressBar->setMessage('Done', 'status');
         $progressBar->finish();
@@ -201,7 +213,7 @@ final class Squeeze extends Command
     private function printSummaries(
         OutputInterface $output,
         ImageCollection $collection,
-        ImageProcessorResult $jpegResult,
+        ImageBatchResult $jpegResult,
         array $arwResult,
         float $startTime,
         float $gatherTime,

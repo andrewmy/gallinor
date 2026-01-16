@@ -75,8 +75,8 @@ Each context follows DDD layering:
 
 - **PHP 8.5+ only** - Uses modern PHP features extensively
 - **macOS and Windows only** - `Platform` constructor throws on unsupported OS
-- **No exceptions in domain logic** - Errors captured and returned via result objects
-- **Static analysis at max level** - PHPStan configured to max level with strict analysis
+- **No exceptions in domain logic** - Errors are captured and returned via result objects (e.g., `ImageBatchResult`)
+- **Static analysis at max level** - PHPStan is configured to max level with strict analysis
 
 ## Testing
 

@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Unit\Images\Domain;
+namespace App\Tests\Unit\Images\Ui\Cli;
 
 use App\Images\Domain\CalculationSkipReason;
 use App\Images\Domain\ImageProcessingResult;
-use App\Images\Domain\ImageProcessorResult;
+use App\Images\Ui\Cli\ImageBatchResult;
 use PHPUnit\Framework\TestCase;
 
-final class ImageProcessorResultTest extends TestCase
+final class ImageBatchResultTest extends TestCase
 {
     public function test_empty_result_has_zero_counts(): void
     {
-        $result = new ImageProcessorResult();
+        $result = new ImageBatchResult();
 
         self::assertSame(0, $result->processedCount());
         self::assertSame(0, $result->skippedCount());
@@ -22,7 +22,7 @@ final class ImageProcessorResultTest extends TestCase
 
     public function test_processed_count_returns_number_of_processed_items(): void
     {
-        $result = new ImageProcessorResult(
+        $result = new ImageBatchResult(
             processed: [
                 '/path/image1.jpg' => new ImageProcessingResult(500_000, 1_000_000, 18, 88.5, 2.3),
                 '/path/image2.jpg' => new ImageProcessingResult(400_000, 800_000, 16, 90.0, 1.8),
@@ -34,7 +34,7 @@ final class ImageProcessorResultTest extends TestCase
 
     public function test_skipped_count_returns_number_of_skipped_items(): void
     {
-        $result = new ImageProcessorResult(
+        $result = new ImageBatchResult(
             skipped: [
                 '/path/image1.jpg' => CalculationSkipReason::AvifNotSmaller,
                 '/path/image2.jpg' => CalculationSkipReason::QualityNotAchieved,
@@ -46,7 +46,7 @@ final class ImageProcessorResultTest extends TestCase
 
     public function test_errored_count_returns_number_of_errored_items(): void
     {
-        $result = new ImageProcessorResult(
+        $result = new ImageBatchResult(
             errored: [
                 '/path/image1.jpg' => 'Encoding failed',
                 '/path/image2.jpg' => 'Quality check failed',
@@ -58,7 +58,7 @@ final class ImageProcessorResultTest extends TestCase
 
     public function test_total_bytes_after_sums_avif_sizes(): void
     {
-        $result = new ImageProcessorResult(
+        $result = new ImageBatchResult(
             processed: [
                 '/path/image1.jpg' => new ImageProcessingResult(500_000, 1_000_000, 18, 88.5, 2.3),
                 '/path/image2.jpg' => new ImageProcessingResult(400_000, 800_000, 16, 90.0, 1.8),
@@ -71,7 +71,7 @@ final class ImageProcessorResultTest extends TestCase
 
     public function test_total_bytes_before_sums_original_sizes(): void
     {
-        $result = new ImageProcessorResult(
+        $result = new ImageBatchResult(
             processed: [
                 '/path/image1.jpg' => new ImageProcessingResult(500_000, 1_000_000, 18, 88.5, 2.3),
                 '/path/image2.jpg' => new ImageProcessingResult(800_000, 2_000_000, 16, 90.0, 1.8),
@@ -84,7 +84,7 @@ final class ImageProcessorResultTest extends TestCase
 
     public function test_total_bytes_saved_calculates_difference(): void
     {
-        $result = new ImageProcessorResult(
+        $result = new ImageBatchResult(
             processed: [
                 '/path/image1.jpg' => new ImageProcessingResult(500_000, 1_000_000, 18, 88.5, 2.3),
                 '/path/image2.jpg' => new ImageProcessingResult(800_000, 2_000_000, 16, 90.0, 1.8),
@@ -97,7 +97,7 @@ final class ImageProcessorResultTest extends TestCase
 
     public function test_total_qc_time_sums_processing_times(): void
     {
-        $result = new ImageProcessorResult(
+        $result = new ImageBatchResult(
             processed: [
                 '/path/image1.jpg' => new ImageProcessingResult(500_000, 1_000_000, 18, 88.5, 2.3),
                 '/path/image2.jpg' => new ImageProcessingResult(400_000, 800_000, 16, 90.0, 1.8),
@@ -110,7 +110,7 @@ final class ImageProcessorResultTest extends TestCase
 
     public function test_all_categories_can_coexist(): void
     {
-        $result = new ImageProcessorResult(
+        $result = new ImageBatchResult(
             processed: [
                 '/path/image1.jpg' => new ImageProcessingResult(500_000, 1_000_000, 18, 88.5, 2.3),
             ],
