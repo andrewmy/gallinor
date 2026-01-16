@@ -106,10 +106,10 @@ final class Squeeze extends Command
             $progressBar->setMessage($fileName, 'status');
             $progressBar->display();
 
-            $statusCallback = static function (int $cqLevel, float $score, int $saved) use ($progressBar, &$totalSavings, $cliHelper): void {
+            $statusCallback = static function (int $cqLevel, float $score, int $saved) use ($progressBar, &$totalSavings, $cliHelper, $fileName): void {
                 $runningTotal = $totalSavings + $saved;
                 $progressBar->setMessage(
-                    sprintf('cq=%d, score=%.1f, saved %s (total: %s)', $cqLevel, $score, $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)),
+                    sprintf('%s | cq=%d, score=%.1f, saved %s (total: %s)', $fileName, $cqLevel, $score, $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)),
                     'status',
                 );
                 $progressBar->display();
