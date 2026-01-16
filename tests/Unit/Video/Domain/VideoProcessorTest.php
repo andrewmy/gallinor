@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Video\Domain;
 
 use App\Video\Domain\Encoder;
+use App\Video\Domain\ProcessResult;
 use App\Video\Domain\VideoFile;
 use App\Video\Domain\VideoProcessor;
 use Mockery;
@@ -13,10 +14,7 @@ use Mockery\MockInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
-use function addslashes;
-use function escapeshellarg;
 use function file_exists;
-use function sprintf;
 use function sys_get_temp_dir;
 use function unlink;
 
@@ -26,13 +24,15 @@ final class VideoProcessorTest extends TestCase
 
     private MockInterface|Encoder $encoder;
     private MockInterface|LoggerInterface $logger;
+    private InMemoryProcessExecutor $processExecutor;
     private VideoProcessor $processor;
 
     protected function setUp(): void
     {
-        $this->encoder   = Mockery::mock(Encoder::class);
-        $this->logger    = Mockery::mock(LoggerInterface::class);
-        $this->processor = new VideoProcessor($this->encoder, $this->logger);
+        $this->encoder         = Mockery::mock(Encoder::class);
+        $this->logger          = Mockery::mock(LoggerInterface::class);
+        $this->processExecutor = new InMemoryProcessExecutor();
+        $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
     }
 
     public function test_skips_when_bitrate_is_acceptable(): void
@@ -90,14 +90,19 @@ final class VideoProcessorTest extends TestCase
     {
         $file = self::create1080pVideo(needsEncoding: true);
 
-        // Mock command to create a file - accept any temp path
+        // 4MB < 5MB original
+        $this->processExecutor = new InMemoryProcessExecutor(
+            commandResults: [],
+            fileSizes: [sys_get_temp_dir() => 4 * 1024 * 1024],
+        );
+        $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
+
+        // any command is fine, executor handles file creation
         $this->encoder->allows()
             ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::any())
-            ->andReturnUsing(static function ($file, $bitrate, $maxSpike, $tempPath) {
-                return sprintf('echo "test" > %s', escapeshellarg($tempPath));
-            });
+            ->andReturn('ffmpeg > /tmp/test.mp4');
 
-        // Mock VMAF score above threshold - accept any temp path
+        // score above threshold
         $this->encoder->allows()
             ->qualityScore(Mockery::any(), Mockery::any())
             ->andReturn(95.0);
@@ -126,15 +131,17 @@ final class VideoProcessorTest extends TestCase
     {
         $file = self::create1080pVideo(needsEncoding: true);
 
-        // Mock command that outputs multiple lines to stdout AND creates a file (cross-platform)
+        $this->processExecutor = new InMemoryProcessExecutor(
+            commandResults: [
+                'ffmpeg' => new ProcessResult(0, ['line1', 'line2', 'line3']),
+            ],
+            fileSizes: [sys_get_temp_dir() => 4 * 1024 * 1024],
+        );
+        $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
+
         $this->encoder->allows()
             ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::any())
-            ->andReturnUsing(static function ($file, $bitrate, $maxSpike, $tempPath) {
-                // Use PHP to output lines and create file (works on all platforms)
-                $escapedPath = addslashes($tempPath);
-
-                return sprintf('php -r "echo \"line1\nline2\nline3\"; file_put_contents(\'%s\', \"test\");"', $escapedPath);
-            });
+            ->andReturn('ffmpeg > /tmp/test.mp4');
 
         $this->encoder->allows()->qualityScore(Mockery::any(), Mockery::any())->andReturn(95.0);
         $this->logger->allows()->info(Mockery::any(), Mockery::any());
@@ -155,13 +162,17 @@ final class VideoProcessorTest extends TestCase
     {
         $file = self::create1080pVideo(needsEncoding: true);
 
+        $this->processExecutor = new InMemoryProcessExecutor(
+            commandResults: [],
+            fileSizes: [sys_get_temp_dir() => 4 * 1024 * 1024],
+        );
+        $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
+
         $callCount = 0;
 
         $this->encoder->allows()
             ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::any())
-            ->andReturnUsing(static function ($file, $bitrate, $maxSpike, $tempPath) {
-                return sprintf('echo "test" > %s', escapeshellarg($tempPath));
-            });
+            ->andReturn('ffmpeg > /tmp/test.mp4');
 
         // first call fails, second succeeds
         $this->encoder->allows()
@@ -232,7 +243,6 @@ final class VideoProcessorTest extends TestCase
 
     public function test_skips_when_encoded_file_is_larger_than_original(): void
     {
-        // Create a video with very small currentSize so encoded file is larger
         $file = new VideoFile(
             path: sys_get_temp_dir() . '/gallinor_test_video.mp4',
             width: 1920,
@@ -244,38 +254,29 @@ final class VideoProcessorTest extends TestCase
             currentSize: 10, // Very small - any encoded file will be larger
         );
 
-        $tempFilePath = null;
+        $this->processExecutor = new InMemoryProcessExecutor(
+            commandResults: [],
+            fileSizes: [sys_get_temp_dir() => 19], // Larger than original 10 bytes
+        );
+        $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
 
         $this->encoder->allows()
             ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::any())
-            ->andReturnUsing(static function ($f, $b, $m, $tempPath) use (&$tempFilePath) {
-                $tempFilePath = $tempPath;
+            ->andReturn('ffmpeg > /tmp/test.mp4');
 
-                // Create a file larger than original (10 bytes -> ~19 bytes)
-                return sprintf('echo "test more data" > %s', escapeshellarg($tempPath));
-            });
+        $this->encoder->shouldNotReceive('qualityScore');
 
-        // Allow qualityScore for now (demonstrates the bug - it WILL be called)
-        $this->encoder->allows()->qualityScore(Mockery::any(), Mockery::any())->andReturn(95.0);
-
-        // Allow any log calls for now
-        $this->logger->allows()->warning(Mockery::any(), Mockery::any());
-        $this->logger->allows()->info(Mockery::any(), Mockery::any());
+        $this->logger->expects()
+            ->warning('Encoded file is larger than original, skipping', Mockery::on(static fn ($context) => isset($context['original_size']) &&
+                isset($context['encoded_size']) &&
+                $context['encoded_size'] > $context['original_size']));
 
         $result = $this->processor->processVideo($file, dryRun: false);
 
-        // File should be skipped when encoded version is larger
         self::assertTrue($result->skipped, 'File should be skipped when encoded version is larger');
         self::assertNull($result->vmafScore, 'VMAF should not be checked when file is larger');
         self::assertTrue($result->success, 'Processing should succeed (file was skipped)');
         self::assertSame(0, $result->retryCount, 'Should not retry when file is larger');
-
-        // Clean up temp file if it was created
-        if ($tempFilePath === null) {
-            return;
-        }
-
-        @unlink($tempFilePath);
     }
 
     private function cleanTempFile(string $path): void

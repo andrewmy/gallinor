@@ -7,23 +7,13 @@ namespace App\Video\Domain;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
 
-use function array_filter;
 use function copy;
-use function fclose;
-use function feof;
-use function fgets;
 use function filesize;
 use function implode;
-use function is_resource;
 use function microtime;
-use function proc_close;
-use function proc_open;
 use function rename;
 use function sprintf;
-use function stream_select;
-use function stream_set_blocking;
 use function sys_get_temp_dir;
-use function trim;
 use function uniqid;
 use function unlink;
 
@@ -38,6 +28,7 @@ final readonly class VideoProcessor
     public function __construct(
         private Encoder $encoder,
         private LoggerInterface $logger,
+        private ProcessExecutor $processExecutor,
     ) {
     }
 
@@ -199,88 +190,15 @@ final readonly class VideoProcessor
 
         $ffmpegCmd = $this->encoder->commandForFile($file, $baseBitrate, self::MAX_BITRATE_SPIKE, $tempFilePath);
 
-        $ffmpegOutput   = [];
-        $ffmpegExitCode = 0;
+        $result = $this->processExecutor->execute($ffmpegCmd, $lineCallback);
 
-        // Use proc_open for better control over the process
-        $descriptorspec = [
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ];
-
-        $proc = @proc_open($ffmpegCmd, $descriptorspec, $pipes);
-
-        if (! is_resource($proc)) {
-            throw new RuntimeException('Failed to start ffmpeg process');
-        }
-
-        $stdout = $pipes[1];
-        $stderr = $pipes[2];
-
-        // Set streams to non-blocking mode for concurrent reading
-        stream_set_blocking($stdout, false);
-        stream_set_blocking($stderr, false);
-
-        $stdoutOpen = true;
-        $stderrOpen = true;
-
-        while ($stdoutOpen || $stderrOpen) {
-            $read   = [$stdout, $stderr];
-            $write  = null;
-            $except = null;
-
-            // Remove closed streams from the read array
-            if ($stdoutOpen === false || feof($stdout)) {
-                $read       = array_filter($read, static fn ($s) => $s !== $stdout);
-                $stdoutOpen = false;
-            }
-
-            if ($stderrOpen === false || feof($stderr)) {
-                $read       = array_filter($read, static fn ($s) => $s !== $stderr);
-                $stderrOpen = false;
-            }
-
-            if (empty($read)) {
-                break;
-            }
-
-            // Wait for data to be available on any stream (0.1s timeout)
-            $streams = stream_select($read, $write, $except, 0, 100000);
-
-            if ($streams === false) {
-                break;
-            }
-
-            if ($streams <= 0) {
-                continue;
-            }
-
-            foreach ($read as $stream) {
-                while (($line = fgets($stream)) !== false && $line !== '') {
-                    $trimmedLine    = trim($line);
-                    $ffmpegOutput[] = $trimmedLine;
-
-                    if ($lineCallback === null || $trimmedLine === '') {
-                        continue;
-                    }
-
-                    $lineCallback($trimmedLine);
-                }
-            }
-        }
-
-        fclose($stdout);
-        fclose($stderr);
-
-        $ffmpegExitCode = proc_close($proc);
-
-        if ($ffmpegExitCode !== 0) {
+        if (! $result->isSuccessful()) {
             @unlink($tempFilePath);
 
             throw new RuntimeException(sprintf(
                 "ffmpeg command failed with exit code %s:\n%s",
-                $ffmpegExitCode,
-                implode("\n", $ffmpegOutput),
+                $result->exitCode,
+                implode("\n", $result->output),
             ));
         }
 

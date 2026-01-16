@@ -13,6 +13,7 @@ use App\Video\Domain\Exceptions\UnsupportedResolution;
 use App\Video\Domain\VideoFile;
 use App\Video\Domain\VideoFinder;
 use App\Video\Domain\VideoProcessor;
+use App\Video\Infrastructure\RealProcessExecutor;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -67,7 +68,7 @@ final class Squeeze extends Command
         try {
             $encoder           = $this->encoderFactory->create($useCpu);
             $this->videoFinder = new VideoFinder($encoder);
-            $this->processor   = new VideoProcessor($encoder, $this->logger);
+            $this->processor   = new VideoProcessor($encoder, $this->logger, new RealProcessExecutor());
         } catch (Throwable $exception) {
             $output->writeln('<error>' . $exception->getMessage() . '</error>');
 
