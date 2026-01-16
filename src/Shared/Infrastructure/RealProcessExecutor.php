@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace App\Video\Infrastructure;
+namespace App\Shared\Infrastructure;
 
-use App\Video\Domain\ProcessExecutor;
-use App\Video\Domain\ProcessResult;
+use App\Shared\Domain\ProcessExecutor;
+use App\Shared\Domain\ProcessResult;
 use Symfony\Component\Process\Process;
 
 use function explode;

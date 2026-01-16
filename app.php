@@ -13,6 +13,7 @@ use App\Images\Domain\RawArchiver;
 use App\Images\Ui\Cli\RemoveOriginals as ImagesRemoveOriginals;
 use App\Images\Ui\Cli\Squeeze as ImagesSqueeze;
 use App\Shared\Infrastructure\NativePlatform;
+use App\Shared\Infrastructure\RealProcessExecutor;
 use App\Shared\Infrastructure\SymfonyFilesystemScanner;
 use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
@@ -36,14 +37,14 @@ $cliHelper = new CliHelper();
 $platform           = new NativePlatform();
 $exiftool           = new Exiftool($platform);
 $imageFileCollector = new ImageFileCollector($scanner, $exiftool);
-$archiveVerifier    = new ArchiveVerifier($platform);
+$archiveVerifier    = new ArchiveVerifier($platform, new RealProcessExecutor());
 
 $timing = $timing->recordInit();
 
 $ffmpegFactory  = new EncoderFactory($platform);
 $imageTools     = new ImageTools($platform);
 $imageProcessor = new ImageProcessor(new CqLevelCalculator($imageTools));
-$rawArchiver    = new RawArchiver($platform, $logger);
+$rawArchiver    = new RawArchiver($platform, $logger, new RealProcessExecutor());
 
 $app = new Application();
 $app->addCommands([

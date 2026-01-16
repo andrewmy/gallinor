@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Images\Domain;
 
 use App\Shared\Domain\Platform;
+use App\Shared\Domain\ProcessExecutor;
 use Generator;
 use SplFileInfo;
-use Symfony\Component\Process\Process;
 
 use function basename;
 use function count;
@@ -16,6 +16,7 @@ use function escapeshellarg;
 use function explode;
 use function filesize;
 use function glob;
+use function implode;
 use function preg_match;
 use function sprintf;
 use function strtolower;
@@ -35,6 +36,7 @@ final readonly class ArchiveVerifier
 
     public function __construct(
         private Platform $platform,
+        private ProcessExecutor $processExecutor,
     ) {
         $this->tarPath = $this->platform->findTool('tar');
     }
@@ -170,14 +172,13 @@ final readonly class ArchiveVerifier
                 escapeshellarg($archive),
             );
 
-            $process = Process::fromShellCommandline($cmd);
-            $process->run();
+            $result = $this->processExecutor->execute($cmd);
 
-            if (! $process->isSuccessful()) {
+            if (! $result->isSuccessful()) {
                 continue;
             }
 
-            $output = trim($process->getOutput());
+            $output = trim(implode("\n", $result->output));
             if ($output === '') {
                 continue;
             }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Video\Domain;
 
+use App\Shared\Domain\ProcessExecutor;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
 

@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Video\Domain;
 
+use App\Shared\Domain\ProcessResult;
+use App\Tests\Shared\InMemoryProcessExecutor;
 use App\Video\Domain\Encoder;
-use App\Video\Domain\ProcessResult;
 use App\Video\Domain\VideoFile;
 use App\Video\Domain\VideoProcessor;
 use Mockery;

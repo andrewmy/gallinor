@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Unit\Video\Domain;
+namespace App\Tests\Shared;
 
-use App\Video\Domain\ProcessExecutor;
-use App\Video\Domain\ProcessResult;
+use App\Shared\Domain\ProcessExecutor;
+use App\Shared\Domain\ProcessResult;
 
 use function file_put_contents;
 use function max;
@@ -13,10 +13,7 @@ use function preg_match;
 use function str_contains;
 use function str_repeat;
 use function str_starts_with;
-use function substr;
 use function sys_get_temp_dir;
-
-use const DIRECTORY_SEPARATOR;
 
 final class InMemoryProcessExecutor implements ProcessExecutor
 {
@@ -56,15 +53,14 @@ final class InMemoryProcessExecutor implements ProcessExecutor
 
     private function createFilesFromCommand(string $command): void
     {
-        // Extract file path from redirect patterns (e.g., "> /path/to/file.mp4")
-        if (! preg_match('/>\s*([^\s]+)/', $command, $matches)) {
-            return;
+        $filePath = null;
+
+        if (preg_match('/>\s*([^\s]+)/', $command, $matches) === 1) {
+            $filePath = $matches[1];
         }
 
-        $filePath = $matches[1];
-        // On Windows, replace /tmp with actual temp directory
-        if (str_starts_with($filePath, '/tmp/')) {
-            $filePath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . substr($filePath, 5);
+        if ($filePath === null) {
+            return;
         }
 
         $size = $this->getFileSize($filePath);

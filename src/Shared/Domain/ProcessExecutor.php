@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Video\Domain;
+namespace App\Shared\Domain;
 
 /** Executes external processes and captures their output */
 interface ProcessExecutor

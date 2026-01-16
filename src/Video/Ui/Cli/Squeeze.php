@@ -6,6 +6,7 @@ namespace App\Video\Ui\Cli;
 
 use App\Shared\Domain\FilesystemScanner;
 use App\Shared\Domain\Platform;
+use App\Shared\Infrastructure\RealProcessExecutor;
 use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
 use App\Video\Domain\EncoderFactory;
@@ -13,7 +14,6 @@ use App\Video\Domain\Exceptions\UnsupportedResolution;
 use App\Video\Domain\VideoFile;
 use App\Video\Domain\VideoFinder;
 use App\Video\Domain\VideoProcessor;
-use App\Video\Infrastructure\RealProcessExecutor;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
