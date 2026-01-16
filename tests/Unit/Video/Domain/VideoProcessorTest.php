@@ -14,9 +14,7 @@ use Mockery\MockInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
-use function file_exists;
 use function sys_get_temp_dir;
-use function unlink;
 
 final class VideoProcessorTest extends TestCase
 {
@@ -88,19 +86,20 @@ final class VideoProcessorTest extends TestCase
 
     public function test_successful_encoding_on_first_attempt(): void
     {
-        $file = self::create1080pVideo(needsEncoding: true);
+        $file        = self::create1080pVideo(needsEncoding: true);
+        $encodedSize = 4 * 1024 * 1024; // 4MB < 5MB original
 
-        // 4MB < 5MB original
         $this->processExecutor = new InMemoryProcessExecutor(
             commandResults: [],
-            fileSizes: [sys_get_temp_dir() => 4 * 1024 * 1024],
+            fileSizes: [sys_get_temp_dir() => $encodedSize],
         );
         $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
 
-        // any command is fine, executor handles file creation
         $this->encoder->allows()
-            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::any())
-            ->andReturn('ffmpeg > /tmp/test.mp4');
+            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
+            ->andReturnUsing(static function ($_, $__, $___, $path) {
+                return 'ffmpeg > ' . $path;
+            });
 
         // score above threshold
         $this->encoder->allows()
@@ -123,8 +122,6 @@ final class VideoProcessorTest extends TestCase
         self::assertSame(95.0, $result->vmafScore);
         self::assertSame(0, $result->retryCount);
         self::assertTrue($callbackInvoked);
-
-        $this->cleanTempFile($result->outputPath);
     }
 
     public function test_line_callback_is_invoked_for_each_output_line(): void
@@ -140,8 +137,10 @@ final class VideoProcessorTest extends TestCase
         $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
 
         $this->encoder->allows()
-            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::any())
-            ->andReturn('ffmpeg > /tmp/test.mp4');
+            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
+            ->andReturnUsing(static function ($_, $__, $___, $path) {
+                return 'ffmpeg ' . $path;
+            });
 
         $this->encoder->allows()->qualityScore(Mockery::any(), Mockery::any())->andReturn(95.0);
         $this->logger->allows()->info(Mockery::any(), Mockery::any());
@@ -154,8 +153,6 @@ final class VideoProcessorTest extends TestCase
         $result = $this->processor->processVideo($file, dryRun: false, lineCallback: $lineCallback);
 
         self::assertSame(['line1', 'line2', 'line3'], $linesReceived);
-
-        $this->cleanTempFile($result->outputPath);
     }
 
     public function test_retries_encoding_when_vmaf_score_is_too_low(): void
@@ -171,8 +168,10 @@ final class VideoProcessorTest extends TestCase
         $callCount = 0;
 
         $this->encoder->allows()
-            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::any())
-            ->andReturn('ffmpeg > /tmp/test.mp4');
+            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
+            ->andReturnUsing(static function ($_, $__, $___, $path) {
+                return 'ffmpeg > ' . $path;
+            });
 
         // first call fails, second succeeds
         $this->encoder->allows()
@@ -191,8 +190,6 @@ final class VideoProcessorTest extends TestCase
         self::assertSame(92.0, $result->vmafScore);
         self::assertSame(1, $result->retryCount);
         self::assertSame(10000, $result->finalBitrate); // 8000 + 2000 step
-
-        $this->cleanTempFile($result->outputPath);
     }
 
     public function test_static_is_bitrate_acceptable_method(): void
@@ -254,20 +251,25 @@ final class VideoProcessorTest extends TestCase
             currentSize: 10, // Very small - any encoded file will be larger
         );
 
+        $encodedSize = 19; // Larger than original 10 bytes
+
         $this->processExecutor = new InMemoryProcessExecutor(
             commandResults: [],
-            fileSizes: [sys_get_temp_dir() => 19], // Larger than original 10 bytes
+            fileSizes: [sys_get_temp_dir() => $encodedSize],
         );
         $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
 
         $this->encoder->allows()
-            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::any())
-            ->andReturn('ffmpeg > /tmp/test.mp4');
+            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
+            ->andReturnUsing(static function ($_, $__, $___, $path) {
+                return 'ffmpeg > ' . $path;
+            });
 
         $this->encoder->shouldNotReceive('qualityScore');
 
-        $this->logger->expects()
-            ->warning('Encoded file is larger than original, skipping', Mockery::on(static fn ($context) => isset($context['original_size']) &&
+        $this->logger->shouldReceive('warning')
+            ->once()
+            ->with('Encoded file is larger than original, skipping', Mockery::on(static fn ($context) => isset($context['original_size']) &&
                 isset($context['encoded_size']) &&
                 $context['encoded_size'] > $context['original_size']));
 
@@ -277,14 +279,5 @@ final class VideoProcessorTest extends TestCase
         self::assertNull($result->vmafScore, 'VMAF should not be checked when file is larger');
         self::assertTrue($result->success, 'Processing should succeed (file was skipped)');
         self::assertSame(0, $result->retryCount, 'Should not retry when file is larger');
-    }
-
-    private function cleanTempFile(string $path): void
-    {
-        if (! file_exists($path)) {
-            return;
-        }
-
-        @unlink($path);
     }
 }

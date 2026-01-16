@@ -8,6 +8,7 @@ use App\Video\Domain\ProcessExecutor;
 use App\Video\Domain\ProcessResult;
 
 use function file_put_contents;
+use function max;
 use function preg_match;
 use function str_contains;
 use function str_repeat;
@@ -21,6 +22,9 @@ final class InMemoryProcessExecutor implements ProcessExecutor
 {
     /** @var array<string, int> Map of file path patterns to sizes */
     private array $fileSizes;
+
+    /** @var array<string, int> Actual file sizes written (for tracking vfs files) */
+    private array $actualSizes = [];
 
     /**
      * @param array<string, ProcessResult> $commandResults Map of command patterns to results
@@ -68,7 +72,19 @@ final class InMemoryProcessExecutor implements ProcessExecutor
             return;
         }
 
+        if (str_starts_with($filePath, 'vfs://')) {
+            file_put_contents($filePath, str_repeat('x', $size));
+            $this->actualSizes[$filePath] = $size;
+
+            return;
+        }
+
+        if (! str_contains($filePath, sys_get_temp_dir())) {
+            return;
+        }
+
         file_put_contents($filePath, str_repeat('x', $size));
+        $this->actualSizes[$filePath] = $size;
     }
 
     private function getFileSize(string $filePath): int
@@ -84,6 +100,10 @@ final class InMemoryProcessExecutor implements ProcessExecutor
         }
 
         if (str_contains($filePath, sys_get_temp_dir())) {
+            if (! empty($this->actualSizes)) {
+                return (int) max($this->actualSizes);
+            }
+
             return 5;
         }
 
