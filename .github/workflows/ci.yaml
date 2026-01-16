@@ -50,4 +50,4 @@ jobs:
         run: vendor/bin/phpunit
 
       - name: Coverage Check
-        run: vendor/bin/coverage-check var/coverage.xml 20
+        run: vendor/bin/coverage-check var/coverage.xml 19

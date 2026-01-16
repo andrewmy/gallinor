@@ -123,7 +123,11 @@ final class Squeeze extends Command
             $progressBar->display();
         };
 
-        $result = $this->imageProcessor->process($jpegs, $statusCallback, $errorCallback, $skipCallback);
+        $afterImageCallback = static function () use ($progressBar): void {
+            $progressBar->advance();
+        };
+
+        $result = $this->imageProcessor->process($jpegs, $statusCallback, $errorCallback, $skipCallback, $afterImageCallback);
 
         $progressBar->setMessage('Done', 'status');
         $progressBar->finish();

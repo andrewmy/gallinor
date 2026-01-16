@@ -14,10 +14,11 @@ final readonly class ImageProcessor
     }
 
     /**
-     * @param iterable<ImageFile>                           $images         JPEG files to process
-     * @param callable(int, float, int): void               $statusCallback Called with (cqLevel, score, saved) during quality search
-     * @param callable(string, string): void                $errorCallback  Called with (fileName, errorMessage) on error
-     * @param callable(string, CalculationSkipReason): void $skipCallback   Called with (fileName, reason) when skipped
+     * @param iterable<ImageFile>                           $images             JPEG files to process
+     * @param callable(int, float, int): void               $statusCallback     Called with (cqLevel, score, saved) during quality search
+     * @param callable(string, string): void                $errorCallback      Called with (fileName, errorMessage) on error
+     * @param callable(string, CalculationSkipReason): void $skipCallback       Called with (fileName, reason) when skipped
+     * @param callable(): void                              $afterImageCallback Called after each image is processed (for progress updates)
      *
      * @return ImageProcessorResult Processing results with processed, skipped, and errored files
      */
@@ -26,6 +27,7 @@ final readonly class ImageProcessor
         callable $statusCallback,
         callable $errorCallback,
         callable $skipCallback,
+        callable $afterImageCallback,
     ): ImageProcessorResult {
         $result = new ImageProcessorResult();
 
@@ -38,6 +40,7 @@ final readonly class ImageProcessor
                 if ($outcome instanceof CalculationSkipReason) {
                     $result->skipped[$image->path] = $outcome;
                     $skipCallback($fileName, $outcome);
+                        $afterImageCallback();
 
                     continue;
                 }
@@ -47,6 +50,8 @@ final readonly class ImageProcessor
                 $result->errored[$image->path] = $e->getMessage();
                 $errorCallback($fileName, $e->getMessage());
             }
+
+            $afterImageCallback();
         }
 
         return $result;

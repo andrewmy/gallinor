@@ -10,6 +10,8 @@ use Symfony\Component\Process\Process;
 
 use function ceil;
 use function filesize;
+use function str_starts_with;
+use function substr;
 use function trim;
 
 final readonly class ImageTools
@@ -89,7 +91,7 @@ final readonly class ImageTools
         $process->mustRun();
 
         $output = trim($process->getOutput());
-        $score = str_starts_with($output, 'Score: ') ? substr($output, 7) : $output;
+        $score  = str_starts_with($output, 'Score: ') ? substr($output, 7) : $output;
 
         return (float) $score;
     }
