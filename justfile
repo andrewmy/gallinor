@@ -24,5 +24,9 @@ security-check:
 markdown:
     markdownlint README.md
 
+# Run tests
+test:
+    php vendor/bin/phpunit
+
 # Full CI flow
-ci: composer-validate cbf require-check stan security-check
+ci: composer-validate cbf require-check test stan security-check
