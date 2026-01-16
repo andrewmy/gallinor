@@ -97,7 +97,7 @@ final class VideoProcessorTest extends TestCase
 
         $this->encoder->allows()
             ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
-            ->andReturnUsing(static function ($_, $__, $___, $path) {
+            ->andReturnUsing(static function ($unusedFile, $unusedBaseBitrate, $unusedMaxSpike, $path) {
                 return 'ffmpeg > ' . $path;
             });
 
@@ -138,7 +138,7 @@ final class VideoProcessorTest extends TestCase
 
         $this->encoder->allows()
             ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
-            ->andReturnUsing(static function ($_, $__, $___, $path) {
+            ->andReturnUsing(static function ($unusedFile, $unusedBaseBitrate, $unusedMaxSpike, $path) {
                 return 'ffmpeg > ' . $path;
             });
 
@@ -169,7 +169,7 @@ final class VideoProcessorTest extends TestCase
 
         $this->encoder->allows()
             ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
-            ->andReturnUsing(static function ($_, $__, $___, $path) {
+            ->andReturnUsing(static function ($unusedFile, $unusedBaseBitrate, $unusedMaxSpike, $path) {
                 return 'ffmpeg > ' . $path;
             });
 
@@ -261,7 +261,7 @@ final class VideoProcessorTest extends TestCase
 
         $this->encoder->allows()
             ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
-            ->andReturnUsing(static function ($_, $__, $___, $path) {
+            ->andReturnUsing(static function ($unusedFile, $unusedBaseBitrate, $unusedMaxSpike, $path) {
                 return 'ffmpeg > ' . $path;
             });
 
