@@ -7,12 +7,12 @@ namespace App\Images\Domain;
 use App\Shared\Domain\Platform;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
+use Symfony\Component\Process\Process;
 
 use function array_map;
 use function basename;
 use function count;
 use function escapeshellarg;
-use function exec;
 use function file_exists;
 use function file_put_contents;
 use function filesize;
@@ -89,29 +89,29 @@ final readonly class RawArchiver
             escapeshellarg($listFile),
         );
 
-        $tarOutput = [];
-        exec($tarCmd, $tarOutput, $tarExitCode);
+        $tarProcess = Process::fromShellCommandline($tarCmd);
+        $tarProcess->run();
 
-        if ($tarExitCode !== 0) {
+        if (! $tarProcess->isSuccessful()) {
             throw new RuntimeException(sprintf(
                 "tar failed with exit code %d:\n%s",
-                $tarExitCode,
-                implode("\n", $tarOutput),
+                $tarProcess->getExitCode(),
+                $tarProcess->getOutput(),
             ));
         }
 
         $xzCmd = sprintf('%s -9 -T0 %s 2>&1', escapeshellarg($this->xzPath), escapeshellarg($tarPath));
 
-        $xzOutput = [];
-        exec($xzCmd, $xzOutput, $xzExitCode);
+        $xzProcess = Process::fromShellCommandline($xzCmd);
+        $xzProcess->run();
 
-        if ($xzExitCode !== 0) {
+        if (! $xzProcess->isSuccessful()) {
             $this->cleanup($tarPath);
 
             throw new RuntimeException(sprintf(
                 "xz failed with exit code %d:\n%s",
-                $xzExitCode,
-                implode("\n", $xzOutput),
+                $xzProcess->getExitCode(),
+                $xzProcess->getOutput(),
             ));
         }
 
@@ -132,16 +132,16 @@ final readonly class RawArchiver
             escapeshellarg($archivePath),
         );
 
-        $cmdOutput = [];
-        exec($cmd, $cmdOutput, $cmdExitCode);
+        $process = Process::fromShellCommandline($cmd);
+        $process->run();
 
-        if ($cmdExitCode !== 0) {
+        if (! $process->isSuccessful()) {
             $this->cleanup($archivePath);
 
             throw new RuntimeException(sprintf(
                 "Archive creation failed with exit code %d:\n%s",
-                $cmdExitCode,
-                implode("\n", $cmdOutput),
+                $process->getExitCode(),
+                $process->getOutput(),
             ));
         }
 

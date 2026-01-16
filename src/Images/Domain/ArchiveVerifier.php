@@ -7,12 +7,13 @@ namespace App\Images\Domain;
 use App\Shared\Domain\Platform;
 use Generator;
 use SplFileInfo;
+use Symfony\Component\Process\Process;
 
 use function basename;
 use function count;
 use function dirname;
 use function escapeshellarg;
-use function exec;
+use function explode;
 use function filesize;
 use function glob;
 use function preg_match;
@@ -169,14 +170,19 @@ final readonly class ArchiveVerifier
                 escapeshellarg($archive),
             );
 
-            $result = [];
-            exec($cmd, $result, $exitCode);
+            $process = Process::fromShellCommandline($cmd);
+            $process->run();
 
-            if ($exitCode !== 0) {
+            if (! $process->isSuccessful()) {
                 continue;
             }
 
-            foreach ($result as $filename) {
+            $output = trim($process->getOutput());
+            if ($output === '') {
+                continue;
+            }
+
+            foreach (explode("\n", $output) as $filename) {
                 $archivedFiles[trim($filename)] = true;
             }
         }
