@@ -139,7 +139,7 @@ final class VideoProcessorTest extends TestCase
         $this->encoder->allows()
             ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
             ->andReturnUsing(static function ($_, $__, $___, $path) {
-                return 'ffmpeg ' . $path;
+                return 'ffmpeg > ' . $path;
             });
 
         $this->encoder->allows()->qualityScore(Mockery::any(), Mockery::any())->andReturn(95.0);
