@@ -88,12 +88,6 @@ Converts JPEGs to AVIF (saving alongside originals as `.avif`) and archives ARW 
 ## Development
 
 ```shell
-make ci
-```
-
-or
-
-```shell
 just ci
 ```
 
