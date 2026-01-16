@@ -110,9 +110,17 @@ Tests are organized by module under `tests/Unit/`. Use `FsTestCase` for filesyst
 
 **Virtual Filesystem**: Use `FsTestCase` for all filesystem-dependent tests to ensure isolation and avoid real IO operations. It provides a vfsStream root via `$this->root` and `$this->vfsUrl()` helper.
 
-**Test Doubles**: Use Mockery for mocking interfaces. Domain tests should use mocks for infrastructure dependencies (e.g., `Encoder`, `ProcessExecutor`).
+**Test Doubles**: For interfaces and external dependencies, prefer:
+- **Stub classes** over Mockery mocks for domain interfaces (e.g., `StubPlatform`)
+- **TestHandler** (Monolog) over Mockery mocks for logging - allows log inspection without fragile expectations
+- Use Mockery only when stubs are not available
 
 **Isolation**: Tests should not depend on real temp directories, system state, or external tools. The `InMemoryProcessExecutor` test double should track file sizes without writing actual files.
+
+**Test Doubles** Reference:
+- `StubPlatform` (`tests/Shared/StubPlatform.php`) - Simple stub for Platform interface with configurable properties
+- `TestHandler` (Monolog) - Captures log records for inspection
+- `InMemoryProcessExecutor` (`tests/Shared/InMemoryProcessExecutor.php`) - Simulates process execution with configurable results
 
 **Helper Methods**: Private helper methods that are not named `test_*` and do not reference `$this` should be declared `static`. This is enforced by PHP_CodeSniffer.
 
@@ -153,3 +161,8 @@ Tests are organized by module under `tests/Unit/`. Use `FsTestCase` for filesyst
 - `tests/Unit/Images/Domain/RawArchiverTest.php` (2 incomplete tests for Windows xz failure and error cleanup)
 
 **Reference Implementation**: `tests/Unit/Images/Domain/ArchiveVerifierTest.php` shows proper vfsStream usage with `FsTestCase` for archive-related tests.
+
+**Test Doubles Reference**:
+- `StubPlatform` (`tests/Shared/StubPlatform.php`) - Simple stub for Platform interface with configurable properties
+- `TestHandler` (Monolog) - Captures log records for inspection
+- `InMemoryProcessExecutor` (`tests/Shared/InMemoryProcessExecutor.php`) - Simulates process execution with configurable results

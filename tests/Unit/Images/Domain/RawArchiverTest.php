@@ -5,40 +5,37 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Images\Domain;
 
 use App\Images\Domain\RawArchiver;
-use App\Shared\Domain\Platform;
 use App\Shared\Domain\ProcessResult;
 use App\Tests\Shared\InMemoryProcessExecutor;
-use Mockery;
-use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
-use Mockery\MockInterface;
+use App\Tests\Shared\StubPlatform;
+use App\Tests\Unit\FsTestCase;
+use Monolog\Handler\TestHandler;
+use Monolog\Logger;
 use org\bovigo\vfs\vfsStream;
-use PHPUnit\Framework\TestCase;
-use Psr\Log\LoggerInterface;
 use RuntimeException;
 
 use function count;
 use function glob;
-use function str_contains;
-use function str_ends_with;
 use function sys_get_temp_dir;
 
 use const DIRECTORY_SEPARATOR;
 
-final class RawArchiverTest extends TestCase
+final class RawArchiverTest extends FsTestCase
 {
-    use MockeryPHPUnitIntegration;
-
-    private MockInterface|Platform $platform;
     private InMemoryProcessExecutor $processExecutor;
-    private RawArchiver $archiver;
+    private StubPlatform $platform;
+    private TestHandler $logHandler;
+    private Logger $logger;
 
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->processExecutor = new InMemoryProcessExecutor();
-        $this->platform        = Mockery::mock(Platform::class);
-        $this->platform->allows()->findTool('xz')->andReturn('/usr/bin/xz');
+        $this->platform        = new StubPlatform();
+        $this->platform->setTool('xz', '/usr/bin/xz');
+        $this->logHandler = new TestHandler();
+        $this->logger     = new Logger('test', [$this->logHandler]);
     }
 
     public function test_archive_windows_creates_tar_then_compresses_with_xz(): void
@@ -49,15 +46,17 @@ final class RawArchiverTest extends TestCase
         $directory = vfsStream::url('root');
         $arwFile   = $directory . DIRECTORY_SEPARATOR . 'photo.arw';
 
-        $logger = Mockery::mock(LoggerInterface::class);
-        $logger->expects()->info('Archived ARWs', Mockery::on(static fn ($context) => isset($context['directory']) && isset($context['file_count']) && isset($context['archive_path'])));
+        $this->platform->isWindows = true;
+        $archiver                  = new RawArchiver($this->platform, $this->logger, $this->processExecutor);
 
-        $this->platform->allows()->isWindows()->andReturn(true);
-        $this->archiver = new RawArchiver($this->platform, $logger, $this->processExecutor);
-
-        $result = $this->archiver->archive($directory, [$arwFile]);
+        $result = $archiver->archive($directory, [$arwFile]);
 
         self::assertIsInt($result);
+        self::assertCount(1, $this->logHandler->getRecords());
+        self::assertSame('Archived ARWs', $this->logHandler->getRecords()[0]['message']);
+        self::assertArrayHasKey('directory', $this->logHandler->getRecords()[0]['context']);
+        self::assertArrayHasKey('file_count', $this->logHandler->getRecords()[0]['context']);
+        self::assertArrayHasKey('archive_path', $this->logHandler->getRecords()[0]['context']);
     }
 
     public function test_archive_unix_creates_archive_via_piped_command(): void
@@ -68,15 +67,17 @@ final class RawArchiverTest extends TestCase
         $directory = vfsStream::url('root');
         $arwFile   = $directory . DIRECTORY_SEPARATOR . 'photo.arw';
 
-        $logger = Mockery::mock(LoggerInterface::class);
-        $logger->expects()->info('Archived ARWs', Mockery::on(static fn ($context) => isset($context['directory']) && isset($context['file_count']) && isset($context['archive_path'])));
+        $this->platform->isWindows = false;
+        $archiver                  = new RawArchiver($this->platform, $this->logger, $this->processExecutor);
 
-        $this->platform->allows()->isWindows()->andReturn(false);
-        $this->archiver = new RawArchiver($this->platform, $logger, $this->processExecutor);
-
-        $result = $this->archiver->archive($directory, [$arwFile]);
+        $result = $archiver->archive($directory, [$arwFile]);
 
         self::assertIsInt($result);
+        self::assertCount(1, $this->logHandler->getRecords());
+        self::assertSame('Archived ARWs', $this->logHandler->getRecords()[0]['message']);
+        self::assertArrayHasKey('directory', $this->logHandler->getRecords()[0]['context']);
+        self::assertArrayHasKey('file_count', $this->logHandler->getRecords()[0]['context']);
+        self::assertArrayHasKey('archive_path', $this->logHandler->getRecords()[0]['context']);
     }
 
     public function test_archive_naming_format_includes_file_count(): void
@@ -91,13 +92,15 @@ final class RawArchiverTest extends TestCase
         $arwFile2  = $directory . DIRECTORY_SEPARATOR . 'photo2.arw';
         $arwFile3  = $directory . DIRECTORY_SEPARATOR . 'photo3.arw';
 
-        $logger = Mockery::mock(LoggerInterface::class);
-        $logger->expects()->info('Archived ARWs', Mockery::on(static fn ($context) => isset($context['archive_path']) && str_contains($context['archive_path'], 'raws-3.tar.xz')));
+        $this->platform->isWindows = false;
+        $archiver                  = new RawArchiver($this->platform, $this->logger, $this->processExecutor);
 
-        $this->platform->allows()->isWindows()->andReturn(false);
-        $this->archiver = new RawArchiver($this->platform, $logger, $this->processExecutor);
+        $archiver->archive($directory, [$arwFile1, $arwFile2, $arwFile3]);
 
-        $this->archiver->archive($directory, [$arwFile1, $arwFile2, $arwFile3]);
+        self::assertCount(1, $this->logHandler->getRecords());
+        $context = $this->logHandler->getRecords()[0]['context'];
+        self::assertArrayHasKey('archive_path', $context);
+        self::assertStringContainsString('raws-3.tar.xz', $context['archive_path']);
     }
 
     public function test_log_includes_directory_and_file_count(): void
@@ -110,15 +113,16 @@ final class RawArchiverTest extends TestCase
         $arwFile1  = $directory . DIRECTORY_SEPARATOR . 'photo1.arw';
         $arwFile2  = $directory . DIRECTORY_SEPARATOR . 'photo2.arw';
 
-        $logger = Mockery::mock(LoggerInterface::class);
-        $logger->expects()->info('Archived ARWs', Mockery::on(static fn ($context) => $context['directory'] === $directory &&
-            $context['file_count'] === 2 &&
-            str_ends_with($context['archive_path'], 'raws-2.tar.xz')));
+        $this->platform->isWindows = false;
+        $archiver                  = new RawArchiver($this->platform, $this->logger, $this->processExecutor);
 
-        $this->platform->allows()->isWindows()->andReturn(false);
-        $this->archiver = new RawArchiver($this->platform, $logger, $this->processExecutor);
+        $archiver->archive($directory, [$arwFile1, $arwFile2]);
 
-        $this->archiver->archive($directory, [$arwFile1, $arwFile2]);
+        self::assertCount(1, $this->logHandler->getRecords());
+        $context = $this->logHandler->getRecords()[0]['context'];
+        self::assertSame($directory, $context['directory']);
+        self::assertSame(2, $context['file_count']);
+        self::assertStringEndsWith('raws-2.tar.xz', $context['archive_path']);
     }
 
     public function test_list_file_cleaned_up_on_success(): void
@@ -129,14 +133,11 @@ final class RawArchiverTest extends TestCase
         $directory = vfsStream::url('root');
         $arwFile   = $directory . DIRECTORY_SEPARATOR . 'photo.arw';
 
-        $logger = Mockery::mock(LoggerInterface::class);
-        $logger->allows()->info(Mockery::any(), Mockery::any());
-
-        $this->platform->allows()->isWindows()->andReturn(false);
-        $this->archiver = new RawArchiver($this->platform, $logger, $this->processExecutor);
+        $this->platform->isWindows = false;
+        $archiver                  = new RawArchiver($this->platform, $this->logger, $this->processExecutor);
 
         $listFilesBefore = glob(sys_get_temp_dir() . DIRECTORY_SEPARATOR . '*-arwlist.txt');
-        $this->archiver->archive($directory, [$arwFile]);
+        $archiver->archive($directory, [$arwFile]);
         $listFilesAfter = glob(sys_get_temp_dir() . DIRECTORY_SEPARATOR . '*-arwlist.txt');
 
         self::assertSame(count($listFilesBefore), count($listFilesAfter));
@@ -148,19 +149,17 @@ final class RawArchiverTest extends TestCase
         $directory = vfsStream::url('root');
         $arwFile   = $directory . DIRECTORY_SEPARATOR . 'photo.arw';
 
-        $logger = Mockery::mock(LoggerInterface::class);
-        $logger->allows()->info(Mockery::any(), Mockery::any())->never();
-
-        $this->platform->allows()->isWindows()->andReturn(true);
-        $this->processExecutor = new InMemoryProcessExecutor(
+        $this->platform->isWindows = true;
+        $this->processExecutor     = new InMemoryProcessExecutor(
             commandResults: ['tar' => new ProcessResult(1, ['tar error'])],
         );
-        $this->archiver        = new RawArchiver($this->platform, $logger, $this->processExecutor);
+        $archiver                  = new RawArchiver($this->platform, $this->logger, $this->processExecutor);
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('tar failed');
 
-        $this->archiver->archive($directory, [$arwFile]);
+        $archiver->archive($directory, [$arwFile]);
+        self::assertEmpty($this->logHandler->getRecords());
     }
 
     public function test_windows_xz_failure_throws_exception(): void
@@ -171,17 +170,14 @@ final class RawArchiverTest extends TestCase
         $directory = vfsStream::url('root');
         $arwFile   = $directory . DIRECTORY_SEPARATOR . 'photo.arw';
 
-        $logger = Mockery::mock(LoggerInterface::class);
-        $logger->allows()->info(Mockery::any(), Mockery::any());
-
-        $this->platform->allows()->isWindows()->andReturn(true);
-        $this->processExecutor = new InMemoryProcessExecutor(
+        $this->platform->isWindows = true;
+        $this->processExecutor     = new InMemoryProcessExecutor(
             commandResults: [
                 'tar' => new ProcessResult(0, []),
                 'xz' => new ProcessResult(1, ['xz error']),
             ],
         );
-        $archiver              = new RawArchiver($this->platform, $logger, $this->processExecutor);
+        $archiver                  = new RawArchiver($this->platform, $this->logger, $this->processExecutor);
 
         $this->expectException(RuntimeException::class);
 
@@ -194,18 +190,17 @@ final class RawArchiverTest extends TestCase
         $directory = vfsStream::url('root');
         $arwFile   = $directory . DIRECTORY_SEPARATOR . 'photo.arw';
 
-        $logger = Mockery::mock(LoggerInterface::class);
-        $logger->allows()->info(Mockery::any(), Mockery::any());
-
-        $this->platform->allows()->isWindows()->andReturn(false);
-        $this->processExecutor = new InMemoryProcessExecutor(
+        $this->platform->isWindows = false;
+        $this->processExecutor     = new InMemoryProcessExecutor(
             commandResults: ['|' => new ProcessResult(1, ['piped error'])],
         );
-        $archiver              = new RawArchiver($this->platform, $logger, $this->processExecutor);
+        $archiver                  = new RawArchiver($this->platform, $this->logger, $this->processExecutor);
 
         $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Archive creation failed');
 
         $archiver->archive($directory, [$arwFile]);
+        self::assertEmpty($this->logHandler->getRecords());
     }
 
     public function test_list_file_cleaned_up_after_success(): void
@@ -215,11 +210,8 @@ final class RawArchiverTest extends TestCase
         $directory = vfsStream::url('root');
         $arwFile   = $directory . DIRECTORY_SEPARATOR . 'photo.arw';
 
-        $logger = Mockery::mock(LoggerInterface::class);
-        $logger->allows()->info(Mockery::any(), Mockery::any());
-
-        $this->platform->allows()->isWindows()->andReturn(false);
-        $archiver = new RawArchiver($this->platform, $logger, $this->processExecutor);
+        $this->platform->isWindows = false;
+        $archiver                  = new RawArchiver($this->platform, $this->logger, $this->processExecutor);
 
         $listFilesBefore = glob(sys_get_temp_dir() . DIRECTORY_SEPARATOR . '*-arwlist.txt');
         $archiver->archive($directory, [$arwFile]);

@@ -5,26 +5,21 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Images\Domain;
 
 use App\Images\Domain\ArchiveVerifier;
-use App\Shared\Domain\Platform;
 use App\Shared\Domain\ProcessResult;
 use App\Tests\Shared\InMemoryProcessExecutor;
+use App\Tests\Shared\StubPlatform;
+use App\Tests\Unit\FsTestCase;
 use Generator;
-use Mockery;
-use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
-use Mockery\MockInterface;
 use org\bovigo\vfs\vfsStream;
-use PHPUnit\Framework\TestCase;
 use SplFileInfo;
 
 use function count;
 use function explode;
 use function implode;
 
-final class ArchiveVerifierTest extends TestCase
+final class ArchiveVerifierTest extends FsTestCase
 {
-    use MockeryPHPUnitIntegration;
-
-    private MockInterface|Platform $platform;
+    private StubPlatform $platform;
     private InMemoryProcessExecutor $processExecutor;
     private ArchiveVerifier $verifier;
 
@@ -33,8 +28,8 @@ final class ArchiveVerifierTest extends TestCase
         parent::setUp();
 
         $this->processExecutor = new InMemoryProcessExecutor();
-        $this->platform        = Mockery::mock(Platform::class);
-        $this->platform->allows()->findTool('tar')->andReturn('/usr/bin/tar');
+        $this->platform        = new StubPlatform();
+        $this->platform->setTool('tar', '/usr/bin/tar');
         $this->verifier = new ArchiveVerifier($this->platform, $this->processExecutor);
     }
 
