@@ -86,7 +86,7 @@ Each module follows DDD layering:
 
 **Platform Abstraction**: `Platform` class (`src/Shared/Domain/Platform.php`) handles OS differences (macOS/Windows) for tool detection and core counting.
 
-**External Tool Integration**: All external tools (FFmpeg, libavif, ssimulacra2, exiftool, xz) are invoked via `Symfony\Component\Process\Process` and located through `Platform::findTool()`.
+**External Tool Integration**: All external tools (FFmpeg, libavif, ssimulacra2, exiftool, xz) are invoked via `ProcessExecutor` and located through `Platform::findTool()`.
 
 ### Important Constraints
 
@@ -116,6 +116,8 @@ Tests are organized by module under `tests/Unit/`. Use `FsTestCase` for filesyst
 
 **Helper Methods**: Private helper methods that are not named `test_*` and do not reference `$this` should be declared `static`. This is enforced by PHP_CodeSniffer.
 
+**Test Coverage**: All newly added classes should have comprehensive unit tests covering happy paths, error cases, and edge cases.
+
 ## Technical Debt & Refactoring Opportunities
 
 > **Note**: This section only documents remaining work. Completed refactoring items are removed from this file.
@@ -127,23 +129,27 @@ Tests are organized by module under `tests/Unit/`. Use `FsTestCase` for filesyst
 1. **VideoProcessorTest** uses real temp directory (`sys_get_temp_dir()`)
 2. **InMemoryProcessExecutor** is misnamed - it actually writes real files via `file_put_contents()` instead of being truly in-memory
 3. **VideoFile domain objects** use real paths, coupling domain logic to filesystem
+4. **RawArchiverTest** has 2 incomplete tests for error cleanup scenarios that require complex mock setup
 
 **Current State**:
 - Tests create real files in temp directory during execution
 - `InMemoryProcessExecutor` parses shell commands to extract file paths and writes real files
-- ImageFileTest properly uses vfsStream (good reference implementation)
+- ImageFileTest and ArchiveVerifierTest properly use vfsStream (good reference implementation)
+- RawArchiverTest has incomplete error handling tests due to InMemoryProcessExecutor limitations
 
 **Refactoring Options**:
 1. **Extend FsTestCase to VideoProcessorTest** - Replace `sys_get_temp_dir()` with vfsStream URLs
 2. **Make InMemoryProcessExecutor truly in-memory** - Track file sizes in array without writing, mock the file size checks
 3. **Decouple VideoFile from filesystem** - Consider making `hasOptimized()` an interface or moving it to an infrastructure service
 4. **Create ProcessResult stub that tracks virtual files** - Keep file size tracking isolated from real filesystem
+5. **Enhance InMemoryProcessExecutor for archive testing** - Add support for simulating tar/xz file creation for RawArchiver error scenarios
 
-**Recommended Approach**: Start with VideoProcessorTest refactoring to use vfsStream, then update InMemoryProcessExecutor to track file sizes in memory without writing real files. This aligns with existing vfsStream usage in ImageFileTest.
+**Recommended Approach**: Start with VideoProcessorTest refactoring to use vfsStream, then update InMemoryProcessExecutor to track file sizes in memory without writing real files. This aligns with existing vfsStream usage in ImageFileTest and ArchiveVerifierTest.
 
 **Files Affected**:
 - `tests/Unit/Video/Domain/VideoProcessorTest.php`
-- `tests/Unit/Video/Domain/InMemoryProcessExecutor.php`
+- `tests/Shared/InMemoryProcessExecutor.php`
 - `src/Images/Domain/ImageFile.php` (line 31: `hasOptimized()` method uses `file_exists()`)
+- `tests/Unit/Images/Domain/RawArchiverTest.php` (2 incomplete tests for Windows xz failure and error cleanup)
 
-**Reference Implementation**: `tests/Unit/Images/Domain/ImageFileTest.php` (lines 81-98) shows proper vfsStream usage with `FsTestCase`
+**Reference Implementation**: `tests/Unit/Images/Domain/ArchiveVerifierTest.php` shows proper vfsStream usage with `FsTestCase` for archive-related tests.

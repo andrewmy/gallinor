@@ -30,7 +30,7 @@ test:
 
 # Check code coverage
 coverage-check: test
-    php vendor/bin/coverage-check var/coverage.xml 10
+    php vendor/bin/coverage-check var/coverage.xml 20
 
 # Full CI flow
 ci: composer-validate cbf require-check coverage-check stan security-check
