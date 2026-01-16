@@ -81,14 +81,17 @@ final readonly class ImageTools
      */
     public function ssimulacra2Score(string $originalPath, string $decodedPngPath): float
     {
-        $process = new Process([
-            $this->ssimulacra2Path,
-            $originalPath,
-            $decodedPngPath,
-        ]);
+        $command = $this->platform->isWindows()
+            ? [$this->ssimulacra2Path, 'image', $originalPath, $decodedPngPath]
+            : [$this->ssimulacra2Path, $originalPath, $decodedPngPath];
+
+        $process = new Process($command);
         $process->mustRun();
 
-        return (float) trim($process->getOutput());
+        $output = trim($process->getOutput());
+        $score = str_starts_with($output, 'Score: ') ? substr($output, 7) : $output;
+
+        return (float) $score;
     }
 
     /**
