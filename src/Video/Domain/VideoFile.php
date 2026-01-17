@@ -28,6 +28,7 @@ final readonly class VideoFile
         public string|null $colorSpace = null,
         public string|null $colorPrimaries = null,
         public string|null $colorTransfer = null,
+        public bool $hasRotation = false,
     ) {
     }
 

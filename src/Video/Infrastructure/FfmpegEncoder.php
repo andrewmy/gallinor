@@ -31,13 +31,13 @@ use function unlink;
 
 use const JSON_THROW_ON_ERROR;
 
-final readonly class FfmpegEncoder implements Encoder
+final class FfmpegEncoder implements Encoder
 {
-    private string $ffprobePath;
-    private string $ffmpegPath;
+    private readonly string $ffprobePath;
+    private readonly string $ffmpegPath;
     public EncoderName $activeEncoder;
-    public bool $hasTemporalAq;
-    public bool $hasVmaf;
+    public readonly bool $hasTemporalAq;
+    public readonly bool $hasVmaf;
 
     public function __construct(
         bool $useCpu,
@@ -64,6 +64,15 @@ final readonly class FfmpegEncoder implements Encoder
         $this->hasVmaf = $this->ffmpegHasFilter('vmaf');
     }
 
+    private function encoderForFile(VideoFile $file): EncoderName
+    {
+        if ($file->hasRotation && $this->activeEncoder === EncoderName::Nvidia) {
+            return EncoderName::Cpu;
+        }
+
+        return $this->activeEncoder;
+    }
+
     private function ffmpegHasEncoder(string $encoder): bool
     {
         $process = new Process([
@@ -80,6 +89,7 @@ final readonly class FfmpegEncoder implements Encoder
     {
         $process = new Process([
             $this->ffmpegPath,
+            '-hide_banner',
             '-h',
             $target,
         ]);
@@ -109,8 +119,7 @@ final readonly class FfmpegEncoder implements Encoder
             'error',
             '-select_streams',
             'v:0',
-            '-show_entries',
-            'stream=width,height,bit_rate,pix_fmt,codec_name,color_space,color_primaries,color_transfer,duration',
+            '-show_streams',
             '-of',
             'json',
             $filePath,
@@ -130,7 +139,7 @@ final readonly class FfmpegEncoder implements Encoder
             throw new RuntimeException('No video stream found in file, skipping');
         }
 
-        /** @var array{width?: int, height?: int, bit_rate?: int, pix_fmt?: string, codec_name?: string, color_space?: ?string, color_primaries?: ?string, color_transfer?: ?string, duration?: float} $stream */
+        /** @var array{width?: int, height?: int, bit_rate?: int, pix_fmt?: string, codec_name?: string, color_space?: ?string, color_primaries?: ?string, color_transfer?: ?string, duration?: float, side_data_list?: ?list<array{side_data_type?: ?string}>} $stream */
         $stream = $mediaInfo['streams'][0];
         if (
             ! isset(
@@ -145,6 +154,15 @@ final readonly class FfmpegEncoder implements Encoder
             throw new RuntimeException('Not all required fields found in video stream, skipping. JSON: ' . json_encode($stream));
         }
 
+        $hasRotation  = false;
+        $sideDataList = $stream['side_data_list'] ?? [];
+        foreach ($sideDataList as $sideData) {
+            if (($sideData['side_data_type'] ?? null) === 'Display Matrix') {
+                $hasRotation = true;
+                break;
+            }
+        }
+
         return new VideoFile(
             path             : $filePath,
             width            : (int) $stream['width'],
@@ -157,6 +175,7 @@ final readonly class FfmpegEncoder implements Encoder
             colorSpace       : $stream['color_space'] ?? null,
             colorPrimaries   : $stream['color_primaries'] ?? null,
             colorTransfer    : $stream['color_transfer'] ?? null,
+            hasRotation      : $hasRotation,
         );
     }
 
@@ -166,6 +185,8 @@ final readonly class FfmpegEncoder implements Encoder
         float $maxBitrateSpike,
         string $tempFilePath,
     ): string {
+        $encoder = $this->encoderForFile($file);
+
         $params = [
             escapeshellarg($this->ffmpegPath),
             '-hide_banner',
@@ -174,7 +195,7 @@ final readonly class FfmpegEncoder implements Encoder
             'pipe:1',
         ];
 
-        if ($this->activeEncoder === EncoderName::Nvidia) {
+        if ($encoder === EncoderName::Nvidia) {
             $params = array_merge($params, [
                 '-hwaccel cuda',
                 '-hwaccel_output_format cuda',
@@ -185,16 +206,16 @@ final readonly class FfmpegEncoder implements Encoder
             '-fflags +genpts',
             '-i ' . escapeshellarg($file->path),
             '-c:a copy',
-            '-c:v ' . $this->activeEncoder->value,
+            '-c:v ' . $encoder->value,
             sprintf('-b:v %dk', $baseBitrate),
             '-tag:v hvc1',
             '-map_metadata 0',
-            '-movflags +use_metadata_tags',
+            '-movflags +use_metadata_tags+faststart',
             '-y',
         ]);
 
         if (in_array($file->pixFmt, ['yuv420p', 'yuv420p10le'], true)) {
-            if ($this->activeEncoder !== EncoderName::Nvidia) {
+            if ($encoder !== EncoderName::Nvidia) {
                 $params[] = '-pix_fmt yuv420p10le';
             }
 
@@ -215,7 +236,7 @@ final readonly class FfmpegEncoder implements Encoder
             $params[] = '-color_trc ' . escapeshellarg($file->colorTransfer);
         }
 
-        if ($this->activeEncoder === EncoderName::Nvidia) {
+        if ($encoder === EncoderName::Nvidia) {
             $params = array_merge($params, [
                 sprintf('-maxrate:v %dk', $baseBitrate * $maxBitrateSpike),
                 '-preset p7',
@@ -226,9 +247,9 @@ final readonly class FfmpegEncoder implements Encoder
             if ($this->hasTemporalAq) {
                 $params[] = '-temporal-aq 1';
             }
-        } elseif ($this->activeEncoder === EncoderName::Apple) {
+        } elseif ($encoder === EncoderName::Apple) {
             $params[] = '-quality quality';
-        } elseif ($this->activeEncoder === EncoderName::Cpu) {
+        } elseif ($encoder === EncoderName::Cpu) {
             $params = array_merge($params, [
                 '-preset medium',
                 sprintf('-x265-params "pools=%s"', $this->platform->nCores()),
@@ -246,12 +267,12 @@ final readonly class FfmpegEncoder implements Encoder
             throw new RuntimeException('VMAF filter is not available in ffmpeg');
         }
 
-        $tempDir = sys_get_temp_dir();
-        // Use system temp directory for VMAF log (windows ffmpeg vmaf does not support /dev/stdout)
+        // windows ffmpeg vmaf does not support /dev/stdout
+        $tempDir         = sys_get_temp_dir();
         $vmafLogFileName = 'vmaf_' . uniqid('', true) . '.json';
         $vmafLogFile     = $tempDir . '/' . $vmafLogFileName;
 
-        $process = new Process([
+        $params = [
             $this->ffmpegPath,
             '-hide_banner',
             '-loglevel',
@@ -260,13 +281,15 @@ final readonly class FfmpegEncoder implements Encoder
             $processedFilePath,
             '-i',
             $originalFilePath,
-            '-lavfi',
-            sprintf('libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10', $vmafLogFileName, $this->platform->nCores()),
-            '-f',
-            'null',
-            '-',
-        ]);
-        // Set working directory to temp dir so we can use relative filename (avoids Windows drive letter colon issues)
+            '-filter_complex',
+            sprintf('[0:v][1:v]libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10', $vmafLogFileName, $this->platform->nCores()),
+        ];
+
+        $params[] = '-f';
+        $params[] = 'null';
+        $params[] = '-';
+
+        $process = new Process($params);
         $process->setWorkingDirectory($tempDir);
         $process->mustRun();
 
