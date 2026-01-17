@@ -77,6 +77,7 @@ Each context follows DDD layering:
 - **macOS and Windows only** - `Platform` constructor throws on unsupported OS
 - **No exceptions in domain logic** - Errors are captured and returned via result objects (e.g., `ImageBatchResult`)
 - **Static analysis at max level** - PHPStan is configured to max level with strict analysis
+- **Video rotation handling**: Videos with Display Matrix rotation metadata (e.g., -90°) are detected via `side_data_list` in `show_streams`. NVENC cannot properly handle rotation, so `encoderForFile()` switches to CPU encoder (`libx265`) for rotated videos. CPU encoder bakes rotation into pixels (1920x1080→1080x1920), ensuring correct playback orientation and direct VMAF comparison without scaling needed.
 
 ## Testing
 

@@ -305,6 +305,12 @@ final class Squeeze extends Command
                 $this->cliHelper->formatBytes($sizeEstimate),
                 $this->cliHelper->formatBytes($videoFile->currentSize - $sizeEstimate),
             ));
+
+            if (! $videoFile->hasRotation) {
+                continue;
+            }
+
+            $output->writeln('<info>Using CPU encoder due to video rotation</info>');
         }
 
         return [$fileList, $totalSkippedFiles];
