@@ -98,7 +98,7 @@ just ci
 - NVENC seems to achieve better visual quality with smaller bitrate. On a selection of complex 1080p videos with source bitrate 16 Mbps, to achieve VMAF score 90+:
   - Apple VideoToolbox needed 12-14 Mbps or fails completely;
   - NVENC needed 8-12 Mbps.
-- The CPU encoder is very slow and its CRF rate is not really well tested, wear a hard hat and fire up some movie while using it.
+- The CPU encoder is very slow and its CRF rate is not really well tested, wear a hard hat and fire up some movie while using it. Unfortunately NVENC does something funny to rotated videos so falling back to CPU there.
 
 ### Photo
 
