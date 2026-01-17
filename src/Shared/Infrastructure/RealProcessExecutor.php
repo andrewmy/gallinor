@@ -16,7 +16,8 @@ final readonly class RealProcessExecutor implements ProcessExecutor
     public function execute(string $command, callable|null $lineCallback = null): ProcessResult
     {
         $process = Process::fromShellCommandline($command);
-        $output  = [];
+        $process->setTimeout(null);
+        $output = [];
 
         $process->run(static function ($type, $buffer) use (&$output, $lineCallback): void {
             if ($type !== Process::OUT) {
