@@ -1,16 +1,19 @@
 # Parallel Image Processing Implementation Plan
 
 ## Summary
-Add parallel JPEG processing to `images:squeeze` using Symfony Messenger with SQLite (WAL) and DB-backed resume.  
+Add parallel JPEG processing to `images:squeeze` using Symfony Messenger with SQLite (WAL) and DB-backed resume.
 **Key Architecture Updates:**
 - **Framework**: Add Symfony `Kernel` + `FrameworkBundle` (configuration via `App::config`).
 - **Platform**: Enable Linux in `NativePlatform` for Docker images.
 - **Database**: Use DoctrineBundle + Doctrine Messenger transport; schema is created by `images:squeeze` when parallelism is enabled.
 - **Deployment**: Parallel execution is **Docker-only**; host mode remains sequential. Use named volume for SQLite to avoid bind-mount slowness.
+- **Worker Scaling**: Deploy scripts run `nproc` inside container to detect CPU limits (respects Docker cgroup v2).
 - **Entrypoint**: `app.php` refactored to boot the Kernel and load config via Symfony.
-- **Performance**: Workers process multiple media files concurrently.
+- **Performance**: Workers process multiple media files concurrently (JPEGs + ARWs).
 - **Resume**: DB is the source of truth for completed jobs (even if `.avif` is missing).
 - **Liveness**: Worker heartbeats stored in DB; main process detects dead workers without per-file timeouts.
+- **ARW Archival**: `ProcessArwMessage` with directory locking (flock) to prevent race conditions.
+- **Pre-flight Check**: Verify live workers before dispatching messages; error if none running.
 
 
 ## Initial Requirements
@@ -181,7 +184,7 @@ return App::config([
                         'table_name' => 'messenger_messages',
                         'queue_name' => 'image_processing',
                         'auto_setup' => true,
-                        'redeliver_timeout' => 3600, // must exceed worst-case image job time
+                        'redeliver_timeout' => 600, // 10 minutes - detect crashed workers during long tool runs
                     ],
                     'retry_strategy' => [
                         'max_retries' => 2,
@@ -208,9 +211,9 @@ DATABASE_URL=sqlite:///%kernel.project_dir%/var/messenger/gallinor-queue.db
 
 ---
 
-## Phase 2: Message & Handler
+## Phase 2: Messages & Handlers
 
-### 2.1 Message Class
+### 2.1 Image Processing Message Class
 
 **`src/Messages/ProcessImageMessage.php`**
 ```php
@@ -332,6 +335,84 @@ readonly class ProcessImageHandler
             $skipReason,
             $errorMessage,
             $createdAt ?? time(),
+            time(),
+        ]);
+    }
+}
+```
+
+### 2.3 ARW Archival Message Class
+
+**`src/Messages/ProcessArwMessage.php`**
+```php
+namespace App\Messages;
+
+readonly class ProcessArwMessage
+{
+    public function __construct(
+        public string $directory,
+        public array $arwFiles,  // JSON-serialized array of ARW file paths
+    ) {}
+}
+```
+
+### 2.4 ARW Archival Message Handler
+
+**`src/Images/MessageHandler/ProcessArwHandler.php`**
+```php
+namespace App\Images\MessageHandler;
+
+use App\Messages\ProcessArwMessage;
+use App\Images\Domain\RawArchiver;
+use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Doctrine\DBAL\Connection;
+use App\Shared\Infrastructure\WorkerHeartbeat;
+
+#[AsMessageHandler]
+readonly class ProcessArwHandler
+{
+    public function __construct(
+        private RawArchiver $archiver,
+        private Connection $connection,
+        private WorkerHeartbeat $heartbeat,
+    ) {}
+
+    public function __invoke(ProcessArwMessage $message): void
+    {
+        $workerId = $this->heartbeat->workerId();
+        $this->heartbeat->beat($workerId);
+
+        $arwFiles = json_decode($message->arwFiles, true);
+
+        // Directory lock to prevent concurrent archival
+        $lockFile = $message->directory . '/.gallinor.lock';
+        $fh = fopen($lockFile, 'w');
+        if (!flock($fh, LOCK_EX | LOCK_NB)) {
+            throw new RuntimeException("Could not acquire lock for {$message->directory}");
+        }
+
+        try {
+            $archiveSize = $this->archiver->archive($message->directory, $arwFiles);
+            // Store result in DB for progress tracking
+            $this->storeArwResult($message->directory, count($arwFiles), $archiveSize);
+        } finally {
+            flock($fh, LOCK_UN);
+            fclose($fh);
+        }
+    }
+
+    private function storeArwResult(string $directory, int $fileCount, int $archiveSize): void
+    {
+        $sql = <<<'SQL'
+            INSERT OR REPLACE INTO job_results
+            (job_type, image_path, status, cq_level, quality_score, avif_size, original_size, qc_time, processing_time, skip_reason, error_message, created_at, completed_at)
+            VALUES ('arw', ?, 'completed', NULL, NULL, ?, NULL, NULL, NULL, NULL, NULL, ?, ?)
+        SQL;
+
+        $this->connection->executeStatement($sql, [
+            $directory,
+            $archiveSize,
+            time(),
             time(),
         ]);
     }
@@ -606,6 +687,97 @@ final class Squeeze extends Command
     }
 ```
 
+### 5.1 Add ARW Archival Message
+
+Add `ProcessArwMessage` and `ProcessArwHandler` for parallel ARW archival. Similar structure to image processing:
+- Message contains directory path and list of ARW files
+- Handler calls `RawArchiver::archive()` with directory lock (flock) to prevent race conditions
+- Lock file: `.gallinor.lock` in target directory, using `LOCK_EX` with `LOCK_NB` for fail-fast
+
+**`src/Messages/ProcessArwMessage.php`**
+```php
+namespace App\Messages;
+
+readonly class ProcessArwMessage
+{
+    public function __construct(
+        public string $directory,
+        public array $arwFiles,  // JSON-serialized array of ARW file paths
+    ) {}
+}
+```
+
+**`src/Images/MessageHandler/ProcessArwHandler.php`**
+```php
+namespace App\Images\MessageHandler;
+
+use App\Messages\ProcessArwMessage;
+use App\Images\Domain\RawArchiver;
+use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Doctrine\DBAL\Connection;
+use App\Shared\Infrastructure\WorkerHeartbeat;
+
+#[AsMessageHandler]
+readonly class ProcessArwHandler
+{
+    public function __construct(
+        private RawArchiver $archiver,
+        private Connection $connection,
+        private WorkerHeartbeat $heartbeat,
+    ) {}
+
+    public function __invoke(ProcessArwMessage $message): void
+    {
+        $workerId = $this->heartbeat->workerId();
+        $this->heartbeat->beat($workerId);
+
+        $arwFiles = json_decode($message->arwFiles, true);
+
+        // Directory lock to prevent concurrent archival
+        $lockFile = $message->directory . '/.gallinor.lock';
+        $fh = fopen($lockFile, 'w');
+        if (!flock($fh, LOCK_EX | LOCK_NB)) {
+            throw new RuntimeException("Could not acquire lock for {$message->directory}");
+        }
+
+        try {
+            $archiveSize = $this->archiver->archive($message->directory, $arwFiles);
+            // Store result in DB for progress tracking
+            $this->storeArwResult($message->directory, count($arwFiles), $archiveSize);
+        } finally {
+            flock($fh, LOCK_UN);
+            fclose($fh);
+        }
+    }
+
+    private function storeArwResult(string $directory, int $fileCount, int $archiveSize): void
+    {
+        $sql = <<<'SQL'
+            INSERT OR REPLACE INTO job_results
+            (job_type, image_path, status, cq_level, quality_score, avif_size, original_size, qc_time, processing_time, skip_reason, error_message, created_at, completed_at)
+            VALUES ('arw', ?, 'completed', NULL, NULL, ?, NULL, NULL, NULL, NULL, NULL, ?, ?)
+        SQL;
+
+        $this->connection->executeStatement($sql, [
+            $directory,
+            $archiveSize,
+            time(),
+            time(),
+        ]);
+    }
+}
+```
+
+Update `config/packages/messenger.php` to add ARW routing:
+```php
+'routing' => [
+    App\Messages\ProcessImageMessage::class => 'images',
+    App\Messages\ProcessArwMessage::class => 'images',  // Same queue
+],
+```
+
+---
+
 ### 5.2 Add Concurrency Override Flags and Dry-run Handling
 
 ```php
@@ -711,7 +883,18 @@ Trade-off: if DB says "completed" but the `.avif` file is missing, the job is st
 ### 5.5 Process JPEGs in Parallel
 
 Replace `processJpegs()` with:
-Use `WORKER_STALE_SECONDS = 600` (10 minutes) for image workers.
+Use `WORKER_STALE_SECONDS = 60` (1 minute) for image workers (tool-aware: images have shorter runs than videos).
+
+**Pre-flight worker check** (before dispatching):
+```php
+// Check for live workers before dispatching messages
+if (count($jpegs) > 0 && $this->getLiveWorkerCount(60) === 0) {
+    throw new RuntimeException(
+        'No live workers detected. Use deploy scripts (./scripts/deploy.sh) or start Docker workers first: docker compose up -d --scale gallinor-worker=N'
+    );
+}
+```
+
 ```php
 private function processJpegsInParallel(
     OutputInterface $output,
@@ -741,6 +924,11 @@ private function processJpegsInParallel(
     $lastCompletedId = $this->connection->fetchOne('SELECT COALESCE(MAX(id), 0) FROM job_results');
     $seenPaths = [];  // Track unique paths to avoid counting retries
     $completed = 0;
+
+    // Note: Progress bar may stall momentarily during retries because:
+    // - Failed jobs create new DB rows (same path, different ID)
+    // - We filter duplicates via $seenPaths
+    // - LIMIT 20 query returns fewer than 20 actual completions after filtering
 
     try {
         while ($completed < count($jpegs)) {
@@ -805,6 +993,93 @@ private function processJpegsInParallel(
     }
 
     return $result;
+}
+
+/** @param array<string, array<string>> $arwsByDir */
+private function archiveArwsInParallel(
+    OutputInterface $output,
+    array $arwsByDir,
+    bool $keepQueue,
+): array {
+    if (empty($arwsByDir)) {
+        return ['archived' => 0, 'sizeBefore' => 0, 'sizeAfter' => 0];
+    }
+
+    $progressBar = $this->cliHelper->createProgressBar($output, count($arwsByDir), 'ARW dirs');
+    $progressBar->start();
+
+    $archived = 0;
+    $sizeBefore = 0;
+    $sizeAfter = 0;
+    $lastCompletedId = $this->connection->fetchOne('SELECT COALESCE(MAX(id), 0) FROM job_results');
+    $seenDirs = [];  // Track unique directories to avoid counting retries
+    $completed = 0;
+
+    // Calculate size before
+    foreach ($arwsByDir as $arwFiles) {
+        foreach ($arwFiles as $arwFile) {
+            $sizeBefore += filesize($arwFile);
+        }
+    }
+
+    // Dispatch all messages
+    foreach ($arwsByDir as $dir => $arwFiles) {
+        $this->messageBus->dispatch(new ProcessArwMessage(
+            $dir,
+            json_encode($arwFiles, JSON_THROW_ON_ERROR),
+        ));
+    }
+
+    try {
+        while ($completed < count($arwsByDir)) {
+            usleep(100_000); // 100ms fixed polling
+
+            $newCompletions = $this->getCompletedArwResults($lastCompletedId);
+
+            foreach ($newCompletions as $job) {
+                $dir = $job['image_path'];  // directory path stored in image_path column
+
+                if (isset($seenDirs[$dir])) {
+                    continue;
+                }
+
+                $seenDirs[$dir] = $job['avif_size'];  // Store archive size
+                $lastCompletedId = max($lastCompletedId, $job['id']);
+                $completed++;
+                $progressBar->setProgress($completed);
+
+                $dirName = basename($dir);
+                $progressBar->setMessage(sprintf('%s | %s', $dirName, $this->cliHelper->formatBytes($job['avif_size'])), 'status');
+            }
+
+            $pending = $this->getPendingCount();
+            if ($this->getLiveWorkerCount(60) === 0 && $pending > 0) {
+                throw new RuntimeException('No live workers detected while jobs remain in the queue.');
+            }
+        }
+    } finally {
+        // No internal workers to stop (Docker-managed)
+    }
+
+    $progressBar->finish();
+    $output->writeln('');
+
+    // Sum final archive sizes
+    $sizeAfter = array_sum($seenDirs);
+
+    return ['archived' => $archived, 'sizeBefore' => $sizeBefore, 'sizeAfter' => $sizeAfter];
+}
+
+private function getCompletedArwResults(int $lastId): array
+{
+    $sql = <<<'SQL'
+        SELECT * FROM job_results
+        WHERE id > ? AND job_type = 'arw'
+        ORDER BY id ASC
+        LIMIT 20
+    SQL;
+
+    return $this->connection->fetchAllAssociative($sql, [$lastId]);
 }
 
 private function cleanupBatch(OutputInterface $output): void
@@ -1065,22 +1340,16 @@ else
 fi
 export GALLINOR_GALLERY_PATH="$GALLERY_PATH"
 
-# Calculate optimal replicas based on CPU cores
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    N_CORES=$(sysctl -n hw.ncpu)
-elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
-    N_CORES=$NUMBER_OF_PROCESSORS
-else
-    N_CORES=$(nproc)
-fi
+# Read container CPU limit by running nproc inside container
+# Modern Docker (cgroup v2): nproc correctly reflects container limits
+N_CORES=$(docker compose run --rm gallinor-worker nproc)
 
 # Same formula as CLI: max(1, min(nCores / 4, floor(nCores / 8) + 2))
 REPLICAS=$(python3 -c "print(max(1, min(int($N_CORES / 4), int($N_CORES / 8) + 2)))")
 
-export GALLINOR_WORKER_REPLICAS=$REPLICAS
 echo "Starting with $REPLICAS workers for $N_CORES cores, processing $GALLERY_PATH"
 
-# Start containers
+# Start containers with correct worker count
 docker compose up -d --scale gallinor-worker=$REPLICAS
 ```
 
@@ -1100,15 +1369,28 @@ if "%~1"=="" (
 )
 set GALLINOR_GALLERY_PATH=%GALLERY_PATH%
 
-REM Calculate optimal replicas (Windows PowerShell)
-for /f "delims=" %%i in ('powershell -Command "[Environment]::ProcessorCount"') do set N_CORES=%%i
-for /f "delims=" %%i in ('powershell -Command "[Math]::Max(1, [Math]::Min([int]([Environment]::ProcessorCount / 4), [int]([Environment]::ProcessorCount / 8) + 2))"') do set REPLICAS=%%i
+REM Read container CPU limit by running nproc inside container
+REM Modern Docker (cgroup v2): nproc correctly reflects container limits
+for /f "delims=" %%i in ('docker compose run --rm gallinor-worker nproc 2^>nul') do set N_CORES=%%i
 
-set GALLINOR_WORKER_REPLICAS=%REPLICAS%
+if not defined N_CORES (
+    echo Error: Could not detect container CPU count
+    exit /b 1
+)
+
+REM Calculate optimal replicas
+REM Pass N_CORES as a parameter to avoid environment variable issues
+for /f "delims=" %%i in ('powershell -NoLogo -NoProfile -Command "& { param([int]$c); [Math]::Max(1, [Math]::Min([int]($c / 4), [int]($c / 8) + 2)) } -c %N_CORES%"') do set REPLICAS=%%i
+
+if not defined REPLICAS (
+    echo Error: Could not calculate worker replica count
+    exit /b 1
+)
+
 echo Starting with %REPLICAS% workers for %N_CORES% cores, processing %GALLERY_PATH%
 
-REM Start containers
-docker compose up -d --scale gallinor-worker=%REPLICAS%
+REM Start containers with correct worker count
+docker compose up -d --scale gallinor-worker=%REPLICAS
 ```
 
 ### 7.3 Deployment Commands
@@ -1210,6 +1492,8 @@ $application->run();
 - Verify result collection, progress updates, and resume functionality
 - Test worker crash scenarios and retry logic
 
+**Edge Case Note**: Progress bar may stall momentarily during retries because failed jobs create new DB rows (same path, different ID). We filter duplicates via `$seenPaths`, so `LIMIT 20` query may return fewer than 20 actual completions. This is acceptable behavior.
+
 ---
 
 ## Performance Expectations
@@ -1231,9 +1515,9 @@ $application->run();
 3. **Dependencies** - Install framework, messenger, doctrine-bundle, doctrine-messenger, dbal, config, dotenv
 4. **Framework Setup** - Create Kernel, `config/bundles.php`, `config/services.php`, `config/packages/doctrine.php`, `config/packages/messenger.php`, `.env`, refactor app.php
 5. **Database** - `DatabasePragmaConfigurator`, `JobSchemaManager`, schema version/heartbeat tables
-6. **Message & Handler** - ProcessImageMessage, ProcessImageHandler, WorkerHeartbeat, heartbeat callback in CqLevelCalculator
+6. **Messages & Handlers** - ProcessImageMessage, ProcessArwMessage, ProcessImageHandler, ProcessArwHandler, WorkerHeartbeat, heartbeat callback in CqLevelCalculator
 7. **Serialization & Filtering** - Add ImageFile JSON, add `AvifFilter::All` and adjust collector
-8. **Command Changes** - Modify Squeeze (parallel enablement, resume, liveness, cleanup), add cleanup command
+8. **Command Changes** - Modify Squeeze (parallel enablement, resume, liveness, cleanup, pre-flight worker check), add cleanup command
 9. **Testing** - Unit tests (schema manager, heartbeat, handler, cleanup), integration tests (file-based SQLite)
 10. **Final Review** - Test host and Docker modes end-to-end
 
