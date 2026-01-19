@@ -79,6 +79,15 @@ Each context follows DDD layering:
 - **Static analysis at max level** - PHPStan is configured to max level with strict analysis
 - **Video rotation handling**: Videos with Display Matrix rotation metadata (e.g., -90°) are detected via `side_data_list` in `show_streams`. NVENC cannot properly handle rotation, so `encoderForFile()` switches to CPU encoder (`libx265`) for rotated videos. CPU encoder bakes rotation into pixels (1920x1080→1080x1920), ensuring correct playback orientation and direct VMAF comparison without scaling needed.
 
+## Agent Guidelines (General)
+
+- **Docs must match code**: When updating docs, ensure snippets and field names reflect actual classes and data shapes.
+- **Cross-platform tools**: Verify binary names per OS (macOS/Windows/Linux), and document any platform-specific mapping when introducing external tools.
+- **Orchestration**: Prefer external orchestration (e.g., Docker) over in-app worker management when cross-platform process control would add complexity.
+- **SQLite in Docker**: Use named volumes for SQLite by default to avoid macOS/Windows bind-mount slowness; bind mount only for debugging.
+- **Long-running work**: Avoid per-file timeouts for media processing; if liveness is needed, use heartbeat-style progress signals.
+- **Keep constraints current**: If you change platform support (e.g., add Linux for Docker), update the “Important Constraints” section to reflect reality.
+
 ## Testing
 
 Tests organized by module under `tests/Unit/`. Use `FsTestCase` for filesystem-related tests (virtual filesystem via vfsstream). Test doubles use Mockery.
