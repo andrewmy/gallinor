@@ -94,7 +94,7 @@ Tests organized by module under `tests/Unit/`. Use `FsTestCase` for filesystem-r
 
 ### Current Status
 
-**63 tests, ~19% line coverage** — all passing
+**63 tests, 19.86% line coverage** — passing, with 6 incomplete tests and 1 warning (as of 2026-01-19)
 
 **Tested**:
 - `VideoFile` — bitrate, resolution
@@ -115,13 +115,15 @@ Tests organized by module under `tests/Unit/`. Use `FsTestCase` for filesystem-r
 ### Testable but Untested (quick wins)
 
 - `VideoFinder` — pure logic, uses `Encoder` interface
-- `EncoderName` enum — value object tests
-- `CalculationSkipReason` enum — value object tests
-- `AvifFilter` enum — value object tests
+- `VideoSummary` — pure formatting/printing
+- `CliHelper` — pure formatting + link formatting
+- `Timing` — pure formatting + value object methods (avoid time-sensitive assertions)
+- `ArchiveVerificationResult` — pure aggregation/counting
+- `ImageCollection` — pure value object defaults
 
 ### Coverage Growth Strategy
 
-**Quick wins**: Enum classes, `VideoFinder`, `VideoProcessResult` DTO.
+**Quick wins**: `VideoFinder`, CLI helper/value objects (`CliHelper`, `Timing`, `VideoSummary`), small DTOs (`ArchiveVerificationResult`, `VideoProcessResult`, `ImageProcessingResult`).
 
 **Medium effort**: Extract interfaces for final classes, add integration tests for actual tool execution.
 
@@ -179,12 +181,12 @@ GitHub Actions workflow runs on push/PR to main. Workflow should match `just ci`
 - `VideoProcessorTest` uses real temp directory (`sys_get_temp_dir()`)
 - `InMemoryProcessExecutor` misnamed — writes real files via `file_put_contents()` instead of being truly in-memory
 - `VideoFile` domain objects use real paths, coupling domain logic to filesystem
-- `RawArchiverTest` has 2 incomplete tests for error cleanup scenarios
+- `ArchiveVerifierTest` has 5 incomplete tests due to `glob()` not working on vfsStream paths
+- `RawArchiverTest` has 1 incomplete test (needs better tar/xz simulation)
+- `RawArchiver` (Windows flow) uses `rename()` from temp dir → target dir; can fail across filesystems/volumes
 
 **Recommended Approach**:
-1. Extend `FsTestCase` to `VideoProcessorTest` — replace `sys_get_temp_dir()` with vfsStream URLs
-2. Make `InMemoryProcessExecutor` truly in-memory — track file sizes in array without writing
-3. Decouple `VideoFile` from filesystem — move `hasOptimized()` to infrastructure service or extract interface
-4. Create `ProcessResult` stub that tracks virtual files
-
-**Reference Implementation**: `tests/Unit/Images/Domain/ArchiveVerifierTest.php` shows proper vfsStream usage with `FsTestCase`.
+1. Decide per-test whether vfsStream is appropriate (anything using `glob()`, `rename()` across temp→target, or real tools may need real temp dirs or a refactor)
+2. Make `InMemoryProcessExecutor` truly in-memory — track file sizes in arrays without writing
+3. Refactor `ArchiveVerifier` to avoid `glob()` (inject archive discovery / filesystem abstraction) so vfsStream works
+4. Make `RawArchiver` robust to cross-filesystem moves (fallback to copy+unlink when `rename()` fails), then test it
