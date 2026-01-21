@@ -16,8 +16,8 @@ jobs:
       - name: Markdown Lint
         uses: DavidAnson/markdownlint-cli2-action@v21
         with:
-          globs: |
-            **/*.md
+          config_file: .markdownlint-cli2.jsonc
+          globs: .
 
       - uses: shivammathur/setup-php@v2
         with:

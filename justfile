@@ -22,7 +22,7 @@ security-check:
 
 # Lint markdown, don't look at externally sourced files
 markdown:
-    npx --yes markdownlint-cli2 .
+    npx --yes markdownlint-cli2 --config .markdownlint-cli2.jsonc .
 
 # Run tests
 test:

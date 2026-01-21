@@ -1,9 +1,4 @@
-// markdownlint-cli2 configuration (JSONC so we can comment).
-//
-// Goal: lint *all* Markdown in the repo without turning CI into a mass reformat task.
-// We disable a handful of high-noise rules that conflict with the existing docs style.
 {
-  // markdownlint rule configuration
   "config": {
     "default": true,
 
@@ -28,12 +23,10 @@
     "MD040": false
   },
 
-  // What to lint (and what to exclude). Negation uses a leading "#".
   "globs": [
     "**/*.md",
-    "#vendor/**",
-    "#node_modules/**",
-    "#.git/**"
+    "!vendor/**",
+    "!node_modules/**",
+    "!.git/**"
   ]
 }
-
