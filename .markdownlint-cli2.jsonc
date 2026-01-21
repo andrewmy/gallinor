@@ -2,9 +2,6 @@
   "config": {
     "default": true,
 
-    // Existing docs intentionally use mixed list indentation in places.
-    "MD007": false,
-
     // Commands/paths/identifiers regularly exceed 80 chars; wrapping hurts copy/paste.
     "MD013": false,
 

@@ -21,7 +21,7 @@ This is a CLI tool for reducing the size of your video and image gallery while m
 - PHP 8.5 or higher
 - Composer
 - On Windows:
-    - PowerShell
+  - PowerShell
 - For video:
   - FFmpeg with HEVC (H.265) support installed and available in your system PATH
     - macOS: `brew install ffmpeg`
