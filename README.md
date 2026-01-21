@@ -42,7 +42,7 @@ This is a CLI tool for reducing the size of your video and image gallery while m
     - `cargo install ssimulacra2_rs --no-default-features`
   - exiftool
     - macOS: `brew install exiftool`
-    - Win: ` winget install OliverBetz.ExifTool`
+    - Win: `winget install OliverBetz.ExifTool`
   - For raws — xz
     - macOS: `brew install xz`
 

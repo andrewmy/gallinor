@@ -5,6 +5,7 @@ This file provides guidance to AI agents when working with code in this reposito
 ## Project Overview
 
 Gallinor (Gallery Minor) is a PHP 8.5 CLI tool for reducing video and image gallery sizes while maintaining quality. It supports:
+
 - **Videos**: Re-encode to HEVC (H.265) with adaptive bitrate, hardware acceleration (VideoToolbox/NVENC)
 - **Images**: Convert JPEGs to AVIF with quality-based encoding, archive ARW files with xz compression
 
@@ -32,12 +33,14 @@ php app.php help                    # Show all available commands
 ```
 
 **Video workflow** (2-step process):
+
 ```bash
 php app.php videos:squeeze <path>   # Encode videos to HEVC (creates .optimal.mp4 files)
 php app.php videos:rename <path>    # Replace originals with optimized files
 ```
 
 **Image workflow** (2-step process):
+
 ```bash
 php app.php images:squeeze <path>           # Convert JPEGs to AVIF, archive ARWs
 php app.php images:remove-originals <path>   # Remove originals after conversion
@@ -54,6 +57,7 @@ This is a PHP 8.5 CLI application for optimizing media files while maintaining q
 - **Shared/** - Cross-cutting concerns (filesystem, platform, CLI helpers)
 
 Each context follows DDD layering:
+
 - `Domain/` - Core business logic, entities, domain services
 - `Infrastructure/` - External system integrations (FFmpeg, external tools)
 - `Ui/Cli/` - Symfony Console commands
@@ -65,6 +69,7 @@ Each context follows DDD layering:
 **Readonly Domain**: All domain classes are `readonly` - immutable after construction.
 
 **Quality-Based Encoding**:
+
 - Video: Binary search for optimal CRF to achieve VMAF ≥ 90
 - Images: Binary search for optimal CQ level to achieve SSIMULACRA2 ≥ 85
 
@@ -98,6 +103,7 @@ Tests organized by module under `tests/Unit/`. Use `FsTestCase` for filesystem-r
 **63 tests, 19.86% line coverage** — passing, with 6 incomplete tests and 1 warning (as of 2026-01-19)
 
 **Tested**:
+
 - `VideoFile` — bitrate, resolution
 - `VideoProcessor` — skip/dry-run/encode/retry
 - `ImageFile` — paths, AVIF detection
@@ -135,6 +141,7 @@ Tests organized by module under `tests/Unit/`. Use `FsTestCase` for filesystem-r
 **Virtual Filesystem**: Use `FsTestCase` for filesystem-dependent tests to ensure isolation. Provides vfsStream root via `$this->root` and `$this->vfsUrl()` helper.
 
 **Test Doubles** (prefer in order):
+
 1. Stub classes for domain interfaces (e.g., `StubPlatform`)
 2. `TestHandler` (Monolog) for logging — allows log inspection
 3. Mockery only when stubs unavailable
@@ -142,6 +149,7 @@ Tests organized by module under `tests/Unit/`. Use `FsTestCase` for filesystem-r
 **Isolation**: Tests should not depend on real temp directories, system state, or external tools. `InMemoryProcessExecutor` test double should track file sizes without writing actual files.
 
 **Test Doubles Reference**:
+
 - `StubPlatform` (`tests/Shared/StubPlatform.php`) — Simple stub with configurable properties
 - `TestHandler` (Monolog) — Captures log records for inspection
 - `InMemoryProcessExecutor` (`tests/Shared/InMemoryProcessExecutor.php`) — Simulates process execution
@@ -181,6 +189,7 @@ GitHub Actions workflow runs on push/PR to main. Workflow should match `just ci`
 **Issue**: Several tests perform real filesystem I/O instead of using virtual filesystem isolation, making tests slower and less reliable.
 
 **Affected Areas**:
+
 - `VideoProcessorTest` uses real temp directory (`sys_get_temp_dir()`)
 - `InMemoryProcessExecutor` misnamed — writes real files via `file_put_contents()` instead of being truly in-memory
 - `VideoFile` domain objects use real paths, coupling domain logic to filesystem
@@ -189,6 +198,7 @@ GitHub Actions workflow runs on push/PR to main. Workflow should match `just ci`
 - `RawArchiver` (Windows flow) uses `rename()` from temp dir → target dir; can fail across filesystems/volumes
 
 **Recommended Approach**:
+
 1. Decide per-test whether vfsStream is appropriate (anything using `glob()`, `rename()` across temp→target, or real tools may need real temp dirs or a refactor)
 2. Make `InMemoryProcessExecutor` truly in-memory — track file sizes in arrays without writing
 3. Refactor `ArchiveVerifier` to avoid `glob()` (inject archive discovery / filesystem abstraction) so vfsStream works

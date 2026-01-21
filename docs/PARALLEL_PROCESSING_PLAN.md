@@ -1,8 +1,10 @@
 # Parallel Image Processing Implementation Plan
 
 ## Summary
+
 Add parallel JPEG processing to `images:squeeze` using Symfony Messenger with SQLite (WAL) and DB-backed resume.
 **Key Architecture Updates:**
+
 - **Framework**: Add Symfony `Kernel` + `FrameworkBundle` (configuration via `App::config`).
 - **Platform**: Enable Linux in `NativePlatform` for Docker images.
 - **Database**: Use DoctrineBundle + Doctrine Messenger transport; schema is created by `images:squeeze` when parallelism is enabled.
@@ -16,6 +18,7 @@ Add parallel JPEG processing to `images:squeeze` using Symfony Messenger with SQ
 - **Pre-flight Check**: Verify live workers before dispatching messages; error if none running.
 
 ## Initial Requirements
+
 - **Dependencies**: `symfony/framework-bundle`, `symfony/messenger`, `symfony/doctrine-messenger`, `doctrine/doctrine-bundle`, `doctrine/dbal`, `symfony/config`, `symfony/dotenv`
 - **Database**: SQLite with WAL mode at `var/messenger/gallinor-queue.db` (named Docker volume in production)
 - **Concurrency**: Auto-detected based on CPU cores (`max(1, min(nCores/4, floor(nCores/8) + 2)`), overrideable via `--concurrency=N`
@@ -35,7 +38,9 @@ Add parallel JPEG processing to `images:squeeze` using Symfony Messenger with SQ
 - **Testing**: Unit tests for queue/handler; integration tests use file-based SQLite (not `:memory:`) for multi-process support
 
 ## Overview
+
 Implement Symfony Messenger-based parallel processing for `images:squeeze` with SQLite queue:
+
 - **Host mode**: sequential only (no queue).
 - **Docker mode**: parallel (queue + workers managed by Compose).
 
@@ -44,7 +49,8 @@ Implement Symfony Messenger-based parallel processing for `images:squeeze` with 
 ## Architecture
 
 ### Data Flow
-```
+
+```text
 ┌─────────────────────────────────────────────────────────┐
 │ images:squeeze --parallel (Main Process)              │
 │  - Creates schema if parallel mode enabled            │
@@ -78,6 +84,7 @@ Implement Symfony Messenger-based parallel processing for `images:squeeze` with 
 ```
 
 ### Modes
+
 - **Host Mode**: Sequential processing only (no parallel workers).
 - **Docker Mode**: Compose manages worker containers with dynamic replica count.
 
@@ -86,19 +93,24 @@ Implement Symfony Messenger-based parallel processing for `images:squeeze` with 
 ## Phase 1: Framework, Platform & Dependencies
 
 ### 1.1 Install Dependencies
+
 ```bash
 composer require symfony/framework-bundle symfony/messenger symfony/doctrine-messenger doctrine/doctrine-bundle doctrine/dbal symfony/config symfony/dotenv
 ```
 
 ### 1.2 Enable Linux Support
+
 Update `src/Shared/Infrastructure/NativePlatform.php`:
+
 - Allow `Linux` (or detect via `PHP_OS_FAMILY`).
 - Update `detectNCores()` to use `nproc` on Linux.
 - Update `findTool()` to treat Linux same as macOS (standard `which` command).
 - Determine the Linux `ssimulacra2` binary name inside the Docker image and hard-code mapping (expected: `ssimulacra2` or `ssimulacra2_rs`).
 
 ### 1.3 Database PRAGMA Configurator
+
 Create `src/Shared/Infrastructure/DatabasePragmaConfigurator.php`:
+
 ```php
 namespace App\Shared\Infrastructure;
 
@@ -117,13 +129,16 @@ final class DatabasePragmaConfigurator
     }
 }
 ```
+
 Apply PRAGMAs in two places:
+
 - `JobSchemaManager::ensureSchema()` before any queue reads/writes in parallel runs.
 - `messenger:cleanup` before maintenance operations (`wal_checkpoint`, `VACUUM`).
 
 ### 1.4 Configuration Files
 
 **`config/services.php`**
+
 ```php
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
 
@@ -148,6 +163,7 @@ return App::config([
 ```
 
 **`config/bundles.php`**
+
 ```php
 return [
     Symfony\Bundle\FrameworkBundle\FrameworkBundle::class => ['all' => true],
@@ -158,6 +174,7 @@ return [
 ```
 
 **`config/packages/doctrine.php`**
+
 ```php
 return App::config([
     'doctrine' => [
@@ -169,6 +186,7 @@ return App::config([
 ```
 
 **`config/packages/messenger.php`**
+
 ```php
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
 
@@ -202,6 +220,7 @@ return App::config([
 ```
 
 **`.env`**
+
 ```dotenv
 APP_ENV=dev
 APP_SECRET=gallinor_cli_secret
@@ -215,6 +234,7 @@ DATABASE_URL=sqlite:///%kernel.project_dir%/var/messenger/gallinor-queue.db
 ### 2.1 Image Processing Message Class
 
 **`src/Messages/ProcessImageMessage.php`**
+
 ```php
 namespace App\Messages;
 
@@ -230,6 +250,7 @@ readonly class ProcessImageMessage
 ### 2.2 Message Handler
 
 **`src/Images/MessageHandler/ProcessImageHandler.php`**
+
 ```php
 namespace App\Images\MessageHandler;
 
@@ -343,6 +364,7 @@ readonly class ProcessImageHandler
 ### 2.3 ARW Archival Message Class
 
 **`src/Messages/ProcessArwMessage.php`**
+
 ```php
 namespace App\Messages;
 
@@ -358,6 +380,7 @@ readonly class ProcessArwMessage
 ### 2.4 ARW Archival Message Handler
 
 **`src/Images/MessageHandler/ProcessArwHandler.php`**
+
 ```php
 namespace App\Images\MessageHandler;
 
@@ -447,15 +470,18 @@ CREATE INDEX IF NOT EXISTS idx_job_results_completed_at ON job_results(completed
 ```
 
 ### 3.2 Worker Heartbeats
+
 ```sql
 CREATE TABLE IF NOT EXISTS worker_heartbeats (
     worker_id TEXT PRIMARY KEY,
     last_beat_at INTEGER NOT NULL
 );
 ```
+
 Workers call `WorkerHeartbeat::beat()` between external tool runs (avifenc/avifdec/ssimulacra2) so liveness reflects real progress.
 
 ### 3.3 Schema Version
+
 ```sql
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER NOT NULL
@@ -466,6 +492,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 ### 3.4 Enable WAL Mode
 
 On first DB connection:
+
 ```sql
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
@@ -475,11 +502,14 @@ PRAGMA busy_timeout = 10000;  -- 10 seconds for concurrent access
 ```
 
 ### 3.5 Schema Creation Location
+
 Create schema **in `images:squeeze`** (only when parallelism is enabled), before dispatching messages.  
 This ensures the main process can query `job_results` without relying on worker startup order.
 
 ### 3.6 Schema Manager (Drop/Recreate on Version Mismatch)
+
 Create `src/Shared/Infrastructure/JobSchemaManager.php`:
+
 ```php
 namespace App\Shared\Infrastructure;
 
@@ -554,7 +584,9 @@ final readonly class JobSchemaManager
 ```
 
 ### 3.7 Worker Heartbeat Helper
+
 Create `src/Shared/Infrastructure/WorkerHeartbeat.php`:
+
 ```php
 namespace App\Shared\Infrastructure;
 
@@ -588,6 +620,7 @@ final readonly class WorkerHeartbeat
 ### 4.1 Add Serialization Methods
 
 Modify `src/Images/Domain/ImageFile.php`:
+
 ```php
 public static function fromJson(string $json): self
 {
@@ -610,7 +643,9 @@ public function jsonSerialize(): array
 ```
 
 ### 4.2 Add Heartbeat Callback (Images)
+
 Modify `CqLevelCalculator::calculate()` to accept an optional heartbeat callback and call it between external tool invocations:
+
 ```php
 public function calculate(
     ImageFile $file,
@@ -637,10 +672,13 @@ public function calculate(
     }
 }
 ```
+
 This keeps heartbeats fresh while long-running external tools are executing.
 
 ### 4.3 Extend ImageProcessingResult
+
 Add a `processingTime` field and update `ImageBatchResult` totals accordingly:
+
 ```php
 final readonly class ImageProcessingResult
 {
@@ -654,6 +692,7 @@ final readonly class ImageProcessingResult
     ) {}
 }
 ```
+
 Update `ImageBatchResult` to add `totalProcessingTime()` and include it in summaries.
 
 ---
@@ -689,11 +728,13 @@ final class Squeeze extends Command
 ### 5.1 Add ARW Archival Message
 
 Add `ProcessArwMessage` and `ProcessArwHandler` for parallel ARW archival. Similar structure to image processing:
+
 - Message contains directory path and list of ARW files
 - Handler calls `RawArchiver::archive()` with directory lock (flock) to prevent race conditions
 - Lock file: `.gallinor.lock` in target directory, using `LOCK_EX` with `LOCK_NB` for fail-fast
 
 **`src/Messages/ProcessArwMessage.php`**
+
 ```php
 namespace App\Messages;
 
@@ -707,6 +748,7 @@ readonly class ProcessArwMessage
 ```
 
 **`src/Images/MessageHandler/ProcessArwHandler.php`**
+
 ```php
 namespace App\Images\MessageHandler;
 
@@ -768,6 +810,7 @@ readonly class ProcessArwHandler
 ```
 
 Update `config/packages/messenger.php` to add ARW routing:
+
 ```php
 'routing' => [
     App\Messages\ProcessImageMessage::class => 'images',
@@ -872,11 +915,13 @@ private function getAlreadyProcessed(array $jpegs): array
 ```
 
 Usage in main flow:
+
 ```php
 // DB is the source of truth for resume (do not skip based on .avif existence)
 $processed = $this->getAlreadyProcessed($jpegs);
 $toProcess = array_filter($jpegs, fn (ImageFile $j) => ! isset($processed[$j->path]));
 ```
+
 Trade-off: if DB says "completed" but the `.avif` file is missing, the job is still skipped.
 
 ### 5.5 Process JPEGs in Parallel
@@ -885,6 +930,7 @@ Replace `processJpegs()` with:
 Use `WORKER_STALE_SECONDS = 60` (1 minute) for image workers (tool-aware: images have shorter runs than videos).
 
 **Pre-flight worker check** (before dispatching):
+
 ```php
 // Check for live workers before dispatching messages
 if (count($jpegs) > 0 && $this->getLiveWorkerCount(60) === 0) {
@@ -1189,6 +1235,7 @@ Update output summaries to display both totals (e.g., in `JPEG Summary` or `Timi
 **DB locked errors**: SQLite busy_timeout = 10s; `wal_checkpoint(TRUNCATE)` + `VACUUM` only after workers stop, skip if locked.
 
 **Worker crash**:
+
 - Docker mode: if no live heartbeats and queue still has jobs, fail fast.
 - `redeliver_timeout` must be set above worst-case job time; use `--keepalive` with Doctrine transport.
 
@@ -1203,6 +1250,7 @@ Update output summaries to display both totals (e.g., in `JPEG Summary` or `Timi
 ### 6.1 Dedicated Cleanup Command
 
 **`src/Messenger/Ui/Cli/Cleanup.php`**
+
 ```php
 namespace App\Messenger\Ui\Cli;
 
@@ -1269,6 +1317,7 @@ Create Docker Compose setup with dynamic replica calculation and flexible galler
 ### 7.1 Dockerfile & Compose
 
 **`Dockerfile`**
+
 - Base: `php:8.5-cli`.
 - Install system dependencies: `libavif-bin` (or build `libavif`), `xz-utils`, `git`, `unzip`.
 - `ffmpeg`:
@@ -1282,6 +1331,7 @@ Create Docker Compose setup with dynamic replica calculation and flexible galler
 Relying on distro `ffmpeg` packages is inconsistent for NVENC: some builds ship `hevc_nvenc`, others do not. To avoid surprises, build `ffmpeg` from source in a multi-stage Dockerfile with `nv-codec-headers` and `libx265`.
 
 High-level outline:
+
 - Build stage: install toolchain + `nv-codec-headers` + `libx265-dev`, then compile `ffmpeg` with NVENC + `libx265`.
 - Runtime stage: copy the built `ffmpeg` into the final image.
 - NVENC runtime libraries come from the host driver (via NVIDIA Container Toolkit / Docker Desktop GPU integration), not from the image.
@@ -1316,6 +1366,7 @@ COPY --from=ffmpeg-build /opt/ffmpeg/ /usr/local/
 ```
 
 **`docker-compose.yml`**
+
 ```yaml
 version: '3.8'
 
@@ -1381,6 +1432,7 @@ services:
 ```
 
 **Implementation Idea for Gallery Path:**
+
 - Docker Compose's `${VAR:-default}` syntax provides environment variable interpolation with defaults
 - Volume mounts and command arguments both support interpolation, ensuring consistent paths
 - Deploy scripts follow a simple priority resolution: CLI argument first, then ENV var, finally default
@@ -1396,6 +1448,7 @@ This project’s primary GPU acceleration target is **video encoding** (`videos:
 `videotoolbox` (Apple’s hardware encode/decode) is a macOS framework. Docker on macOS runs **Linux containers inside a Linux VM**, so `ffmpeg` inside the container cannot access `videotoolbox`.
 
 Implications:
+
 - Running Gallinor in Docker on macOS will use **CPU encoding** (e.g., `libx265`), not VideoToolbox.
 - If you want VideoToolbox, run Gallinor on the macOS host (non-Docker).
 
@@ -1420,16 +1473,19 @@ If this fails, fix host setup before proceeding (Docker Desktop WSL2 backend, WS
 ##### Enable GPU for Gallinor containers (Compose)
 
 Add the GPU reservation to any service that might execute `ffmpeg` with NVENC. For maximum flexibility (including “sequential mode from Docker”), add it to both:
+
 - `gallinor-app` (runs the command you invoke)
 - `gallinor-worker` (runs queued jobs)
 
 Important: Do **not** add NVIDIA GPU reservations to the base `docker-compose.yml` shown above, because it will fail on machines without the NVIDIA runtime/driver (e.g., macOS). Keep GPU config in `docker-compose.nvidia.yml`; the deploy scripts try it by default and fall back to CPU-only, and you can disable it explicitly with `--no-nvidia` / `GALLINOR_DOCKER_GPU=none`.
 
 This plan uses the Compose Deploy specification device reservation:
+
 - `capabilities: [gpu]` is required (Compose errors without it)
 - use `count: all` to expose all GPUs, or replace with `device_ids: ['0']` etc.
 
 Notes:
+
 - GPU access only helps if the container’s `ffmpeg` supports NVENC (see “Recommended Dockerfile snippet” above).
 - If you later want to prevent GPU contention between `gallinor-app` and workers, switch to explicit `device_ids` per service.
 - No gallery file movement is required; bind-mount a Windows path (e.g. `C:\...`) via `GALLINOR_GALLERY_PATH` as usual.
@@ -1450,6 +1506,7 @@ Both deploy scripts support three gallery path invocation styles with priority: 
 They also accept an optional leading `--no-nvidia` flag to force CPU-only mode.
 
 **`scripts/deploy.sh`** (macOS/Linux)
+
 ```bash
 #!/usr/bin/env bash
 
@@ -1512,6 +1569,7 @@ docker compose "${COMPOSE_ARGS[@]}" up -d --scale gallinor-worker=$REPLICAS
 ```
 
 **`scripts/deploy.bat`** (Windows)
+
 ```bat
 @echo off
 
@@ -1578,6 +1636,7 @@ docker compose %COMPOSE_ARGS% up -d --scale gallinor-worker=%REPLICAS
 Three invocation styles supported (all work identically):
 
 **Style 1: Command-line argument** (explicit)
+
 ```bash
 # macOS/Linux
 ./scripts/deploy.sh ~/Photos/vacation-2024
@@ -1587,6 +1646,7 @@ scripts\deploy.bat C:\Users\User\Pictures\vacation-2024
 ```
 
 #### Disable NVIDIA GPU (force CPU-only)
+
 ```bash
 # macOS/Linux
 ./scripts/deploy.sh --no-nvidia ~/Photos/vacation-2024
@@ -1596,6 +1656,7 @@ scripts\deploy.bat --no-nvidia C:\Users\User\Pictures\vacation-2024
 ```
 
 **Style 2: Environment variable** (flexible, works with .env files)
+
 ```bash
 # macOS/Linux
 GALLINOR_GALLERY_PATH=~/Photos/vacation-2024 ./scripts/deploy.sh
@@ -1606,6 +1667,7 @@ scripts\deploy.bat
 ```
 
 #### Disable NVIDIA GPU via environment variable (force CPU-only)
+
 ```bash
 # macOS/Linux
 GALLINOR_DOCKER_GPU=none GALLINOR_GALLERY_PATH=~/Photos/vacation-2024 ./scripts/deploy.sh
@@ -1617,6 +1679,7 @@ scripts\deploy.bat
 ```
 
 **Style 3: Default** (simplest, uses ./gallery or .\gallery)
+
 ```bash
 # macOS/Linux
 ./scripts/deploy.sh
@@ -1626,6 +1689,7 @@ scripts\deploy.bat
 ```
 
 **Cleanup old results manually:**
+
 ```bash
 docker compose run gallinor-cleanup
 ```
@@ -1637,6 +1701,7 @@ docker compose run gallinor-cleanup
 ### 8.1 Create Kernel
 
 Create `src/Kernel.php` to handle bundle loading and configuration (Standard Symfony Pattern):
+
 ```php
 namespace App;
 
@@ -1676,12 +1741,14 @@ $application->run();
 ## Testing Strategy
 
 ### Unit Tests
+
 - `ProcessImageHandlerTest` - Test handler logic with mock CqLevelCalculator
 - `CleanupCommandTest` - Test cleanup command
 - `JobSchemaManagerTest` - Test schema creation + version reset
 - `WorkerHeartbeatTest` - Test heartbeat insert/update logic
 
 ### Integration Tests
+
 - Use real `CqLevelCalculator` with small test JPEGs in vfsStream
 - Test parallel execution with 2-3 workers using file-based SQLite (shared DB across processes)
 - Verify result collection, progress updates, and resume functionality
@@ -1694,10 +1761,12 @@ $application->run();
 ## Performance Expectations
 
 ### M1 Pro (8P+2E cores)
+
 - **Concurrent JPEGs**: 2
 - **Expected gain**: 30-50% faster than sequential
 
 ### Ryzen 7900X (12C/24T)
+
 - **Concurrent JPEGs**: 3
 - **Expected gain**: 80-100% faster (may match or exceed M1 Pro)
 
