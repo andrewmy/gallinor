@@ -15,7 +15,6 @@ Add parallel JPEG processing to `images:squeeze` using Symfony Messenger with SQ
 - **ARW Archival**: `ProcessArwMessage` with directory locking (flock) to prevent race conditions.
 - **Pre-flight Check**: Verify live workers before dispatching messages; error if none running.
 
-
 ## Initial Requirements
 - **Dependencies**: `symfony/framework-bundle`, `symfony/messenger`, `symfony/doctrine-messenger`, `doctrine/doctrine-bundle`, `doctrine/dbal`, `symfony/config`, `symfony/dotenv`
 - **Database**: SQLite with WAL mode at `var/messenger/gallinor-queue.db` (named Docker volume in production)
@@ -1271,9 +1270,50 @@ Create Docker Compose setup with dynamic replica calculation and flexible galler
 
 **`Dockerfile`**
 - Base: `php:8.5-cli`.
-- Install system dependencies: `ffmpeg`, `libavif-bin` (or build `libavif`), `xz-utils`, `git`, `unzip`.
+- Install system dependencies: `libavif-bin` (or build `libavif`), `xz-utils`, `git`, `unzip`.
+- `ffmpeg`:
+  - Minimum: `libx265` support for CPU HEVC fallback.
+  - Recommended: build a deterministic `ffmpeg` binary that includes both `libx265` and NVIDIA NVENC (`hevc_nvenc`) so the same image can run CPU-only everywhere and use NVENC when the host provides an NVIDIA GPU.
 - Install Rust & `ssimulacra2_rs` (or `ssimulacra2` if you ship the C++ binary); verify the Linux binary name and hard-code it in `NativePlatform`.
 - `NativePlatform` exception for non-macOS/Windows is removed in Phase 1.
+
+#### Recommended Dockerfile snippet (NVENC-capable FFmpeg + CPU fallback)
+
+Relying on distro `ffmpeg` packages is inconsistent for NVENC: some builds ship `hevc_nvenc`, others do not. To avoid surprises, build `ffmpeg` from source in a multi-stage Dockerfile with `nv-codec-headers` and `libx265`.
+
+High-level outline:
+- Build stage: install toolchain + `nv-codec-headers` + `libx265-dev`, then compile `ffmpeg` with NVENC + `libx265`.
+- Runtime stage: copy the built `ffmpeg` into the final image.
+- NVENC runtime libraries come from the host driver (via NVIDIA Container Toolkit / Docker Desktop GPU integration), not from the image.
+
+Example snippet (trim as needed):
+
+```dockerfile
+FROM php:8.5-cli AS ffmpeg-build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ca-certificates git build-essential pkg-config yasm nasm \
+  libx265-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 https://github.com/FFmpeg/nv-codec-headers.git /tmp/nv && \
+  make -C /tmp/nv install
+
+RUN git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git /tmp/ffmpeg && \
+  cd /tmp/ffmpeg && \
+  ./configure --prefix=/opt/ffmpeg --disable-doc --disable-debug \
+    --enable-gpl --enable-libx265 \
+    --enable-nvenc --enable-nvdec --enable-cuvid && \
+  make -j"$(nproc)" && make install
+
+FROM php:8.5-cli
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  libavif-bin xz-utils \
+  # libx265 runtime package name can vary by base image; libx265-dev is the simplest option here.
+  libx265-dev \
+  && rm -rf /var/lib/apt/lists/*
+COPY --from=ffmpeg-build /opt/ffmpeg/ /usr/local/
+```
 
 **`docker-compose.yml`**
 ```yaml
@@ -1315,6 +1355,31 @@ volumes:
   gallinor-messenger:
 ```
 
+**`docker-compose.nvidia.yml`** (optional; NVIDIA hosts only)
+
+Keep NVIDIA GPU configuration in a separate override file so the base Compose setup works on machines without an NVIDIA runtime/driver (e.g., macOS).
+
+```yaml
+services:
+  gallinor-app:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  gallinor-worker:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+```
+
 **Implementation Idea for Gallery Path:**
 - Docker Compose's `${VAR:-default}` syntax provides environment variable interpolation with defaults
 - Volume mounts and command arguments both support interpolation, ensuring consistent paths
@@ -1322,16 +1387,85 @@ volumes:
 - This hybrid approach allows users to invoke with `./deploy.sh /path`, `GALLERY_PATH=/path ./deploy.sh`, or `./deploy.sh` for defaults
 - SQLite queue is stored in a **named volume** by default to avoid macOS/Windows bind-mount slowness; switch to a bind mount only for debugging
 
-### 7.2 Deploy Scripts (Hybrid Gallery Path Support)
+### 7.2 Hardware Acceleration (GPU) Notes
+
+This project’s primary GPU acceleration target is **video encoding** (`videos:squeeze` via `hevc_nvenc` on NVIDIA). Image processing may gain GPU support later (TBD).
+
+#### macOS quirk: no Apple VideoToolbox inside Docker
+
+`videotoolbox` (Apple’s hardware encode/decode) is a macOS framework. Docker on macOS runs **Linux containers inside a Linux VM**, so `ffmpeg` inside the container cannot access `videotoolbox`.
+
+Implications:
+- Running Gallinor in Docker on macOS will use **CPU encoding** (e.g., `libx265`), not VideoToolbox.
+- If you want VideoToolbox, run Gallinor on the macOS host (non-Docker).
+
+#### Windows: NVIDIA NVENC via Docker Desktop (WSL2)
+
+##### Requirements (Windows host)
+
+- Docker Desktop with **WSL2 backend** enabled (GPU support in Docker Desktop is Windows + WSL2 only). You can run `docker` / `docker compose` from PowerShell; WSL2 is used under the hood by Docker Desktop.
+- An NVIDIA GPU and an up-to-date NVIDIA Windows driver that supports WSL2 GPU paravirtualization (GPU-PV).
+- Up-to-date WSL kernel (`wsl --update`).
+
+##### Validate GPU access (before touching Gallinor)
+
+From PowerShell (or from WSL), this should print NVIDIA-SMI output:
+
+```bash
+docker run --rm --gpus all nvidia/cuda:12.9.0-base-ubuntu22.04 nvidia-smi
+```
+
+If this fails, fix host setup before proceeding (Docker Desktop WSL2 backend, WSL kernel update, NVIDIA driver).
+
+##### Enable GPU for Gallinor containers (Compose)
+
+Add the GPU reservation to any service that might execute `ffmpeg` with NVENC. For maximum flexibility (including “sequential mode from Docker”), add it to both:
+- `gallinor-app` (runs the command you invoke)
+- `gallinor-worker` (runs queued jobs)
+
+Important: Do **not** add NVIDIA GPU reservations to the base `docker-compose.yml` shown above, because it will fail on machines without the NVIDIA runtime/driver (e.g., macOS). Keep GPU config in `docker-compose.nvidia.yml`; the deploy scripts try it by default and fall back to CPU-only, and you can disable it explicitly with `--no-nvidia` / `GALLINOR_DOCKER_GPU=none`.
+
+This plan uses the Compose Deploy specification device reservation:
+- `capabilities: [gpu]` is required (Compose errors without it)
+- use `count: all` to expose all GPUs, or replace with `device_ids: ['0']` etc.
+
+Notes:
+- GPU access only helps if the container’s `ffmpeg` supports NVENC (see “Recommended Dockerfile snippet” above).
+- If you later want to prevent GPU contention between `gallinor-app` and workers, switch to explicit `device_ids` per service.
+- No gallery file movement is required; bind-mount a Windows path (e.g. `C:\...`) via `GALLINOR_GALLERY_PATH` as usual.
+
+##### Ensure `ffmpeg` in the image supports NVENC
+
+Inside the built image, confirm `hevc_nvenc` exists:
+
+```bash
+docker compose run --rm gallinor-app ffmpeg -hide_banner -encoders | grep -i nvenc
+```
+
+If `hevc_nvenc` is missing, update the Docker image build to install an NVENC-enabled `ffmpeg` (or build it accordingly).
+
+### 7.3 Deploy Scripts (Hybrid Gallery Path Support)
 
 Both deploy scripts support three gallery path invocation styles with priority: CLI argument → ENV var → default.
+They also accept an optional leading `--no-nvidia` flag to force CPU-only mode.
 
 **`scripts/deploy.sh`** (macOS/Linux)
 ```bash
 #!/usr/bin/env bash
 
+# NVIDIA compose override is enabled by default (best performance when available).
+# Disable with --no-nvidia or set GALLINOR_DOCKER_GPU=none.
+USE_NVIDIA=1
+if [[ "${1:-}" == "--no-nvidia" ]]; then
+    USE_NVIDIA=0
+    shift
+fi
+if [[ "${GALLINOR_DOCKER_GPU:-}" == "none" ]]; then
+    USE_NVIDIA=0
+fi
+
 # Resolve gallery path (priority: CLI arg > ENV var > default)
-if [[ -n "$1" ]]; then
+if [[ -n "${1:-}" ]]; then
     GALLERY_PATH="$1"
 elif [[ -n "$GALLINOR_GALLERY_PATH" ]]; then
     GALLERY_PATH="$GALLINOR_GALLERY_PATH"
@@ -1340,22 +1474,55 @@ else
 fi
 export GALLINOR_GALLERY_PATH="$GALLERY_PATH"
 
+# Compose files (GPU config is optional)
+COMPOSE_ARGS=(-f docker-compose.yml)
+if [[ "$USE_NVIDIA" -eq 1 ]]; then
+    COMPOSE_ARGS+=(-f docker-compose.nvidia.yml)
+fi
+
 # Read container CPU limit by running nproc inside container
 # Modern Docker (cgroup v2): nproc correctly reflects container limits
-N_CORES=$(docker compose run --rm gallinor-worker nproc)
+N_CORES=$(docker compose "${COMPOSE_ARGS[@]}" run --rm gallinor-worker nproc 2>/dev/null) || {
+    if [[ "$USE_NVIDIA" -eq 1 ]]; then
+        echo "NVIDIA override failed; retrying CPU-only. Use --no-nvidia to skip this probe."
+        USE_NVIDIA=0
+        COMPOSE_ARGS=(-f docker-compose.yml)
+        N_CORES=$(docker compose "${COMPOSE_ARGS[@]}" run --rm gallinor-worker nproc)
+    else
+        exit 1
+    fi
+}
 
 # Same formula as CLI: max(1, min(nCores / 4, floor(nCores / 8) + 2))
-REPLICAS=$(python3 -c "print(max(1, min(int($N_CORES / 4), int($N_CORES / 8) + 2)))")
+REPLICAS_A=$((N_CORES / 4))
+REPLICAS_B=$((N_CORES / 8 + 2))
+if ((REPLICAS_A < REPLICAS_B)); then
+    REPLICAS=$REPLICAS_A
+else
+    REPLICAS=$REPLICAS_B
+fi
+if ((REPLICAS < 1)); then
+    REPLICAS=1
+fi
 
 echo "Starting with $REPLICAS workers for $N_CORES cores, processing $GALLERY_PATH"
 
 # Start containers with correct worker count
-docker compose up -d --scale gallinor-worker=$REPLICAS
+docker compose "${COMPOSE_ARGS[@]}" up -d --scale gallinor-worker=$REPLICAS
 ```
 
 **`scripts/deploy.bat`** (Windows)
 ```bat
 @echo off
+
+REM NVIDIA compose override is enabled by default (best performance when available).
+REM Disable with --no-nvidia or set GALLINOR_DOCKER_GPU=none.
+set USE_NVIDIA=1
+if /i "%~1"=="--no-nvidia" (
+    set USE_NVIDIA=0
+    shift
+)
+if /i "%GALLINOR_DOCKER_GPU%"=="none" set USE_NVIDIA=0
 
 REM Resolve gallery path (priority: CLI arg > ENV var > default)
 if "%~1"=="" (
@@ -1369,9 +1536,22 @@ if "%~1"=="" (
 )
 set GALLINOR_GALLERY_PATH=%GALLERY_PATH%
 
+REM Compose files (GPU config is optional)
+set COMPOSE_ARGS=-f docker-compose.yml
+if "%USE_NVIDIA%"=="1" set COMPOSE_ARGS=%COMPOSE_ARGS% -f docker-compose.nvidia.yml
+
 REM Read container CPU limit by running nproc inside container
 REM Modern Docker (cgroup v2): nproc correctly reflects container limits
-for /f "delims=" %%i in ('docker compose run --rm gallinor-worker nproc 2^>nul') do set N_CORES=%%i
+for /f "delims=" %%i in ('docker compose %COMPOSE_ARGS% run --rm gallinor-worker nproc 2^>nul') do set N_CORES=%%i
+
+if not defined N_CORES (
+    if "%USE_NVIDIA%"=="1" (
+        echo NVIDIA override failed; retrying CPU-only. Use --no-nvidia to skip this probe.
+        set USE_NVIDIA=0
+        set COMPOSE_ARGS=-f docker-compose.yml
+        for /f "delims=" %%i in ('docker compose %COMPOSE_ARGS% run --rm gallinor-worker nproc 2^>nul') do set N_CORES=%%i
+    )
+)
 
 if not defined N_CORES (
     echo Error: Could not detect container CPU count
@@ -1390,10 +1570,10 @@ if not defined REPLICAS (
 echo Starting with %REPLICAS% workers for %N_CORES% cores, processing %GALLERY_PATH%
 
 REM Start containers with correct worker count
-docker compose up -d --scale gallinor-worker=%REPLICAS
+docker compose %COMPOSE_ARGS% up -d --scale gallinor-worker=%REPLICAS
 ```
 
-### 7.3 Deployment Commands
+### 7.4 Deployment Commands
 
 Three invocation styles supported (all work identically):
 
@@ -1406,12 +1586,32 @@ Three invocation styles supported (all work identically):
 scripts\deploy.bat C:\Users\User\Pictures\vacation-2024
 ```
 
+#### Disable NVIDIA GPU (force CPU-only)
+```bash
+# macOS/Linux
+./scripts/deploy.sh --no-nvidia ~/Photos/vacation-2024
+
+# Windows
+scripts\deploy.bat --no-nvidia C:\Users\User\Pictures\vacation-2024
+```
+
 **Style 2: Environment variable** (flexible, works with .env files)
 ```bash
 # macOS/Linux
 GALLINOR_GALLERY_PATH=~/Photos/vacation-2024 ./scripts/deploy.sh
 
 # Windows
+set GALLINOR_GALLERY_PATH=C:\Users\User\Pictures\vacation-2024
+scripts\deploy.bat
+```
+
+#### Disable NVIDIA GPU via environment variable (force CPU-only)
+```bash
+# macOS/Linux
+GALLINOR_DOCKER_GPU=none GALLINOR_GALLERY_PATH=~/Photos/vacation-2024 ./scripts/deploy.sh
+
+# Windows
+set GALLINOR_DOCKER_GPU=none
 set GALLINOR_GALLERY_PATH=C:\Users\User\Pictures\vacation-2024
 scripts\deploy.bat
 ```
@@ -1428,11 +1628,6 @@ scripts\deploy.bat
 **Cleanup old results manually:**
 ```bash
 docker compose run gallinor-cleanup
-```
-
-**Manual scaling (without scripts):**
-```bash
-docker compose up -d --scale gallinor-worker=3
 ```
 
 ---
