@@ -1,13 +1,17 @@
 # AGENTS.md
 
-This file provides guidance to AI agents when working with code in this repository.
+This file provides guidance to AI agents when working with code in this
+repository.
 
 ## Project Overview
 
-Gallinor (Gallery Minor) is a PHP 8.5 CLI tool for reducing video and image gallery sizes while maintaining quality. It supports:
+Gallinor (Gallery Minor) is a PHP 8.5 CLI tool for reducing video and image
+gallery sizes while maintaining quality. It supports:
 
-- **Videos**: Re-encode to HEVC (H.265) with adaptive bitrate, hardware acceleration (VideoToolbox/NVENC)
-- **Images**: Convert JPEGs to AVIF with quality-based encoding, archive ARW files with xz compression
+- **Videos**: Re-encode to HEVC (H.265) with adaptive bitrate, hardware
+  acceleration (VideoToolbox/NVENC)
+- **Images**: Convert JPEGs to AVIF with quality-based encoding, archive ARW
+  files with xz compression
 
 Before every task implementation, interview the user until everything is clear.
 
@@ -48,7 +52,8 @@ php app.php images:remove-originals <path>   # Remove originals after conversion
 
 ## Architecture
 
-This is a PHP 8.5 CLI application for optimizing media files while maintaining quality. The project follows clean architecture with strict domain separation.
+This is a PHP 8.5 CLI application for optimizing media files while maintaining
+quality. The project follows clean architecture with strict domain separation.
 
 ### Bounded Contexts
 
@@ -64,43 +69,65 @@ Each context follows DDD layering:
 
 ### Key Patterns
 
-**Dependency Injection**: Manual constructor injection in `app.php` (no DI container). Commands receive dependencies via constructor; domain objects created lazily in `__invoke` methods.
+**Dependency Injection**: Manual constructor injection in `app.php` (no DI
+container). Commands receive dependencies via constructor; domain objects
+created lazily in `__invoke` methods.
 
-**Readonly Domain**: All domain classes are `readonly` - immutable after construction.
+**Readonly Domain**: All domain classes are `readonly` - immutable after
+construction.
 
 **Quality-Based Encoding**:
 
 - Video: Binary search for optimal CRF to achieve VMAF ≥ 90
 - Images: Binary search for optimal CQ level to achieve SSIMULACRA2 ≥ 85
 
-**Platform Abstraction**: `Platform` class handles OS differences (macOS/Windows) for tool detection and core counting.
+**Platform Abstraction**: `Platform` class handles OS differences
+(macOS/Windows) for tool detection and core counting.
 
-**External Tool Integration**: All external tools (FFmpeg, libavif, ssimulacra2, exiftool, xz) invoked via `ProcessExecutor` and located through `Platform::findTool()`.
+**External Tool Integration**: All external tools (FFmpeg, libavif, ssimulacra2,
+exiftool, xz) invoked via `ProcessExecutor` and located through
+`Platform::findTool()`.
 
 ### Important Constraints
 
 - **PHP 8.5+ only** - Uses modern PHP features extensively
 - **macOS and Windows only** - `Platform` constructor throws on unsupported OS
-- **No exceptions in domain logic** - Errors are captured and returned via result objects (e.g., `ImageBatchResult`)
-- **Static analysis at max level** - PHPStan is configured to max level with strict analysis
-- **Video rotation handling**: Videos with Display Matrix rotation metadata (e.g., -90°) are detected via `side_data_list` in `show_streams`. NVENC cannot properly handle rotation, so `encoderForFile()` switches to CPU encoder (`libx265`) for rotated videos. CPU encoder bakes rotation into pixels (1920x1080→1080x1920), ensuring correct playback orientation and direct VMAF comparison without scaling needed.
+- **No exceptions in domain logic** - Errors are captured and returned via
+  result objects (e.g., `ImageBatchResult`)
+- **Static analysis at max level** - PHPStan is configured to max level with
+  strict analysis
+- **Video rotation handling**: Videos with Display Matrix rotation metadata
+  (e.g., -90°) are detected via `side_data_list` in `show_streams`. NVENC cannot
+  properly handle rotation, so `encoderForFile()` switches to CPU encoder
+  (`libx265`) for rotated videos. CPU encoder bakes rotation into pixels
+  (1920x1080→1080x1920), ensuring correct playback orientation and direct VMAF
+  comparison without scaling needed.
 
 ## Agent Guidelines (General)
 
-- **Docs must match code**: When updating docs, ensure snippets and field names reflect actual classes and data shapes.
-- **Cross-platform tools**: Verify binary names per OS (macOS/Windows/Linux), and document any platform-specific mapping when introducing external tools.
-- **Orchestration**: Prefer external orchestration (e.g., Docker) over in-app worker management when cross-platform process control would add complexity.
-- **SQLite in Docker**: Use named volumes for SQLite by default to avoid macOS/Windows bind-mount slowness; bind mount only for debugging.
-- **Long-running work**: Avoid per-file timeouts for media processing; if liveness is needed, use heartbeat-style progress signals.
-- **Keep constraints current**: If you change platform support (e.g., add Linux for Docker), update the “Important Constraints” section to reflect reality.
+- **Docs must match code**: When updating docs, ensure snippets and field names
+  reflect actual classes and data shapes.
+- **Cross-platform tools**: Verify binary names per OS (macOS/Windows/Linux),
+  and document any platform-specific mapping when introducing external tools.
+- **Orchestration**: Prefer external orchestration (e.g., Docker) over in-app
+  worker management when cross-platform process control would add complexity.
+- **SQLite in Docker**: Use named volumes for SQLite by default to avoid
+  macOS/Windows bind-mount slowness; bind mount only for debugging.
+- **Long-running work**: Avoid per-file timeouts for media processing; if
+  liveness is needed, use heartbeat-style progress signals.
+- **Keep constraints current**: If you change platform support (e.g., add Linux
+  for Docker), update the “Important Constraints” section to reflect reality.
 
 ## Testing
 
-Tests organized by module under `tests/Unit/`. Use `FsTestCase` for filesystem-related tests (virtual filesystem via vfsstream). Test doubles use Mockery.
+Tests organized by module under `tests/Unit/`. Use `FsTestCase` for
+filesystem-related tests (virtual filesystem via vfsstream). Test doubles use
+Mockery.
 
 ### Current Status
 
-**63 tests, 19.86% line coverage** — passing, with 6 incomplete tests and 1 warning (as of 2026-01-19)
+**63 tests, 19.86% line coverage** — passing, with 6 incomplete tests and 1
+warning (as of 2026-01-19)
 
 **Tested**:
 
@@ -117,28 +144,36 @@ Tests organized by module under `tests/Unit/`. Use `FsTestCase` for filesystem-r
 - `ArchiveVerifier` — depends on `Platform` (final)
 - `ImageFileCollector` — depends on `Exiftool` (final)
 
-**Refactoring Options**: Extract interfaces (`ImageToolsInterface`, `ExiftoolInterface`, `PlatformInterface`) to enable testing.
+**Refactoring Options**: Extract interfaces (`ImageToolsInterface`,
+`ExiftoolInterface`, `PlatformInterface`) to enable testing.
 
 ### Testable but Untested (quick wins)
 
 - `VideoFinder` — pure logic, uses `Encoder` interface
 - `VideoSummary` — pure formatting/printing
 - `CliHelper` — pure formatting + link formatting
-- `Timing` — pure formatting + value object methods (avoid time-sensitive assertions)
+- `Timing` — pure formatting + value object methods (avoid time-sensitive
+  assertions)
 - `ArchiveVerificationResult` — pure aggregation/counting
 - `ImageCollection` — pure value object defaults
 
 ### Coverage Growth Strategy
 
-**Quick wins**: `VideoFinder`, CLI helper/value objects (`CliHelper`, `Timing`, `VideoSummary`), small DTOs (`ArchiveVerificationResult`, `VideoProcessResult`, `ImageProcessingResult`).
+**Quick wins**: `VideoFinder`, CLI helper/value objects (`CliHelper`, `Timing`,
+`VideoSummary`), small DTOs (`ArchiveVerificationResult`, `VideoProcessResult`,
+`ImageProcessingResult`).
 
-**Medium effort**: Extract interfaces for final classes, add integration tests for actual tool execution.
+**Medium effort**: Extract interfaces for final classes, add integration tests
+for actual tool execution.
 
-**Long term**: Test doubles for external tools, property-based testing for calculations.
+**Long term**: Test doubles for external tools, property-based testing for
+calculations.
 
 ### Testing Best Practices
 
-**Virtual Filesystem**: Use `FsTestCase` for filesystem-dependent tests to ensure isolation. Provides vfsStream root via `$this->root` and `$this->vfsUrl()` helper.
+**Virtual Filesystem**: Use `FsTestCase` for filesystem-dependent tests to
+ensure isolation. Provides vfsStream root via `$this->root` and
+`$this->vfsUrl()` helper.
 
 **Test Doubles** (prefer in order):
 
@@ -146,32 +181,44 @@ Tests organized by module under `tests/Unit/`. Use `FsTestCase` for filesystem-r
 2. `TestHandler` (Monolog) for logging — allows log inspection
 3. Mockery only when stubs unavailable
 
-**Isolation**: Tests should not depend on real temp directories, system state, or external tools. `InMemoryProcessExecutor` test double should track file sizes without writing actual files.
+**Isolation**: Tests should not depend on real temp directories, system state,
+or external tools. `InMemoryProcessExecutor` test double should track file sizes
+without writing actual files.
 
 **Test Doubles Reference**:
 
-- `StubPlatform` (`tests/Shared/StubPlatform.php`) — Simple stub with configurable properties
+- `StubPlatform` (`tests/Shared/StubPlatform.php`) — Simple stub with
+  configurable properties
 - `TestHandler` (Monolog) — Captures log records for inspection
-- `InMemoryProcessExecutor` (`tests/Shared/InMemoryProcessExecutor.php`) — Simulates process execution
+- `InMemoryProcessExecutor` (`tests/Shared/InMemoryProcessExecutor.php`) —
+  Simulates process execution
 
-**Helper Methods**: Private helpers not named `test_*` and not referencing `$this` must be `static` (PHP_CodeSniffer enforcement).
+**Helper Methods**: Private helpers not named `test_*` and not referencing
+`$this` must be `static` (PHP_CodeSniffer enforcement).
 
-**Key Pattern**: When mocking methods receiving dynamically-generated values (like `uniqid()`), use `Mockery::any()` wildcard. Use `sys_get_temp_dir()` for test file paths so `rename()` succeeds.
+**Key Pattern**: When mocking methods receiving dynamically-generated values
+(like `uniqid()`), use `Mockery::any()` wildcard. Use `sys_get_temp_dir()` for
+test file paths so `rename()` succeeds.
 
 ## CI/CD
 
-GitHub Actions workflow runs on push/PR to main. Workflow should match `just ci` command (validate, audit, analyze, lint, stan, test). Coverage threshold: 10% (var/coverage.xml).
+GitHub Actions workflow runs on push/PR to main. Workflow should match `just ci`
+command (validate, audit, analyze, lint, stan, test). Coverage threshold: 10%
+(var/coverage.xml).
 
 ## Code Style
 
 - PHP 8.5 with strict types
 - Doctrine coding standard (via PHP_CodeSniffer)
 - PHPStan level max
-- Comments: Never explain *what* code does, only *why* if not obvious. Adjust naming instead.
+- Comments: Never explain *what* code does, only *why* if not obvious. Adjust
+  naming instead.
 
 **After each edit**: Run `just test`, `just stan`, and `just cbf`.
 
-**Exception (Markdown-only changes)**: If you changed only `*.md` files, do **not** run `just test`, `just stan`, or `just cbf`; run `just markdown` instead.
+**Exception (Markdown-only changes)**: If you changed only `*.md` files, do
+**not** run `just test`, `just stan`, or `just cbf`; run `just markdown`
+instead.
 
 ## Adding New Commands
 
@@ -186,20 +233,29 @@ GitHub Actions workflow runs on push/PR to main. Workflow should match `just ci`
 
 ### Test IO Isolation Issues (Priority: Medium)
 
-**Issue**: Several tests perform real filesystem I/O instead of using virtual filesystem isolation, making tests slower and less reliable.
+**Issue**: Several tests perform real filesystem I/O instead of using virtual
+filesystem isolation, making tests slower and less reliable.
 
 **Affected Areas**:
 
 - `VideoProcessorTest` uses real temp directory (`sys_get_temp_dir()`)
-- `InMemoryProcessExecutor` misnamed — writes real files via `file_put_contents()` instead of being truly in-memory
+- `InMemoryProcessExecutor` misnamed — writes real files via
+  `file_put_contents()` instead of being truly in-memory
 - `VideoFile` domain objects use real paths, coupling domain logic to filesystem
-- `ArchiveVerifierTest` has 5 incomplete tests due to `glob()` not working on vfsStream paths
+- `ArchiveVerifierTest` has 5 incomplete tests due to `glob()` not working on
+  vfsStream paths
 - `RawArchiverTest` has 1 incomplete test (needs better tar/xz simulation)
-- `RawArchiver` (Windows flow) uses `rename()` from temp dir → target dir; can fail across filesystems/volumes
+- `RawArchiver` (Windows flow) uses `rename()` from temp dir → target dir; can
+  fail across filesystems/volumes
 
 **Recommended Approach**:
 
-1. Decide per-test whether vfsStream is appropriate (anything using `glob()`, `rename()` across temp→target, or real tools may need real temp dirs or a refactor)
-2. Make `InMemoryProcessExecutor` truly in-memory — track file sizes in arrays without writing
-3. Refactor `ArchiveVerifier` to avoid `glob()` (inject archive discovery / filesystem abstraction) so vfsStream works
-4. Make `RawArchiver` robust to cross-filesystem moves (fallback to copy+unlink when `rename()` fails), then test it
+1. Decide per-test whether vfsStream is appropriate (anything using `glob()`,
+   `rename()` across temp→target, or real tools may need real temp dirs or a
+   refactor)
+2. Make `InMemoryProcessExecutor` truly in-memory — track file sizes in arrays
+   without writing
+3. Refactor `ArchiveVerifier` to avoid `glob()` (inject archive discovery /
+   filesystem abstraction) so vfsStream works
+4. Make `RawArchiver` robust to cross-filesystem moves (fallback to copy+unlink
+   when `rename()` fails), then test it

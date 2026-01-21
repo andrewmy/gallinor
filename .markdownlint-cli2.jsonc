@@ -2,8 +2,9 @@
   "config": {
     "default": true,
 
-    // Commands/paths/identifiers regularly exceed 80 chars; wrapping hurts copy/paste.
-    "MD013": false,
+    // Enforce readable prose line-length; ignore fenced code and tables.
+    // Note: long unbreakable tokens (e.g., URLs) are tolerated by default (strict: false).
+    "MD013": { "line_length": 80, "code_blocks": false, "tables": false },
 
     // Some docs intentionally show raw URLs.
     "MD034": false
