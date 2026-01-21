@@ -22,7 +22,7 @@ security-check:
 
 # Lint markdown, don't look at externally sourced files
 markdown:
-    markdownlint README.md
+    npx --yes markdownlint-cli2 .
 
 # Run tests
 test:
@@ -33,4 +33,4 @@ coverage-check: test
     php vendor/bin/coverage-check var/coverage.xml 19
 
 # Full CI flow
-ci: composer-validate cbf require-check coverage-check stan security-check
+ci: composer-validate markdown cbf require-check coverage-check stan security-check

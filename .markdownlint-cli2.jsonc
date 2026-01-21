@@ -1,0 +1,39 @@
+// markdownlint-cli2 configuration (JSONC so we can comment).
+//
+// Goal: lint *all* Markdown in the repo without turning CI into a mass reformat task.
+// We disable a handful of high-noise rules that conflict with the existing docs style.
+{
+  // markdownlint rule configuration
+  "config": {
+    "default": true,
+
+    // Existing docs intentionally use mixed list indentation in places.
+    "MD007": false,
+
+    // Commands/paths/identifiers regularly exceed 80 chars; wrapping hurts copy/paste.
+    "MD013": false,
+
+    // Existing docs often keep tight heading/list/fence spacing.
+    "MD022": false,
+    "MD031": false,
+    "MD032": false,
+
+    // Some docs intentionally show raw URLs.
+    "MD034": false,
+
+    // README contains code spans that trigger this (leading space inside backticks).
+    "MD038": false,
+
+    // Many existing fences are untagged; avoid CI noise until we clean them up.
+    "MD040": false
+  },
+
+  // What to lint (and what to exclude). Negation uses a leading "#".
+  "globs": [
+    "**/*.md",
+    "#vendor/**",
+    "#node_modules/**",
+    "#.git/**"
+  ]
+}
+

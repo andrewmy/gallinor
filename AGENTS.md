@@ -20,6 +20,7 @@ Every finished task must end in an update to this file if necessary.
 composer install              # Install dependencies
 just ci                       # Full CI pipeline (validate, audit, analyze, lint, stan, test)
 just cbf                      # Fix code style issues
+just markdown                 # Lint Markdown files (via markdownlint-cli2; config: .markdownlint-cli2.jsonc)
 just stan                     # Run PHPStan static analysis (level max)
 just test                     # Run all tests
 ```
@@ -161,6 +162,8 @@ GitHub Actions workflow runs on push/PR to main. Workflow should match `just ci`
 - Comments: Never explain *what* code does, only *why* if not obvious. Adjust naming instead.
 
 **After each edit**: Run `just test`, `just stan`, and `just cbf`.
+
+**Exception (Markdown-only changes)**: If you changed only `*.md` files, do **not** run `just test`, `just stan`, or `just cbf`; run `just markdown` instead.
 
 ## Adding New Commands
 

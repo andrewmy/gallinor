@@ -13,6 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Markdown Lint
+        uses: DavidAnson/markdownlint-cli2-action@v21
+        with:
+          globs: |
+            **/*.md
+
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.5'
