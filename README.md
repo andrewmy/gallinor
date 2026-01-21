@@ -36,15 +36,15 @@ simplicity and ease of use.
 - For images:
   - libavif
     - macOS: `brew install libavif`
-    - Win: https://github.com/AOMediaCodec/libavif/releases
+    - Win: <https://github.com/AOMediaCodec/libavif/releases>
   - ssimulacra2
     - Rust
       - macOS: `brew install rust`
       - Win:
         - `winget install Rustlang.Rustup`
-        - https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2026
+        - <https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2026>
           — choose "Desktop C++" there too:
-          https://rust-lang.github.io/rustup/installation/windows-msvc.html
+          <https://rust-lang.github.io/rustup/installation/windows-msvc.html>
     - `cargo install ssimulacra2_rs --no-default-features`
   - exiftool
     - macOS: `brew install exiftool`
