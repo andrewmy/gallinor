@@ -89,16 +89,18 @@ final class Squeeze extends Command
 
         $output->writeln('');
 
-        $totalProcessedSize = 0;
-        $totalErroredFiles  = 0;
-        $totalQcTime        = 0;
+        $totalProcessedSize         = 0;
+        $totalErroredFiles          = 0;
+        $totalQcTime                = 0;
+        $totalSuccessfullyProcessed = 0;
+        $totalPostProcessingSkipped = 0;
 
-        [$fileList, $totalSkippedFiles] = $this->gatherFileList(
+        [$fileList, $totalSkippedFiles, $totalSkippedSize] = $this->gatherFileList(
             directories: $directories,
             output: $output,
         );
 
-        $totalCurrentSize   = array_reduce(
+        $totalCurrentSize   = $totalSkippedSize + array_reduce(
             $fileList,
             static fn (int $carry, VideoFile $file) => $carry + $file->currentSize,
             0,
@@ -110,11 +112,12 @@ final class Squeeze extends Command
         );
 
         $output->writeln(sprintf(
-            "\n\nProjection:\n  Current size: %s\n  Projected size: %s\n  Projected savings: %s\n  Skipped: %d",
+            "\n\nProjection:\n  Current size: %s\n  Projected size: %s\n  Projected savings: %s\n  Skipped: %d (%s)",
             $this->cliHelper->formatBytes($totalCurrentSize),
             $this->cliHelper->formatBytes($totalProjectedSize),
             $this->cliHelper->formatBytes($totalCurrentSize - $totalProjectedSize),
             $totalSkippedFiles,
+            $this->cliHelper->formatBytes($totalSkippedSize),
         ));
         $gatherTime = microtime(true);
         $output->writeln(sprintf('<info>Gather time: %.3fs</info>', $gatherTime - $factoryTime));
@@ -186,6 +189,8 @@ final class Squeeze extends Command
                     $output->write('<comment>Skipped (bitrate acceptable): </comment>');
                     $output->writeln($this->cliHelper->link($file->path));
                     $progressBar->display();
+                    $totalProcessedSize += $file->currentSize;
+                    $totalPostProcessingSkipped++;
                     $progressBar->advance();
                     continue;
                 }
@@ -202,6 +207,7 @@ final class Squeeze extends Command
 
                 $totalProcessedSize += $result->newSize;
                 $totalQcTime        += $result->qcTime;
+                $totalSuccessfullyProcessed++;
 
                 $savings       = $result->savings();
                 $totalSavings += $savings;
@@ -228,8 +234,8 @@ final class Squeeze extends Command
         new VideoSummary(
             sizeBefore: $totalCurrentSize,
             sizeAfter: $totalProcessedSize,
-            processed: $fileCount,
-            skipped: $totalSkippedFiles,
+            processed: $totalSuccessfullyProcessed,
+            skipped: $totalSkippedFiles + $totalPostProcessingSkipped,
             errored: $totalErroredFiles,
         )->print($output, $this->cliHelper);
 
@@ -248,7 +254,7 @@ final class Squeeze extends Command
     /**
      * @param list<string> $directories
      *
-     * @return array{list<VideoFile>, int} Tuple of file list and total skipped files
+     * @return array{list<VideoFile>, int, int} Tuple of file list, total skipped files, and total skipped size
      */
     private function gatherFileList(
         array $directories,
@@ -256,6 +262,7 @@ final class Squeeze extends Command
     ): array {
         $fileList          = [];
         $totalSkippedFiles = 0;
+        $totalSkippedSize  = 0;
 
         $files = $this->scanner->scanDirectories($directories);
 
@@ -274,11 +281,13 @@ final class Squeeze extends Command
                 if (VideoProcessor::isBitrateAcceptable($videoFile, $videoFile->baseBitrate())) {
                     $output->writeln(sprintf('Bitrate %s Kbps is acceptable, no action needed.', $videoFile->bitRate));
                     $totalSkippedFiles++;
+                    $totalSkippedSize += $videoFile->currentSize;
                     continue;
                 }
             } catch (UnsupportedResolution $exception) {
                 $output->writeln($exception->getMessage());
                 $totalSkippedFiles++;
+                $totalSkippedSize += $videoFile->currentSize;
                 continue;
             }
 
@@ -289,6 +298,7 @@ final class Squeeze extends Command
                     $this->cliHelper->link($optimalFilePath),
                 ));
                 $totalSkippedFiles++;
+                $totalSkippedSize += $videoFile->currentSize;
                 continue;
             }
 
@@ -313,6 +323,6 @@ final class Squeeze extends Command
             $output->writeln('<info>Using CPU encoder due to video rotation</info>');
         }
 
-        return [$fileList, $totalSkippedFiles];
+        return [$fileList, $totalSkippedFiles, $totalSkippedSize];
     }
 }
