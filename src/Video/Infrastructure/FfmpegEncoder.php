@@ -291,6 +291,7 @@ final class FfmpegEncoder implements Encoder
 
         $process = new Process($params);
         $process->setWorkingDirectory($tempDir);
+        $process->setTimeout(null);
         $process->mustRun();
 
         if (! is_file($vmafLogFile)) {
