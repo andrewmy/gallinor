@@ -11,7 +11,9 @@ use RuntimeException;
 use function copy;
 use function filesize;
 use function implode;
+use function max;
 use function microtime;
+use function min;
 use function rename;
 use function sprintf;
 use function sys_get_temp_dir;
@@ -144,7 +146,16 @@ final readonly class VideoProcessor
                 );
             }
 
-            $baseBitrate += $bitrateStep;
+            $adaptiveStep = $this->calculateAdaptiveBitrateStep($bitrateStep, $vmafScore);
+            $this->logger->info('VMAF score below threshold, adjusting bitrate', [
+                'file' => $file->path,
+                'current_bitrate' => $baseBitrate,
+                'vmaf_score' => $vmafScore,
+                'base_step' => $bitrateStep,
+                'adaptive_step' => $adaptiveStep,
+                'retry_count' => $retryCount,
+            ]);
+            $baseBitrate += $adaptiveStep;
         } while (! $resultAccepted);
 
         $newFilePath = $file->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
@@ -180,6 +191,15 @@ final readonly class VideoProcessor
     public static function isBitrateAcceptable(VideoFile $file, int $baseBitrate): bool
     {
         return (int) ($file->bitRate / 1024) <= $baseBitrate * self::MAX_BITRATE_OVERHEAD;
+    }
+
+    private function calculateAdaptiveBitrateStep(int $baseStep, float $vmafScore): int
+    {
+        $distance   = self::MIN_VMAF_SCORE - $vmafScore;
+        $multiplier = 1.8 ** ($distance / 15);
+        $multiplier = max(1.0, min(4.0, $multiplier));
+
+        return (int) ($baseStep * $multiplier);
     }
 
     /** @return array{string, int} [tempFilePath, processedSize] */
