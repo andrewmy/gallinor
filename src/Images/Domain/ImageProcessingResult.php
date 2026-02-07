@@ -7,9 +7,11 @@ namespace App\Images\Domain;
 final readonly class ImageProcessingResult
 {
     public function __construct(
-        public int $avifSize,
+        public ImageFormat $format,
+        public int $optimizedSize,
         public int $originalSize,
-        public int $cqLevel,
+        public int $qualityValue,
+        public string $qualityLabel,
         public float $qualityScore,
         public float $qcTime,
     ) {
@@ -17,6 +19,6 @@ final readonly class ImageProcessingResult
 
     public function savings(): int
     {
-        return $this->originalSize - $this->avifSize;
+        return $this->originalSize - $this->optimizedSize;
     }
 }

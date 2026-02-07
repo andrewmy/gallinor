@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Images\Domain;
 
-enum AvifFilter
+enum OptimizedFilter
 {
     case OnlyWith;
     case OnlyWithout;

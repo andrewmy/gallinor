@@ -19,8 +19,8 @@ SQLite (WAL) and DB-backed resume.
   Symfony.
 - **Performance**: Workers process multiple media files concurrently (JPEGs +
   ARWs).
-- **Resume**: DB is the source of truth for completed jobs (even if `.avif` is
-  missing).
+- **Resume**: DB is the source of truth for completed jobs (even if the
+  optimized file is missing — default `.heic`).
 - **Liveness**: Worker heartbeats stored in DB; main process detects dead
   workers without per-file timeouts.
 - **ARW Archival**: `ProcessArwMessage` with directory locking (flock) to
@@ -49,7 +49,7 @@ SQLite (WAL) and DB-backed resume.
 - **Liveness**: Worker heartbeats stored in DB; main process exits if no live
   workers and queue still has jobs
 - **Resume semantics**: DB is the source of truth (completed DB entry skips even
-  if `.avif` is missing)
+  if the optimized file is missing — default `.heic`)
 - **Platform support**: Deploy scripts for macOS/Linux (`.sh`) and Windows
   (`.bat`) using native tools, no PHP required
 - **DB versioning**: Schema version checked on startup; mismatch =>
@@ -955,13 +955,13 @@ private function getAlreadyProcessed(array $jpegs): array
 Usage in main flow:
 
 ```php
-// DB is the source of truth for resume (do not skip based on .avif existence)
+// DB is the source of truth for resume (do not skip based on optimized file existence)
 $processed = $this->getAlreadyProcessed($jpegs);
 $toProcess = array_filter($jpegs, fn (ImageFile $j) => ! isset($processed[$j->path]));
 ```
 
-Trade-off: if DB says "completed" but the `.avif` file is missing, the job is
-still skipped.
+Trade-off: if DB says "completed" but the optimized file (default `.heic`) is
+missing, the job is still skipped.
 
 ### 5.5 Process JPEGs in Parallel
 
@@ -1040,12 +1040,13 @@ private function processJpegsInParallel(
                     case 'completed':
                         $this->writeCompletion($output, $progressBar, $fileName, $job);
                         $result->processed[$job['image_path']] = new ImageProcessingResult(
-                            avifSize: $job['avif_size'],
+                            format: ImageFormat::Heic,
+                            optimizedSize: $job['heic_size'],
                             originalSize: $job['original_size'],
-                            cqLevel: $job['cq_level'],
+                            qualityValue: $job['q'],
+                            qualityLabel: 'q',
                             qualityScore: $job['quality_score'],
                             qcTime: $job['qc_time'],
-                            processingTime: $job['processing_time'],
                         );
                         break;
 
@@ -1371,8 +1372,10 @@ gallery path support (CLI arg, ENV var, or default).
 **`Dockerfile`**
 
 - Base: `php:8.5-cli`.
-- Install system dependencies: `libavif-bin` (or build `libavif`), `xz-utils`,
-  `git`, `unzip`.
+- Install system dependencies:
+  - HEIC: `libheif-examples` (for `heif-enc` / `heif-convert`)
+  - Optional AVIF (only if `--format=avif`): `libavif-bin` (or build `libavif`)
+  - Quality + metadata: `ffmpeg`, `libimage-exiftool-perl`, `xz-utils`, `git`, `unzip`.
 - `ffmpeg`:
   - Minimum: `libx265` support for CPU HEVC fallback.
   - Recommended: build a deterministic `ffmpeg` binary that includes both
@@ -1418,7 +1421,10 @@ RUN git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git /tmp/ffmpeg && \
 
 FROM php:8.5-cli
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  libavif-bin xz-utils \
+  libheif-examples \
+  # optional AVIF support
+  libavif-bin \
+  ffmpeg libimage-exiftool-perl xz-utils \
   # libx265 runtime package name can vary by base image; libx265-dev is the simplest option here.
   libx265-dev \
   && rm -rf /var/lib/apt/lists/*

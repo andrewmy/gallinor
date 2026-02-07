@@ -2,5 +2,7 @@
 /vendor/
 .phpunit.result.cache
 .phpcs-cache
+.serena/
 .idea
 .DS_Store
+.serena

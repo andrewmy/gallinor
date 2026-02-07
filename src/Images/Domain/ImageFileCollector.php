@@ -23,7 +23,7 @@ final readonly class ImageFileCollector
 {
     public function __construct(
         private FilesystemScanner $scanner,
-        private Exiftool $exiftool,
+        private ExifMetadata $exiftool,
     ) {
     }
 
@@ -31,7 +31,8 @@ final readonly class ImageFileCollector
     public function collectFromDirectories(
         array $directories,
         OutputInterface $output,
-        AvifFilter $filter,
+        ImageFormat $format,
+        OptimizedFilter $filter,
     ): ImageCollection {
         $jpegs     = [];
         $arwsByDir = [];
@@ -70,14 +71,14 @@ final readonly class ImageFileCollector
 
                 $imageFile = new ImageFile($filePath, $file->getSize());
 
-                if ($filter === AvifFilter::OnlyWith && ! $imageFile->hasOptimized()) {
-                    $output->writeln(sprintf('  Skipping (no AVIF): %s', $filePath));
+                if ($filter === OptimizedFilter::OnlyWith && ! $imageFile->hasOptimized($format)) {
+                    $output->writeln(sprintf('  Skipping (no %s): %s', $format->label(), $filePath));
                     $stats = $stats->addJpegsSkipped();
                     continue;
                 }
 
-                if ($filter === AvifFilter::OnlyWithout && $imageFile->hasOptimized()) {
-                    $output->writeln(sprintf('  Skipping (AVIF exists): %s', $filePath));
+                if ($filter === OptimizedFilter::OnlyWithout && $imageFile->hasOptimized($format)) {
+                    $output->writeln(sprintf('  Skipping (%s exists): %s', $format->label(), $filePath));
                     $stats = $stats->addJpegsSkipped();
                     continue;
                 }

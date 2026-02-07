@@ -10,8 +10,8 @@ gallery sizes while maintaining quality. It supports:
 
 - **Videos**: Re-encode to HEVC (H.265) with adaptive bitrate, hardware
   acceleration (VideoToolbox/NVENC)
-- **Images**: Convert JPEGs to AVIF with quality-based encoding, archive ARW
-  files with xz compression
+- **Images**: Convert JPEGs to HEIC (default; AVIF optional) with quality-based
+  encoding, archive ARW files with xz compression
 
 Before every task implementation, interview the user until everything is clear.
 
@@ -46,8 +46,15 @@ php app.php videos:rename <path>    # Replace originals with optimized files
 **Image workflow** (2-step process):
 
 ```bash
-php app.php images:squeeze <path>           # Convert JPEGs to AVIF, archive ARWs
+php app.php images:squeeze <path>           # Convert JPEGs to HEIC by default, archive ARWs
 php app.php images:remove-originals <path>   # Remove originals after conversion
+```
+
+**AVIF→HEIC migration** (OneDrive compatibility):
+
+```bash
+php app.php images:migrate-avif-to-heic <path>  # Convert existing AVIFs to HEIC (SSIMULACRA2 ≥ 90)
+php app.php images:remove-avifs <path>          # Remove AVIFs when sibling HEIC exists
 ```
 
 ## Architecture
@@ -58,7 +65,7 @@ quality. The project follows clean architecture with strict domain separation.
 ### Bounded Contexts
 
 - **Video/** - Video processing (MP4→HEVC with VMAF quality check)
-- **Images/** - Image processing (JPEG→AVIF, ARW archival)
+- **Images/** - Image processing (JPEG→HEIC by default; AVIF optional, ARW archival)
 - **Shared/** - Cross-cutting concerns (filesystem, platform, CLI helpers)
 
 Each context follows DDD layering:
@@ -79,14 +86,24 @@ construction.
 **Quality-Based Encoding**:
 
 - Video: Binary search for optimal CRF to achieve VMAF ≥ 90
-- Images: Binary search for optimal CQ level to achieve SSIMULACRA2 ≥ 85
+- Images:
+  - JPEG→HEIC/AVIF: search minimal quality to achieve SSIMULACRA2 ≥ 85
+  - AVIF→HEIC migration: search minimal quality to achieve SSIMULACRA2 ≥ 90
 
 **Platform Abstraction**: `Platform` class handles OS differences
 (macOS/Windows) for tool detection and core counting.
 
-**External Tool Integration**: All external tools (FFmpeg, libavif, ssimulacra2,
-exiftool, xz) invoked via `ProcessExecutor` and located through
+**External Tool Integration**: All external tools (FFmpeg, libheif, libavif,
+ssimulacra2, exiftool, xz) invoked via `ProcessExecutor` and located through
 `Platform::findTool()`.
+
+**Images rotation**: JPEGs with EXIF orientation are normalized via FFmpeg
+before QC. Optimized outputs bake rotation into pixels and force
+Orientation=1 in metadata to avoid viewer inconsistencies.
+
+**AQ note**: Video NVENC `-aq-strength` is NVENC-specific and unrelated to x265
+`aq-strength` (0.0–3.0). Image HEIC encoding uses libheif + x265 params via
+`heif-enc -p x265:...` (pinned defaults: `aq-mode=2`, `aq-strength=1.0`).
 
 ### Important Constraints
 
@@ -107,6 +124,9 @@ exiftool, xz) invoked via `ProcessExecutor` and located through
 
 - **Docs must match code**: When updating docs, ensure snippets and field names
   reflect actual classes and data shapes.
+- **Meaningful changes require tests + notes**: Prefer writing a failing unit
+  test first (“red-green”), then implement the change. If behavior/tooling/docs
+  change, update `AGENTS.md`/`README.md` in the same PR.
 - **Cross-platform tools**: Verify binary names per OS (macOS/Windows/Linux),
   and document any platform-specific mapping when introducing external tools.
 - **Orchestration**: Prefer external orchestration (e.g., Docker) over in-app
@@ -126,26 +146,33 @@ Mockery.
 
 ### Current Status
 
-**63 tests, 19.86% line coverage** — passing, with 6 incomplete tests and 1
-warning (as of 2026-01-19)
+**75 tests, 18.85% line coverage** — passing, with 6 incomplete tests and 1
+warning (as of 2026-02-07)
 
 **Tested**:
 
 - `VideoFile` — bitrate, resolution
 - `VideoProcessor` — skip/dry-run/encode/retry
 - `ImageFile` — paths, AVIF detection
+- `ImageFormat` — CLI parsing
 - `ImageCollectionStats` — immutability, totals
+- `ImageFileCollector` — filtering/skip-set behavior (via `ExifMetadata` stub)
 - `ImageProcessorResult` — aggregation, savings
+- `Ssimulacra2` — `fileSizeKb()` rounding
+- `StrictMetadataVerifier` — diff rules
 
 ### Not Yet Testable (blocked by `final` classes)
 
-- `CqLevelCalculator` — depends on `ImageTools` (final)
-- `ImageProcessor` — depends on `CqLevelCalculator`
+- `ImageOptimizer` — depends on concrete `HeicCodec`/external tools; needs ports to stub encode/decode/QC
 - `ArchiveVerifier` — depends on `Platform` (final)
-- `ImageFileCollector` — depends on `Exiftool` (final)
+- Most CLI commands — construct tool wrappers inside `__invoke`, so unit tests require real binaries on PATH
 
-**Refactoring Options**: Extract interfaces (`ImageToolsInterface`,
-`ExiftoolInterface`, `PlatformInterface`) to enable testing.
+**Refactoring Options**: Extract ports (e.g. `ExifMetadata`, `PlatformApi`,
+`ImageCodec`) and inject factories so unit tests can avoid real binaries.
+
+**Note on `--dry-run`**: For destructive operations (e.g. removing originals),
+`--dry-run` still runs filtering/verification that depends on external tools, so
+it is intentionally not “no-tools-required”.
 
 ### Testable but Untested (quick wins)
 

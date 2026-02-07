@@ -21,14 +21,14 @@ final readonly class ImageFile
     ) {
     }
 
-    public function optimizedPath(): string
+    public function optimizedPathFor(ImageFormat $format): string
     {
-        return dirname($this->path) . DIRECTORY_SEPARATOR . pathinfo($this->path, PATHINFO_FILENAME) . '.avif';
+        return dirname($this->path) . DIRECTORY_SEPARATOR . pathinfo($this->path, PATHINFO_FILENAME) . '.' . $format->extension();
     }
 
-    public function hasOptimized(): bool
+    public function hasOptimized(ImageFormat $format): bool
     {
-        return file_exists($this->optimizedPath());
+        return file_exists($this->optimizedPathFor($format));
     }
 
     public function filename(): string

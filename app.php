@@ -3,16 +3,11 @@
 
 declare(strict_types=1);
 
-use App\Images\Domain\ArchiveVerifier;
-use App\Images\Domain\CqLevelCalculator;
-use App\Images\Domain\Exiftool;
-use App\Images\Domain\ImageFileCollector;
-use App\Images\Domain\ImageTools;
-use App\Images\Domain\RawArchiver;
+use App\Images\Ui\Cli\MigrateAvifToHeic as ImagesMigrateAvifToHeic;
+use App\Images\Ui\Cli\RemoveAvifs as ImagesRemoveAvifs;
 use App\Images\Ui\Cli\RemoveOriginals as ImagesRemoveOriginals;
 use App\Images\Ui\Cli\Squeeze as ImagesSqueeze;
 use App\Shared\Infrastructure\NativePlatform;
-use App\Shared\Infrastructure\RealProcessExecutor;
 use App\Shared\Infrastructure\SymfonyFilesystemScanner;
 use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
@@ -33,23 +28,19 @@ $logger    = new Logger('app', [new StreamHandler('var/app.log', Level::Debug)])
 $scanner   = new SymfonyFilesystemScanner(new Filesystem());
 $cliHelper = new CliHelper();
 
-$platform           = new NativePlatform();
-$exiftool           = new Exiftool($platform);
-$imageFileCollector = new ImageFileCollector($scanner, $exiftool);
-$archiveVerifier    = new ArchiveVerifier($platform, new RealProcessExecutor());
+$platform = new NativePlatform();
 
 $timing = $timing->recordInit();
 
-$ffmpegFactory     = new EncoderFactory($platform);
-$imageTools        = new ImageTools($platform);
-$cqLevelCalculator = new CqLevelCalculator($imageTools);
-$rawArchiver       = new RawArchiver($platform, $logger, new RealProcessExecutor());
+$ffmpegFactory = new EncoderFactory($platform);
 
 $app = new Application();
 $app->addCommands([
     new VideosSqueeze($logger, $cliHelper, $scanner, $timing, $ffmpegFactory, $platform),
     new VideosRename($cliHelper, $scanner, $timing),
-    new ImagesSqueeze($cliHelper, $imageFileCollector, $timing, $platform, $cqLevelCalculator, $rawArchiver),
-    new ImagesRemoveOriginals($logger, $cliHelper, $scanner, $imageFileCollector, $archiveVerifier, $timing),
+    new ImagesSqueeze($cliHelper, $scanner, $timing, $platform, $logger),
+    new ImagesRemoveOriginals($logger, $cliHelper, $scanner, $timing, $platform),
+    new ImagesMigrateAvifToHeic($cliHelper, $scanner, $timing, $platform),
+    new ImagesRemoveAvifs($cliHelper, $scanner, $timing),
 ]);
 $app->run();

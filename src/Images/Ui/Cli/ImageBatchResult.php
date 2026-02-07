@@ -54,7 +54,7 @@ final class ImageBatchResult
         $total = 0;
 
         foreach ($this->processed as $result) {
-            $total += $result->avifSize;
+            $total += $result->optimizedSize;
         }
 
         return $total;

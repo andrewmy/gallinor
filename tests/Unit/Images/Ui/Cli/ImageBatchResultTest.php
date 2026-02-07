@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Images\Ui\Cli;
 
 use App\Images\Domain\CalculationSkipReason;
+use App\Images\Domain\ImageFormat;
 use App\Images\Domain\ImageProcessingResult;
 use App\Images\Ui\Cli\ImageBatchResult;
 use PHPUnit\Framework\TestCase;
@@ -24,8 +25,8 @@ final class ImageBatchResultTest extends TestCase
     {
         $result = new ImageBatchResult(
             processed: [
-                '/path/image1.jpg' => new ImageProcessingResult(500_000, 1_000_000, 18, 88.5, 2.3),
-                '/path/image2.jpg' => new ImageProcessingResult(400_000, 800_000, 16, 90.0, 1.8),
+                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Avif, 500_000, 1_000_000, 18, 'cq', 88.5, 2.3),
+                '/path/image2.jpg' => new ImageProcessingResult(ImageFormat::Avif, 400_000, 800_000, 16, 'cq', 90.0, 1.8),
             ],
         );
 
@@ -36,7 +37,7 @@ final class ImageBatchResultTest extends TestCase
     {
         $result = new ImageBatchResult(
             skipped: [
-                '/path/image1.jpg' => CalculationSkipReason::AvifNotSmaller,
+                '/path/image1.jpg' => CalculationSkipReason::ReplacementNotSmaller,
                 '/path/image2.jpg' => CalculationSkipReason::QualityNotAchieved,
             ],
         );
@@ -60,9 +61,9 @@ final class ImageBatchResultTest extends TestCase
     {
         $result = new ImageBatchResult(
             processed: [
-                '/path/image1.jpg' => new ImageProcessingResult(500_000, 1_000_000, 18, 88.5, 2.3),
-                '/path/image2.jpg' => new ImageProcessingResult(400_000, 800_000, 16, 90.0, 1.8),
-                '/path/image3.jpg' => new ImageProcessingResult(100_000, 500_000, 20, 92.0, 0.5),
+                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Avif, 500_000, 1_000_000, 18, 'cq', 88.5, 2.3),
+                '/path/image2.jpg' => new ImageProcessingResult(ImageFormat::Avif, 400_000, 800_000, 16, 'cq', 90.0, 1.8),
+                '/path/image3.jpg' => new ImageProcessingResult(ImageFormat::Avif, 100_000, 500_000, 20, 'cq', 92.0, 0.5),
             ],
         );
 
@@ -73,9 +74,9 @@ final class ImageBatchResultTest extends TestCase
     {
         $result = new ImageBatchResult(
             processed: [
-                '/path/image1.jpg' => new ImageProcessingResult(500_000, 1_000_000, 18, 88.5, 2.3),
-                '/path/image2.jpg' => new ImageProcessingResult(800_000, 2_000_000, 16, 90.0, 1.8),
-                '/path/image3.jpg' => new ImageProcessingResult(200_000, 500_000, 20, 92.0, 0.5),
+                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Avif, 500_000, 1_000_000, 18, 'cq', 88.5, 2.3),
+                '/path/image2.jpg' => new ImageProcessingResult(ImageFormat::Avif, 800_000, 2_000_000, 16, 'cq', 90.0, 1.8),
+                '/path/image3.jpg' => new ImageProcessingResult(ImageFormat::Avif, 200_000, 500_000, 20, 'cq', 92.0, 0.5),
             ],
         );
 
@@ -86,8 +87,8 @@ final class ImageBatchResultTest extends TestCase
     {
         $result = new ImageBatchResult(
             processed: [
-                '/path/image1.jpg' => new ImageProcessingResult(500_000, 1_000_000, 18, 88.5, 2.3),
-                '/path/image2.jpg' => new ImageProcessingResult(800_000, 2_000_000, 16, 90.0, 1.8),
+                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Avif, 500_000, 1_000_000, 18, 'cq', 88.5, 2.3),
+                '/path/image2.jpg' => new ImageProcessingResult(ImageFormat::Avif, 800_000, 2_000_000, 16, 'cq', 90.0, 1.8),
             ],
         );
 
@@ -99,9 +100,9 @@ final class ImageBatchResultTest extends TestCase
     {
         $result = new ImageBatchResult(
             processed: [
-                '/path/image1.jpg' => new ImageProcessingResult(500_000, 1_000_000, 18, 88.5, 2.3),
-                '/path/image2.jpg' => new ImageProcessingResult(400_000, 800_000, 16, 90.0, 1.8),
-                '/path/image3.jpg' => new ImageProcessingResult(100_000, 500_000, 20, 92.0, 0.5),
+                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Avif, 500_000, 1_000_000, 18, 'cq', 88.5, 2.3),
+                '/path/image2.jpg' => new ImageProcessingResult(ImageFormat::Avif, 400_000, 800_000, 16, 'cq', 90.0, 1.8),
+                '/path/image3.jpg' => new ImageProcessingResult(ImageFormat::Avif, 100_000, 500_000, 20, 'cq', 92.0, 0.5),
             ],
         );
 
@@ -112,10 +113,10 @@ final class ImageBatchResultTest extends TestCase
     {
         $result = new ImageBatchResult(
             processed: [
-                '/path/image1.jpg' => new ImageProcessingResult(500_000, 1_000_000, 18, 88.5, 2.3),
+                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Avif, 500_000, 1_000_000, 18, 'cq', 88.5, 2.3),
             ],
             skipped: [
-                '/path/image2.jpg' => CalculationSkipReason::AvifNotSmaller,
+                '/path/image2.jpg' => CalculationSkipReason::ReplacementNotSmaller,
             ],
             errored: ['/path/image3.jpg' => 'Encoding failed'],
         );

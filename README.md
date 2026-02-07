@@ -14,9 +14,10 @@ simplicity and ease of use.
   - Support for Apple and NVidia hardware acceleration for video encoding
   - Support for CPU video encoding as a last resort
 - Images:
-  - Convert JPEGs to AVIF with quality-based encoding (SSIMULACRA2 score ≥ 85)
+  - Convert JPEGs to HEIC (default) with quality-based encoding (SSIMULACRA2 score ≥ 85)
+    - AVIF remains available via `--format=avif`
   - Archive ARW raw files with xz compression (~30% reduction)
-  - Skip photos with no size benefit from AVIF conversion
+  - Skip photos with no size benefit from conversion
   - Skip Samsung Portrait Mode and Live Photos (not sure about iOS)
 
 ## Requirements
@@ -34,7 +35,20 @@ simplicity and ease of use.
   - For quality check — VMAF library installed and available in your system
     PATH, usually is in the box with ffmpeg
 - For images:
-  - libavif
+  - ffmpeg (used for rotation-safe quality comparisons)
+    - macOS: `brew install ffmpeg`
+  - libheif (HEIC tools)
+    - macOS: `brew install libheif`
+    - Win:
+      - MSYS2:
+        - Install MSYS2, then: `pacman -S mingw-w64-x86_64-libheif`
+        - Add `C:\\msys64\\mingw64\\bin` to PATH (so `heif-enc` and `heif-convert` are discoverable)
+      - Conda (verify tools are present):
+        - `conda install conda-forge::libheif`
+        - Ensure `heif-enc` and `heif-convert` are available in that environment
+    - Advanced: when `heif-enc` uses x265, Gallinor passes a couple x265 params
+      via `heif-enc -p x265:...` to stabilize quality/size (AQ defaults).
+  - libavif (only if using `--format=avif` or AVIF→HEIC migration)
     - macOS: `brew install libavif`
     - Win: <https://github.com/AOMediaCodec/libavif/releases>
   - ssimulacra2
@@ -86,11 +100,18 @@ After checking the quality, finish the job here.
 ### Process images
 
 ```shell
-php app.php images:squeeze /path/to/photos [/path2 /path3 ...] [--dry-run]
+php app.php images:squeeze /path/to/photos [/path2 /path3 ...] [--dry-run] [--format=heic|avif]
 ```
 
-Converts JPEGs to AVIF (saving alongside originals as `.avif`) and archives ARW
-files per directory as `raws-N.tar.xz`.
+Converts JPEGs to HEIC by default (saving alongside originals as `.heic`) and
+archives ARW files per directory as `raws-N.tar.xz`.
+
+If you previously converted JPEGs to AVIF and need OneDrive compatibility:
+
+```shell
+php app.php images:migrate-avif-to-heic /path/to/photos [/path2 /path3 ...] [--dry-run]
+php app.php images:remove-avifs /path/to/photos [/path2 /path3 ...] [--dry-run]
+```
 
 ## Development
 

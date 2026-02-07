@@ -4,16 +4,28 @@ declare(strict_types=1);
 
 namespace App\Images\Ui\Cli;
 
-use App\Images\Domain\AvifFilter;
+use App\Images\Domain\AvifCodec;
 use App\Images\Domain\CalculationSkipReason;
-use App\Images\Domain\CqLevelCalculator;
+use App\Images\Domain\Exiftool;
+use App\Images\Domain\FfmpegImageNormalizer;
+use App\Images\Domain\HeicCodec;
+use App\Images\Domain\ImageCodec;
 use App\Images\Domain\ImageCollection;
 use App\Images\Domain\ImageFile;
 use App\Images\Domain\ImageFileCollector;
+use App\Images\Domain\ImageFormat;
+use App\Images\Domain\ImageOptimizer;
+use App\Images\Domain\LibAvifTools;
+use App\Images\Domain\OptimizedFilter;
 use App\Images\Domain\RawArchiver;
+use App\Images\Domain\Ssimulacra2;
+use App\Images\Domain\StrictMetadataVerifier;
+use App\Shared\Domain\FilesystemScanner;
 use App\Shared\Domain\Platform;
+use App\Shared\Infrastructure\RealProcessExecutor;
 use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -29,16 +41,15 @@ use function sprintf;
 
 use const PHP_EOL;
 
-#[AsCommand(name: 'images:squeeze', description: 'Re-encode JPEGs to optimal AVIFs, XZ the ARWs')]
+#[AsCommand(name: 'images:squeeze', description: 'Re-encode JPEGs to optimal HEICs (or AVIFs), XZ the ARWs')]
 final class Squeeze extends Command
 {
     public function __construct(
         private readonly CliHelper $cliHelper,
-        private readonly ImageFileCollector $collector,
+        private readonly FilesystemScanner $scanner,
         private readonly Timing $timing,
         private readonly Platform $platform,
-        private readonly CqLevelCalculator $cqCalculator,
-        private readonly RawArchiver $rawArchiver,
+        private readonly LoggerInterface $logger,
     ) {
         parent::__construct();
     }
@@ -48,6 +59,8 @@ final class Squeeze extends Command
         OutputInterface $output,
         #[Option]
         bool $dryRun = false,
+        #[Option(description: 'Output format: heic (default) or avif')]
+        string $format = 'heic',
         #[Argument]
         array $directories = [],
     ): int {
@@ -56,14 +69,43 @@ final class Squeeze extends Command
 
         $startTime = microtime(true);
 
-        $output->writeln('<info>Found: avifenc, avifdec, ssimulacra2, xz, tar</info>');
+        try {
+            $imageFormat = ImageFormat::fromCli($format);
+        } catch (Throwable $exception) {
+            $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
+
+            return self::FAILURE;
+        }
+
+        try {
+            $exiftool    = new Exiftool($this->platform);
+            $collector   = new ImageFileCollector($this->scanner, $exiftool);
+            $ssim        = Ssimulacra2::fromPlatform($this->platform);
+            $normalizer  = new FfmpegImageNormalizer($this->platform, $exiftool);
+            $verifier    = new StrictMetadataVerifier();
+            $optimizer   = new ImageOptimizer($ssim, $normalizer, $exiftool, $verifier);
+            $processExec = new RealProcessExecutor();
+            $rawArchiver = new RawArchiver($this->platform, $this->logger, $processExec);
+
+            $codec = match ($imageFormat) {
+                ImageFormat::Heic => new HeicCodec($this->platform),
+                ImageFormat::Avif => new AvifCodec(LibAvifTools::fromPlatform($this->platform)),
+            };
+        } catch (Throwable $exception) {
+            $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
+
+            return self::FAILURE;
+        }
+
+        $output->writeln(sprintf('<info>Found: exiftool, ffmpeg, ssimulacra2, xz, tar, %s</info>', $imageFormat->label()));
         $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores()));
         $output->writeln('');
 
-        $collection = $this->collector->collectFromDirectories(
+        $collection = $collector->collectFromDirectories(
             $directories,
             $output,
-            AvifFilter::OnlyWithout,
+            $imageFormat,
+            OptimizedFilter::OnlyWithout,
         );
 
         $gatherTime = microtime(true);
@@ -79,9 +121,9 @@ final class Squeeze extends Command
             return self::SUCCESS;
         }
 
-        $jpegResult = $this->processJpegs($output, $collection->jpegs);
+        $jpegResult = $this->processJpegs($output, $collection->jpegs, $optimizer, $codec);
 
-        $arwResult = $this->archiveArws($output, $collection);
+        $arwResult = $this->archiveArws($output, $collection, $rawArchiver);
 
         $endTime = microtime(true);
 
@@ -91,7 +133,7 @@ final class Squeeze extends Command
     }
 
     /** @param array<ImageFile> $jpegs */
-    private function processJpegs(OutputInterface $output, array $jpegs): ImageBatchResult
+    private function processJpegs(OutputInterface $output, array $jpegs, ImageOptimizer $optimizer, ImageCodec $codec): ImageBatchResult
     {
         $progressBar = $this->cliHelper->createProgressBar($output, count($jpegs), 'JPEGs');
         $progressBar->start();
@@ -106,17 +148,17 @@ final class Squeeze extends Command
             $progressBar->setMessage($fileName, 'status');
             $progressBar->display();
 
-            $statusCallback = static function (int $cqLevel, float $score, int $saved) use ($progressBar, &$totalSavings, $cliHelper, $fileName): void {
+            $statusCallback = static function (int $cqLevel, float $score, int $saved) use ($progressBar, &$totalSavings, $cliHelper, $fileName, $codec): void {
                 $runningTotal = $totalSavings + $saved;
                 $progressBar->setMessage(
-                    sprintf('%s | cq=%d, score=%.1f, saved %s (total: %s)', $fileName, $cqLevel, $score, $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)),
+                    sprintf('%s | %s=%d, score=%.1f, saved %s (total: %s)', $fileName, $codec->qualityLabel(), $cqLevel, $score, $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)),
                     'status',
                 );
                 $progressBar->display();
             };
 
             try {
-                $outcome = $this->cqCalculator->calculate($image, $statusCallback);
+                $outcome = $optimizer->optimizeJpeg($image, $codec, $statusCallback);
 
                 if ($outcome instanceof CalculationSkipReason) {
                     $result->skipped[$image->path] = $outcome;
@@ -128,7 +170,7 @@ final class Squeeze extends Command
                     continue;
                 }
 
-                $totalSavings                   += $outcome->originalSize - $outcome->avifSize;
+                $totalSavings                   += $outcome->originalSize - $outcome->optimizedSize;
                 $result->processed[$image->path] = $outcome;
             } catch (Throwable $e) {
                 $result->errored[$image->path] = $e->getMessage();
@@ -149,7 +191,7 @@ final class Squeeze extends Command
     }
 
     /** @return array{archived: int, sizeBefore: int, sizeAfter: int} */
-    private function archiveArws(OutputInterface $output, ImageCollection $collection): array
+    private function archiveArws(OutputInterface $output, ImageCollection $collection, RawArchiver $rawArchiver): array
     {
         $arwsByDir   = $collection->arwsByDir;
         $arwDirCount = count($arwsByDir);
@@ -180,7 +222,7 @@ final class Squeeze extends Command
             $sizeBefore += $dirSizeBefore;
 
             try {
-                $archiveSize = $this->rawArchiver->archive($dir, $arwFiles);
+                $archiveSize = $rawArchiver->archive($dir, $arwFiles);
                 $sizeAfter  += $archiveSize;
                 $archived   += $fileCount;
 

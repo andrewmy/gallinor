@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace App\Images\Ui\Cli;
 
 use App\Images\Domain\ArchiveVerifier;
-use App\Images\Domain\AvifFilter;
+use App\Images\Domain\Exiftool;
 use App\Images\Domain\ImageFileCollector;
+use App\Images\Domain\ImageFormat;
+use App\Images\Domain\OptimizedFilter;
 use App\Shared\Domain\FilesystemScanner;
+use App\Shared\Domain\Platform;
+use App\Shared\Infrastructure\RealProcessExecutor;
 use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
 use Psr\Log\LoggerInterface;
@@ -33,9 +37,8 @@ final class RemoveOriginals extends Command
         private readonly LoggerInterface $logger,
         private readonly CliHelper $cliHelper,
         private readonly FilesystemScanner $scanner,
-        private readonly ImageFileCollector $collector,
-        private readonly ArchiveVerifier $archiveVerifier,
         private readonly Timing $timing,
+        private readonly Platform $platform,
     ) {
         parent::__construct();
     }
@@ -45,6 +48,8 @@ final class RemoveOriginals extends Command
         OutputInterface $output,
         #[Option]
         bool $dryRun = false,
+        #[Option(description: 'Replacement format: heic (default) or avif')]
+        string $format = 'heic',
         #[Argument]
         array $directories = [],
     ): int {
@@ -53,13 +58,26 @@ final class RemoveOriginals extends Command
 
         $startTime = microtime(true);
 
-        $jpegCollection = $this->collector->collectFromDirectories(
+        try {
+            $imageFormat = ImageFormat::fromCli($format);
+        } catch (Throwable $exception) {
+            $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
+
+            return self::FAILURE;
+        }
+
+        $exiftool        = new Exiftool($this->platform);
+        $collector       = new ImageFileCollector($this->scanner, $exiftool);
+        $archiveVerifier = new ArchiveVerifier($this->platform, new RealProcessExecutor());
+
+        $jpegCollection = $collector->collectFromDirectories(
             $directories,
             $output,
-            AvifFilter::OnlyWith,
+            $imageFormat,
+            OptimizedFilter::OnlyWith,
         );
 
-        $verificationResult = $this->archiveVerifier->verify(
+        $verificationResult = $archiveVerifier->verify(
             $this->scanner->scanDirectories($directories),
             fn (string $path) => $output->writeln(sprintf('  Will remove: %s', $this->cliHelper->link($path))),
         );
@@ -82,7 +100,7 @@ final class RemoveOriginals extends Command
         $avifReplacementSize = 0;
         foreach ($jpegCollection->jpegs as $imageFile) {
             $jpegSpaceToFree     += $imageFile->size;
-            $avifReplacementSize += (int) filesize($imageFile->optimizedPath());
+            $avifReplacementSize += (int) filesize($imageFile->optimizedPathFor($imageFormat));
         }
 
         $arwSpaceToFree = 0;
@@ -158,7 +176,7 @@ final class RemoveOriginals extends Command
         // actual removal summary
         $avifReplacementSize = 0;
         foreach ($jpegCollection->jpegs as $imageFile) {
-            $avifReplacementSize += (int) filesize($imageFile->optimizedPath());
+            $avifReplacementSize += (int) filesize($imageFile->optimizedPathFor($imageFormat));
         }
 
         $this->printJpegSummary(
