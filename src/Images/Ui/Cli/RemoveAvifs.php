@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Images\Ui\Cli;
 
+use App\Images\Domain\AvifMigrationPlanner;
 use App\Shared\Domain\FilesystemScanner;
 use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
@@ -16,16 +17,10 @@ use Throwable;
 
 use function basename;
 use function count;
-use function dirname;
-use function file_exists;
 use function microtime;
-use function pathinfo;
 use function sprintf;
-use function strtolower;
 use function unlink;
 
-use const DIRECTORY_SEPARATOR;
-use const PATHINFO_FILENAME;
 use const PHP_EOL;
 
 #[AsCommand(name: 'images:remove-avifs', description: 'Remove AVIFs after AVIF→HEIC migration (only if sibling .heic exists)')]
@@ -52,21 +47,8 @@ final class RemoveAvifs extends Command
 
         $startTime = microtime(true);
 
-        $candidates = [];
-        foreach ($this->scanner->scanDirectories($directories) as $file) {
-            if (strtolower($file->getExtension()) !== 'avif') {
-                continue;
-            }
-
-            $avifPath   = $file->getPathname();
-            $targetHeic = dirname($avifPath) . DIRECTORY_SEPARATOR . pathinfo($avifPath, PATHINFO_FILENAME) . '.heic';
-
-            if (! file_exists($targetHeic)) {
-                continue;
-            }
-
-            $candidates[] = $avifPath;
-        }
+        $plan       = (new AvifMigrationPlanner($this->scanner))->plan($directories);
+        $candidates = $plan->alreadyMigratedAvifs;
 
         $output->writeln(sprintf('<info>Found %d AVIFs removable</info>', count($candidates)));
 

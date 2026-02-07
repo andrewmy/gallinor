@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Images\Ui\Cli;
 
 use App\Images\Domain\AvifCodec;
+use App\Images\Domain\AvifMigrationPlanner;
 use App\Images\Domain\CalculationSkipReason;
 use App\Images\Domain\Exiftool;
 use App\Images\Domain\FfmpegImageNormalizer;
@@ -31,7 +32,6 @@ use function file_exists;
 use function microtime;
 use function pathinfo;
 use function sprintf;
-use function strtolower;
 
 use const DIRECTORY_SEPARATOR;
 use const PATHINFO_FILENAME;
@@ -76,27 +76,25 @@ final class MigrateAvifToHeic extends Command
             return self::FAILURE;
         }
 
-        $avifsToProcess = [];
-        foreach ($this->scanner->scanDirectories($directories) as $file) {
-            if (strtolower($file->getExtension()) !== 'avif') {
-                continue;
-            }
+        $plan = (new AvifMigrationPlanner($this->scanner))->plan($directories);
 
-            $avifsToProcess[] = $file->getPathname();
-        }
-
-        $output->writeln(sprintf('<info>Found %d AVIFs</info>', count($avifsToProcess)));
+        $output->writeln(sprintf(
+            '<info>Found %d AVIFs (%d already have .heic, %d to migrate)</info>',
+            count($plan->allAvifs),
+            count($plan->alreadyMigratedAvifs),
+            count($plan->toMigrateAvifs),
+        ));
         $output->writeln('');
 
         if ($dryRun) {
-            foreach ($avifsToProcess as $path) {
+            foreach ($plan->toMigrateAvifs as $path) {
                 $output->writeln(sprintf('  Will process: %s', $this->cliHelper->link($path)));
             }
 
             return self::SUCCESS;
         }
 
-        $progressBar = $this->cliHelper->createProgressBar($output, count($avifsToProcess), 'AVIFs');
+        $progressBar = $this->cliHelper->createProgressBar($output, count($plan->toMigrateAvifs), 'AVIFs');
         $progressBar->start();
 
         $processed       = 0;
@@ -104,9 +102,9 @@ final class MigrateAvifToHeic extends Command
         $errored         = 0;
         $totalDeltaBytes = 0;
 
-        foreach ($avifsToProcess as $avifPath) {
+        foreach ($plan->toMigrateAvifs as $avifPath) {
             $fileName = basename($avifPath);
-            $progressBar->setMessage($fileName, 'status');
+            $progressBar->setMessage(sprintf('%s | starting...', $fileName), 'status');
             $progressBar->display();
 
             $targetHeic = dirname($avifPath) . DIRECTORY_SEPARATOR . pathinfo($avifPath, PATHINFO_FILENAME) . '.heic';
@@ -117,7 +115,7 @@ final class MigrateAvifToHeic extends Command
             }
 
             $cliHelper      = $this->cliHelper;
-            $statusCallback = static function (int $q, float $score, int $saved) use ($progressBar, $fileName, $cliHelper, &$totalDeltaBytes): void {
+            $statusCallback = static function (int $q, float $score, int $saved) use ($progressBar, $fileName, $cliHelper, &$totalDeltaBytes, &$processed, &$skipped, &$errored): void {
                 $delta = -$saved; // current HEIC size minus original AVIF size
                 $sign  = $delta >= 0 ? '+' : '-';
                 $abs   = $delta >= 0 ? $delta : -$delta;
@@ -127,7 +125,7 @@ final class MigrateAvifToHeic extends Command
                 $totalAbs   = $totalDelta >= 0 ? $totalDelta : -$totalDelta;
 
                 $progressBar->setMessage(sprintf(
-                    '%s | q=%d, score=%.1f, Δ=%s%s (total %s%s)',
+                    '%s | q=%d, score=%.1f, Δ=%s%s (total %s%s) | ok=%d skip=%d err=%d',
                     $fileName,
                     $q,
                     $score,
@@ -135,6 +133,9 @@ final class MigrateAvifToHeic extends Command
                     $cliHelper->formatBytes($abs),
                     $totalSign,
                     $cliHelper->formatBytes($totalAbs),
+                    $processed,
+                    $skipped,
+                    $errored,
                 ), 'status');
                 $progressBar->display();
             };
