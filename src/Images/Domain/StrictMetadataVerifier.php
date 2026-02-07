@@ -24,6 +24,7 @@ final readonly class StrictMetadataVerifier
         'SourceFile' => true,
         'EXIF:Orientation' => true, // we force this to 1 after baking rotation
         'IFD0:Orientation' => true,
+        'ExifIFD:Orientation' => true,
         'ExifIFD:ExifImageWidth' => true,
         'ExifIFD:ExifImageHeight' => true,
         'EXIF:ExifImageWidth' => true,

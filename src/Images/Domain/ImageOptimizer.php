@@ -47,6 +47,7 @@ final readonly class ImageOptimizer
         $runId  = uniqid('gallinor-', true);
         $tmpDir = sys_get_temp_dir();
 
+        $rawPng  = $tmpDir . DIRECTORY_SEPARATOR . $runId . '-raw.png';
         $refPng  = $tmpDir . DIRECTORY_SEPARATOR . $runId . '-ref.png';
         $candPng = $tmpDir . DIRECTORY_SEPARATOR . $runId . '-cand.png';
 
@@ -159,13 +160,22 @@ final readonly class ImageOptimizer
         $runId  = uniqid('gallinor-', true);
         $tmpDir = sys_get_temp_dir();
 
+        $rawPng  = $tmpDir . DIRECTORY_SEPARATOR . $runId . '-raw.png';
         $refPng  = $tmpDir . DIRECTORY_SEPARATOR . $runId . '-ref.png';
         $candPng = $tmpDir . DIRECTORY_SEPARATOR . $runId . '-cand.png';
 
         $tmpHeic = $tmpDir . DIRECTORY_SEPARATOR . $runId . '.heic';
 
         try {
-            $avifCodec->decodeToPng($avifPath, $refPng);
+            $avifCodec->decodeToPng($avifPath, $rawPng);
+
+            $orientation = $this->exiftool->orientation($avifPath);
+            if ($orientation === 1) {
+                rename($rawPng, $refPng);
+            } else {
+                $this->normalizer->imageToUprightPngWithOrientation($rawPng, $refPng, $orientation);
+                $this->cleanup($rawPng);
+            }
 
             $avifSize = (int) filesize($avifPath);
 
@@ -198,7 +208,7 @@ final readonly class ImageOptimizer
                 qcTime: $found['qcTime'],
             );
         } finally {
-            $this->cleanup($refPng, $candPng, $tmpHeic);
+            $this->cleanup($rawPng, $refPng, $candPng, $tmpHeic);
         }
     }
 

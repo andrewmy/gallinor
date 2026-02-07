@@ -27,7 +27,20 @@ final readonly class FfmpegImageNormalizer
     public function jpegToUprightPng(string $jpegPath, string $targetPng): void
     {
         $orientation = $this->exiftool->orientation($jpegPath);
-        $filter      = $this->ffmpegFilterForOrientation($orientation);
+        $this->imageToUprightPngWithOrientation($jpegPath, $targetPng, $orientation);
+    }
+
+    /**
+     * Render an image to an upright PNG using the specified EXIF orientation value (1..8).
+     *
+     * Useful when the orientation metadata exists on a different source file
+     * (e.g. AVIF container) than the decoded pixels (e.g. PNG).
+     *
+     * @throws RuntimeException
+     */
+    public function imageToUprightPngWithOrientation(string $sourcePath, string $targetPng, int $orientation): void
+    {
+        $filter = $this->ffmpegFilterForOrientation($orientation);
 
         $args = [
             $this->ffmpegPath,
@@ -35,7 +48,7 @@ final readonly class FfmpegImageNormalizer
             '-loglevel',
             'error',
             '-i',
-            $jpegPath,
+            $sourcePath,
             '-frames:v',
             '1',
         ];

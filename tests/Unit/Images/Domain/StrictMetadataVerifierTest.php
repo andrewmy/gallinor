@@ -58,5 +58,7 @@ final class StrictMetadataVerifierTest extends TestCase
         yield 'ExifIFD dimensions missing' => ['ExifIFD:ExifImageWidth', false];
 
         yield 'IFD1 thumbnail differs' => ['IFD1:ThumbnailOffset', true];
+
+        yield 'ExifIFD orientation differs' => ['ExifIFD:Orientation', true];
     }
 }
