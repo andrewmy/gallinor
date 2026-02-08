@@ -17,9 +17,17 @@ use Throwable;
 
 use function basename;
 use function count;
+use function dirname;
+use function file_exists;
+use function filesize;
 use function microtime;
+use function number_format;
+use function pathinfo;
 use function sprintf;
 use function unlink;
+
+use const DIRECTORY_SEPARATOR;
+use const PATHINFO_FILENAME;
 
 #[AsCommand(name: 'images:remove-avifs', description: 'Remove AVIFs after AVIF→HEIC migration (only if sibling .heic exists)')]
 final class RemoveAvifs extends Command
@@ -55,13 +63,23 @@ final class RemoveAvifs extends Command
             return self::SUCCESS;
         }
 
-        $removed = 0;
-        $errored = 0;
+        $removed    = 0;
+        $errored    = 0;
+        $freedBytes = 0;
+        $heicBytes  = 0;
 
         foreach ($candidates as $path) {
             try {
+                $avifSize = (int) filesize($path);
+
+                $heicPath = dirname($path) . DIRECTORY_SEPARATOR . pathinfo($path, PATHINFO_FILENAME) . '.heic';
+                $heicSize = file_exists($heicPath) ? (int) filesize($heicPath) : 0;
+
                 unlink($path);
                 $removed++;
+
+                $freedBytes += $avifSize;
+                $heicBytes  += $heicSize;
             } catch (Throwable $exception) {
                 $errored++;
                 $output->writeln(sprintf('<error>%s: %s</error>', basename($path), $exception->getMessage()));
@@ -70,7 +88,21 @@ final class RemoveAvifs extends Command
 
         $endTime = microtime(true);
 
-        $output->writeln(sprintf("\nSummary:\n  Removed: %d\n  Errored: %d\n  Time: %.1fs", $removed, $errored, $endTime - $startTime));
+        $deltaBytes = $freedBytes - $heicBytes;
+        $deltaSign  = $deltaBytes >= 0 ? '+' : '-';
+        $deltaAbs   = $deltaBytes >= 0 ? $deltaBytes : -$deltaBytes;
+
+        $output->writeln(sprintf(
+            "\nSummary:\n  Removed: %d\n  Errored: %d\n  Freed: %s (%s bytes)\n  Δ vs HEIC: %s%s (%s bytes)\n  Time: %.1fs",
+            $removed,
+            $errored,
+            $this->cliHelper->formatBytes($freedBytes),
+            number_format($freedBytes),
+            $deltaSign,
+            $this->cliHelper->formatBytes($deltaAbs),
+            number_format($deltaAbs),
+            $endTime - $startTime,
+        ));
 
         return self::SUCCESS;
     }
