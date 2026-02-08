@@ -9,6 +9,13 @@ This is primarily about **shipping binaries reliably**. Parallelism remains an
 **in-app worker pool** (`images:squeeze --parallel`) where the master spawns
 child PHP worker processes inside the same container.
 
+## Related plans
+
+- [README.md](README.md) (index)
+- [PARALLEL_PROCESSING_PLAN.md](PARALLEL_PROCESSING_PLAN.md) (in-app worker pool)
+- [QUALITY_SEARCH_UNIFICATION_PLAN.md](QUALITY_SEARCH_UNIFICATION_PLAN.md)
+  (quality/bitrate probing + refinement)
+
 ## Goals
 
 - Make setup “works out of the box” by bundling required binaries.

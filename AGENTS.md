@@ -125,8 +125,9 @@ Orientation=1 in metadata to avoid viewer inconsistencies.
 - **Docs must match code**: When updating docs, ensure snippets and field names
   reflect actual classes and data shapes.
 - **Meaningful changes require tests + notes**: Prefer writing a failing unit
-  test first (“red-green”), then implement the change. If behavior/tooling/docs
-  change, update `AGENTS.md`/`README.md` in the same PR.
+ test first (“red-green”), then implement the change. If behavior/tooling/docs
+  change, update [AGENTS.md](AGENTS.md) and [README.md](README.md) in the same
+  PR.
 - **Cross-platform tools**: Verify binary names per OS (macOS/Windows/Linux),
   and document any platform-specific mapping when introducing external tools.
 - **Orchestration**: Prefer external orchestration (e.g., Docker) over in-app
@@ -234,6 +235,13 @@ test file paths so `rename()` succeeds.
 GitHub Actions workflow runs on push/PR to main. Workflow should match `just ci`
 command (validate, audit, analyze, lint, stan, test). Coverage threshold: 10%
 (var/coverage.xml).
+
+## Design docs
+
+- [docs/README.md](docs/README.md) (index)
+- [docs/QUALITY_SEARCH_UNIFICATION_PLAN.md](docs/QUALITY_SEARCH_UNIFICATION_PLAN.md)
+- [docs/PARALLEL_PROCESSING_PLAN.md](docs/PARALLEL_PROCESSING_PLAN.md)
+- [docs/DOCKERIZATION_PLAN.md](docs/DOCKERIZATION_PLAN.md)
 
 ## Code Style
 

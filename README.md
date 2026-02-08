@@ -121,6 +121,10 @@ php app.php images:remove-avifs /path/to/photos [/path2 /path3 ...] [--dry-run]
 just ci
 ```
 
+## Design docs
+
+- [docs/README.md](docs/README.md)
+
 ## Notes
 
 ### Video

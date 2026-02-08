@@ -15,6 +15,14 @@ This is a **single-machine** parallelisation strategy that works the same on:
 No durable queue/database is introduced in v1; “resume” is best-effort via the
 existing “skip if output exists” rules.
 
+## Related plans
+
+- [README.md](README.md) (index)
+- [QUALITY_SEARCH_UNIFICATION_PLAN.md](QUALITY_SEARCH_UNIFICATION_PLAN.md)
+  (quality probing/search mechanics this speeds up)
+- [DOCKERIZATION_PLAN.md](DOCKERIZATION_PLAN.md) (Docker/toolchain direction;
+  workers still spawn in-container)
+
 ## Why the previous Docker+Messenger plan was rejected
 
 The previous plan (Symfony Messenger + Doctrine transport + SQLite WAL + Compose
@@ -289,7 +297,8 @@ As we lean more into Docker to ship/standardise external binaries:
 - The worker-pool architecture remains unchanged.
 - We run a **single container** for a run; the master spawns workers as child
   processes within the container.
-- See `docs/DOCKERIZATION_PLAN.md` for the Docker/toolchain rollout plan.
+- See [DOCKERIZATION_PLAN.md](DOCKERIZATION_PLAN.md) for the Docker/toolchain
+  rollout plan.
 - If we later want to distribute across multiple containers, that’s the point
   where a durable queue (Messenger/SQLite/Redis/etc.) may become worthwhile.
 
