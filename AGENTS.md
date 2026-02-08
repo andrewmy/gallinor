@@ -255,7 +255,9 @@ command (validate, audit, analyze, lint, stan, test). Coverage threshold: 10%
 1. Create command class in `src/{Module}/Ui/Cli/`
 2. Add `#[AsCommand(name: '...')]` attribute
 3. Implement `__invoke(OutputInterface $output, ...): int` method
-4. Wire dependencies in `app.php` constructor and add to `$app->addCommands([])`
+4. Use `App\Shared\Ui\Cli\CliHelper::startCommand()` for the standard Dry-run /
+   Init-time prelude.
+5. Wire dependencies in `app.php` constructor and add to `$app->addCommands([])`
 
 ## Technical Debt & Refactoring Opportunities
 

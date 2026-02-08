@@ -32,8 +32,6 @@ use function number_format;
 use function sprintf;
 use function str_contains;
 
-use const PHP_EOL;
-
 #[AsCommand(name: 'videos:squeeze', description: 'Re-encode videos to optimal bitrate')]
 final class Squeeze extends Command
 {
@@ -61,10 +59,7 @@ final class Squeeze extends Command
         #[Argument]
         array $directories = [],
     ): int {
-        $output->writeln(sprintf('<info>Dry run: %s</info>%s', $dryRun ? 'Yes' : 'No', PHP_EOL));
-        $output->writeln(sprintf('<info>Init time: %s</info>%s', $this->timing->formatInit(), PHP_EOL));
-
-        $startTime = microtime(true);
+        $startTime = $this->cliHelper->startCommand($output, $dryRun, $this->timing);
         try {
             $encoder           = $this->encoderFactory->create($useCpu);
             $this->videoFinder = new VideoFinder($encoder);
@@ -132,12 +127,12 @@ final class Squeeze extends Command
             return self::SUCCESS;
         }
 
+        $totalSavings = 0;
+        $cliHelper    = $this->cliHelper;
+
         $fileCount   = count($fileList);
         $progressBar = $this->cliHelper->createProgressBar($output, $fileCount, 'Videos');
         $progressBar->start();
-
-        $totalSavings = 0;
-        $cliHelper    = $this->cliHelper;
 
         foreach ($fileList as $file) {
             $fileName = basename($file->path);

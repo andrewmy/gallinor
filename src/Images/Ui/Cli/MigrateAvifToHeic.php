@@ -35,7 +35,6 @@ use function sprintf;
 
 use const DIRECTORY_SEPARATOR;
 use const PATHINFO_FILENAME;
-use const PHP_EOL;
 
 #[AsCommand(name: 'images:migrate-avif-to-heic', description: 'Convert existing AVIFs to HEIC for OneDrive compatibility (SSIMULACRA2 ≥ 90)')]
 final class MigrateAvifToHeic extends Command
@@ -57,10 +56,7 @@ final class MigrateAvifToHeic extends Command
         #[Argument]
         array $directories = [],
     ): int {
-        $output->writeln(sprintf('<info>Dry run: %s</info>%s', $dryRun ? 'Yes' : 'No', PHP_EOL));
-        $output->writeln(sprintf('<info>Init time: %s</info>%s', $this->timing->formatInit(), PHP_EOL));
-
-        $startTime = microtime(true);
+        $startTime = $this->cliHelper->startCommand($output, $dryRun, $this->timing);
 
         try {
             $exiftool   = new Exiftool($this->platform);
@@ -94,13 +90,13 @@ final class MigrateAvifToHeic extends Command
             return self::SUCCESS;
         }
 
-        $progressBar = $this->cliHelper->createProgressBar($output, count($plan->toMigrateAvifs), 'AVIFs');
-        $progressBar->start();
-
         $processed       = 0;
         $skipped         = 0;
         $errored         = 0;
         $totalDeltaBytes = 0;
+
+        $progressBar = $this->cliHelper->createProgressBar($output, count($plan->toMigrateAvifs), 'AVIFs');
+        $progressBar->start();
 
         foreach ($plan->toMigrateAvifs as $avifPath) {
             $fileName = basename($avifPath);

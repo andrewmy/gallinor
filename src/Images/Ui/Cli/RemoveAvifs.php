@@ -21,8 +21,6 @@ use function microtime;
 use function sprintf;
 use function unlink;
 
-use const PHP_EOL;
-
 #[AsCommand(name: 'images:remove-avifs', description: 'Remove AVIFs after AVIF→HEIC migration (only if sibling .heic exists)')]
 final class RemoveAvifs extends Command
 {
@@ -42,10 +40,7 @@ final class RemoveAvifs extends Command
         #[Argument]
         array $directories = [],
     ): int {
-        $output->writeln(sprintf('<info>Dry run: %s</info>%s', $dryRun ? 'Yes' : 'No', PHP_EOL));
-        $output->writeln(sprintf('<info>Init time: %s</info>%s', $this->timing->formatInit(), PHP_EOL));
-
-        $startTime = microtime(true);
+        $startTime = $this->cliHelper->startCommand($output, $dryRun, $this->timing);
 
         $plan       = (new AvifMigrationPlanner($this->scanner))->plan($directories);
         $candidates = $plan->alreadyMigratedAvifs;

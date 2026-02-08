@@ -28,8 +28,6 @@ use function microtime;
 use function sprintf;
 use function unlink;
 
-use const PHP_EOL;
-
 #[AsCommand(name: 'images:remove-originals', description: 'Remove original JPEGs and ARWs after conversion/archiving')]
 final class RemoveOriginals extends Command
 {
@@ -53,10 +51,7 @@ final class RemoveOriginals extends Command
         #[Argument]
         array $directories = [],
     ): int {
-        $output->writeln(sprintf('<info>Dry run: %s</info>%s', $dryRun ? 'Yes' : 'No', PHP_EOL));
-        $output->writeln(sprintf('<info>Init time: %s</info>%s', $this->timing->formatInit(), PHP_EOL));
-
-        $startTime = microtime(true);
+        $startTime = $this->cliHelper->startCommand($output, $dryRun, $this->timing);
 
         try {
             $imageFormat = ImageFormat::fromCli($format);
