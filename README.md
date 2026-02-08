@@ -14,7 +14,8 @@ simplicity and ease of use.
   - Support for Apple and NVidia hardware acceleration for video encoding
   - Support for CPU video encoding as a last resort
 - Images:
-  - Convert JPEGs to HEIC (default) with quality-based encoding (SSIMULACRA2 score ≥ 85)
+  - Convert JPEGs to HEIC (default) with quality-based encoding (SSIMULACRA2
+    score ≥ 85)
     - AVIF remains available via `--format=avif`
   - Archive ARW raw files with xz compression (~30% reduction)
   - Skip photos with no size benefit from conversion
@@ -42,7 +43,8 @@ simplicity and ease of use.
     - Win:
       - MSYS2:
         - Install MSYS2, then: `pacman -S mingw-w64-x86_64-libheif`
-        - Add `C:\\msys64\\mingw64\\bin` to PATH (so `heif-enc` and `heif-convert` are discoverable)
+        - Add `C:\\msys64\\mingw64\\bin` to PATH (so `heif-enc` and
+          `heif-convert` are discoverable)
       - Conda (verify tools are present):
         - `conda install conda-forge::libheif`
         - Ensure `heif-enc` and `heif-convert` are available in that environment

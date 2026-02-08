@@ -243,11 +243,12 @@ command (validate, audit, analyze, lint, stan, test). Coverage threshold: 10%
 - Comments: Never explain *what* code does, only *why* if not obvious. Adjust
   naming instead.
 
-**After each edit**: Run `just test`, `just stan`, and `just cbf`.
+**After each meaningful change**: Run `just ci`.
 
 **Exception (Markdown-only changes)**: If you changed only `*.md` files, do
-**not** run `just test`, `just stan`, or `just cbf`; run `just markdown`
-instead.
+**not** run `just ci`; run `just markdown` instead.
+
+**If CI fails on formatting**: Run `just cbf`, then re-run `just ci`.
 
 ## Adding New Commands
 
