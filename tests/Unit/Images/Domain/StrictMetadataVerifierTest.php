@@ -60,5 +60,17 @@ final class StrictMetadataVerifierTest extends TestCase
         yield 'IFD1 thumbnail differs' => ['IFD1:ThumbnailOffset', true];
 
         yield 'ExifIFD orientation differs' => ['ExifIFD:Orientation', true];
+
+        yield 'IFD0 compression missing' => ['IFD0:Compression', false];
+
+        yield 'ExifIFD user comment differs' => ['ExifIFD:UserComment', true];
+
+        yield 'ExifIFD scene type missing' => ['ExifIFD:SceneType', false];
+
+        yield 'InteropIFD missing' => ['InteropIFD:InteropIndex', false];
+
+        yield 'XMP toolkit differs' => ['XMP-x:XMPToolkit', true];
+
+        yield 'Focal plane resolution differs' => ['ExifIFD:FocalPlaneXResolution', true];
     }
 }

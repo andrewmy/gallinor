@@ -18,13 +18,23 @@ final readonly class StrictMetadataVerifier
         'System' => true,
         'QuickTime' => true,
         'IFD1' => true,
+        'InteropIFD' => true,
     ];
 
     private const array IGNORED_TAGS = [
         'SourceFile' => true,
+        // File format/container details: must differ across AVIF→HEIC / JPEG→HEIC.
+        'IFD0:Compression' => true,
         'EXIF:Orientation' => true, // we force this to 1 after baking rotation
         'IFD0:Orientation' => true,
         'ExifIFD:Orientation' => true,
+        // EXIF fields that are commonly missing or rewritten/normalized when re-encoding
+        // or when ExifTool rewrites metadata into a different container.
+        'ExifIFD:SceneType' => true,
+        'ExifIFD:UserComment' => true,
+        // Maker/lens derived calibration numbers are often rewritten with different formatting/precision.
+        'ExifIFD:FocalPlaneXResolution' => true,
+        'ExifIFD:FocalPlaneYResolution' => true,
         'ExifIFD:ExifImageWidth' => true,
         'ExifIFD:ExifImageHeight' => true,
         'EXIF:ExifImageWidth' => true,
@@ -33,6 +43,8 @@ final readonly class StrictMetadataVerifier
         'EXIF:ImageHeight' => true,
         'IFD0:ImageWidth' => true,
         'IFD0:ImageHeight' => true,
+        // ExifTool/XMP writer signature: expected to change when rewriting metadata.
+        'XMP-x:XMPToolkit' => true,
     ];
 
     /**

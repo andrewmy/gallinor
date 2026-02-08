@@ -163,9 +163,11 @@ warning (as of 2026-02-07)
 
 ### Not Yet Testable (blocked by `final` classes)
 
-- `ImageOptimizer` — depends on concrete `HeicCodec`/external tools; needs ports to stub encode/decode/QC
+- `ImageOptimizer` — depends on concrete `HeicCodec`/external tools; needs
+  ports to stub encode/decode/QC
 - `ArchiveVerifier` — depends on `Platform` (final)
-- Most CLI commands — construct tool wrappers inside `__invoke`, so unit tests require real binaries on PATH
+- Most CLI commands — construct tool wrappers inside `__invoke`, so unit tests
+  require real binaries on PATH
 
 **Refactoring Options**: Extract ports (e.g. `ExifMetadata`, `PlatformApi`,
 `ImageCodec`) and inject factories so unit tests can avoid real binaries.
