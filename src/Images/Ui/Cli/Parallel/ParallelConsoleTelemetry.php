@@ -9,16 +9,23 @@ use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\ConsoleSectionOutput;
 use Symfony\Component\Console\Output\OutputInterface;
 
+use function implode;
 use function ksort;
+use function md5;
+use function microtime;
 use function preg_match;
 use function sprintf;
 
 final class ParallelConsoleTelemetry
 {
+    private const float MIN_PANEL_INTERVAL_SECONDS = 0.20;
+
     /** @var array<string, string> */
     private array $workerStates = [];
     private ConsoleSectionOutput|null $statusSection;
-    private string|null $lastTrace = null;
+    private string|null $lastTrace          = null;
+    private float $lastPanelRenderAt        = 0.0;
+    private string|null $lastPanelSignature = null;
 
     public function __construct(
         private readonly OutputInterface $output,
@@ -63,6 +70,7 @@ final class ParallelConsoleTelemetry
             return;
         }
 
+        $this->renderPanel(force: true);
         $statusSection->clear();
     }
 
@@ -80,7 +88,7 @@ final class ParallelConsoleTelemetry
         return $this->statusSection !== null && $this->output->getVerbosity() >= OutputInterface::VERBOSITY_VERY_VERBOSE;
     }
 
-    private function renderPanel(): void
+    private function renderPanel(bool $force = false): void
     {
         $statusSection = $this->statusSection;
         if ($statusSection === null) {
@@ -96,6 +104,22 @@ final class ParallelConsoleTelemetry
             $lines[] = sprintf('<fg=cyan>%s</>', $this->lastTrace);
         }
 
+        $signature = md5(implode("\n", $lines));
+        $now       = microtime(true);
+        if (! $force) {
+            if ($signature === $this->lastPanelSignature) {
+                return;
+            }
+
+            if ($now - $this->lastPanelRenderAt < self::MIN_PANEL_INTERVAL_SECONDS) {
+                return;
+            }
+        }
+
+        $this->progressBar->clear();
         $statusSection->overwrite($lines);
+        $this->progressBar->display();
+        $this->lastPanelRenderAt  = $now;
+        $this->lastPanelSignature = $signature;
     }
 }
