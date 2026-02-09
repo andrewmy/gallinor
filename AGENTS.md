@@ -55,7 +55,7 @@ php app.php images:remove-originals <path>   # Remove originals after conversion
 **AVIF→HEIC migration** (OneDrive compatibility):
 
 ```bash
-php app.php images:migrate-avif-to-heic <path> [--parallel] [--concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]  # Convert existing AVIFs to HEIC (SSIMULACRA2 ≥ 90)
+php app.php images:migrate-avif-to-heic <path> [--parallel] [--concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]  # Convert existing AVIFs to HEIC (SSIMULACRA2 ≥ 85)
 php app.php images:remove-avifs <path>          # Remove AVIFs when sibling HEIC exists
 ```
 
@@ -89,8 +89,12 @@ construction.
 
 - Video: Binary search for optimal CRF to achieve VMAF ≥ 90
 - Images:
-  - JPEG→HEIC/AVIF: search minimal quality to achieve SSIMULACRA2 ≥ 85
-  - AVIF→HEIC migration: search minimal quality to achieve SSIMULACRA2 ≥ 90
+  - JPEG→HEIC: coarse+fine quality search with early stop when score is in
+    `[threshold, threshold + 1]` (threshold 85)
+  - JPEG→AVIF: linear CQ sweep (20→2, step 2), stop at first passing CQ
+    (threshold 85)
+  - AVIF→HEIC migration: coarse+fine quality search with the same early-stop
+    window (threshold 85)
 
 **Platform Abstraction**: `Platform` class handles OS differences
 (macOS/Windows) for tool detection and core counting.

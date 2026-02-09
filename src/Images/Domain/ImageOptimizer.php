@@ -23,6 +23,7 @@ final readonly class ImageOptimizer
 {
     private const float JPEG_MIN_SSIM_SCORE      = 85.0;
     private const float MIGRATION_MIN_SSIM_SCORE = 85.0;
+    private const float SSIM_EARLY_STOP_WINDOW   = 1.0;
 
     private const int AVIF_CQ_START = 20;
     private const int AVIF_CQ_END   = 2;
@@ -253,6 +254,10 @@ final readonly class ImageOptimizer
             }
 
             if ($score >= $minScore) {
+                if ($score <= $minScore + self::SSIM_EARLY_STOP_WINDOW) {
+                    return ['quality' => $q, 'score' => $score, 'size' => $size, 'qcTime' => $totalQcTime];
+                }
+
                 $firstPassQuality = $q;
                 break;
             }
