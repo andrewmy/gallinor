@@ -183,7 +183,7 @@ All messages include:
 #### Status (optional; emitted during quality probing)
 
 ```json
-{"v":1,"type":"status","jobId":"...","path":"/a/b.jpg","quality":60,"score":88.1,"savedBytes":123456}
+{"v":1,"type":"status","workerId":"...","jobId":"...","path":"/a/b.jpg","quality":60,"score":88.1,"savedBytes":123456}
 ```
 
 #### Result
@@ -191,19 +191,19 @@ All messages include:
 Processed
 
 ```json
-{"v":1,"type":"result","jobId":"...","path":"/a/b.jpg","outcome":"processed","result":{"format":"heic","originalSize":123,"optimizedSize":45,"qualityValue":60,"qualityLabel":"q","qualityScore":88.1,"qcTime":1.23}}
+{"v":1,"type":"result","workerId":"...","jobId":"...","path":"/a/b.jpg","outcome":"processed","result":{"format":"heic","originalSize":123,"optimizedSize":45,"qualityValue":60,"qualityLabel":"q","qualityScore":88.1,"qcTime":1.23}}
 ```
 
 Skipped
 
 ```json
-{"v":1,"type":"result","jobId":"...","path":"/a/b.jpg","outcome":"skipped","skipReason":"ReplacementNotSmaller"}
+{"v":1,"type":"result","workerId":"...","jobId":"...","path":"/a/b.jpg","outcome":"skipped","skipReason":"ReplacementNotSmaller"}
 ```
 
 Errored
 
 ```json
-{"v":1,"type":"result","jobId":"...","path":"/a/b.jpg","outcome":"error","error":"ffmpeg failed: ..."}
+{"v":1,"type":"result","workerId":"...","jobId":"...","path":"/a/b.jpg","outcome":"error","error":"ffmpeg failed: ..."}
 ```
 
 #### Log (optional; for verbose/debug modes)
@@ -254,6 +254,37 @@ For each job:
      - `error` with a safe error message
 
 Workers should recycle after `--worker-max-jobs` to limit memory growth.
+
+### Temp file isolation
+
+Each worker must run with its own temp root to avoid collisions and simplify
+crash cleanup.
+
+Contract:
+
+- Worker temp root:
+  - Unix: `/tmp/gallinor-parallel/<workerId>/`
+  - Windows: `%TEMP%\\gallinor-parallel\\<workerId>\\`
+- Job temp directory:
+  - `<workerTempRoot>/<jobId>/`
+- Worker startup:
+  - create worker temp root
+  - set process temp env vars to worker temp root:
+    - Unix: `TMPDIR`
+    - Windows: `TMP`, `TEMP`
+- Job execution:
+  - create per-job temp dir
+  - all transient files for that job must be scoped there
+- Job completion (success/skip/error):
+  - delete the per-job temp dir in a `finally` block
+- Worker shutdown:
+  - remove worker temp root when empty
+- Master startup:
+  - prune stale `gallinor-parallel/*` directories older than a retention window
+    (default: 24h)
+
+This works with the current `sys_get_temp_dir()` usage and ensures different
+workers never share temp file namespaces.
 
 ### Timeouts
 
