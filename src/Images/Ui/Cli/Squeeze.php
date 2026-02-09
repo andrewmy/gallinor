@@ -191,7 +191,15 @@ final class Squeeze extends Command
         $totalSavings = 0;
         $cliHelper    = $this->cliHelper;
 
-        $result = new ImageBatchResult();
+        $result              = new ImageBatchResult();
+        $statusEventCallback = static function (
+            string $phase,
+            int|null $quality,
+            float|null $score,
+            int|null $savedBytes,
+            string|null $decision,
+        ): void {
+        };
 
         foreach ($jpegs as $image) {
             $fileName = $image->filename();
@@ -208,7 +216,7 @@ final class Squeeze extends Command
             };
 
             try {
-                $outcome = $optimizer->optimizeJpeg($image, $codec, $statusCallback);
+                $outcome = $optimizer->optimizeJpeg($image, $codec, $statusCallback, $statusEventCallback);
 
                 if ($outcome instanceof CalculationSkipReason) {
                     $result->skipped[$image->path] = $outcome;

@@ -130,23 +130,72 @@ final class MigrateAvifToHeicWorker extends Command
                 $this->setTempEnv($jobTempDir);
 
                 try {
-                    $statusCallback = function (int $quality, float $score, int $savedBytes) use ($socket, $identifier, $jobId, $path): void {
+                    $emitStatus = function (
+                        string $phase,
+                        int|null $quality = null,
+                        float|null $score = null,
+                        int|null $savedBytes = null,
+                        string|null $decision = null,
+                    ) use (
+                        $socket,
+                        $identifier,
+                        $jobId,
+                        $path,
+): void {
+                        $statusPayload = [
+                            'v'            => self::PROTOCOL_VERSION,
+                            'type'         => 'status',
+                            'workerId'     => $identifier,
+                            'jobId'        => $jobId,
+                            'path'         => $path,
+                            'phase'        => $phase,
+                            'deltaAgainst' => 'avif',
+                        ];
+
+                        if ($quality !== null) {
+                            $statusPayload['quality'] = $quality;
+                        }
+
+                        if ($score !== null) {
+                            $statusPayload['score'] = $score;
+                        }
+
+                        if ($savedBytes !== null) {
+                            $statusPayload['savedBytes'] = $savedBytes;
+                        }
+
+                        if ($decision !== null && $decision !== '') {
+                            $statusPayload['decision'] = $decision;
+                        }
+
                         $this->writeMessage($socket, [
                             ReactCommand::ACTION => Action::RESULT,
-                            Content::RESULT      => [
-                                'v'          => self::PROTOCOL_VERSION,
-                                'type'       => 'status',
-                                'workerId'   => $identifier,
-                                'jobId'      => $jobId,
-                                'path'       => $path,
-                                'quality'    => $quality,
-                                'score'      => $score,
-                                'savedBytes' => $savedBytes,
-                            ],
+                            Content::RESULT      => $statusPayload,
                         ]);
                     };
 
-                    $outcome = $optimizer->migrateAvifToHeic($path, $targetHeicPath, $avifCodec, $heicCodec, $statusCallback);
+                    $emitStatus('prepare');
+                    $statusCallback      = static function (int $quality, float $score, int $savedBytes) use ($emitStatus): void {
+                        $emitStatus('score', $quality, $score, $savedBytes);
+                    };
+                    $statusEventCallback = static function (
+                        string $phase,
+                        int|null $quality,
+                        float|null $score,
+                        int|null $savedBytes,
+                        string|null $decision,
+                    ) use ($emitStatus): void {
+                        $emitStatus($phase, $quality, $score, $savedBytes, $decision);
+                    };
+
+                    $outcome = $optimizer->migrateAvifToHeic(
+                        $path,
+                        $targetHeicPath,
+                        $avifCodec,
+                        $heicCodec,
+                        $statusCallback,
+                        $statusEventCallback,
+                    );
 
                     if ($outcome instanceof CalculationSkipReason) {
                         $this->writeMessage($socket, [

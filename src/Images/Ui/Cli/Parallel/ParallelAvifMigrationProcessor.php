@@ -157,37 +157,38 @@ final readonly class ParallelAvifMigrationProcessor
                 $saved   = $payload['savedBytes'] ?? null;
                 $quality = $payload['quality'] ?? null;
 
-                if (
-                    ! is_string($path)
-                    || ! is_int($saved)
-                    || ! is_int($quality)
-                    || (! is_float($score) && ! is_int($score))
-                ) {
+                if (! is_string($path)) {
                     return ParallelWorkerPoolPayloadResult::ignored();
                 }
 
-                $delta        = -$saved;
-                $deltaSign    = $delta >= 0 ? '+' : '-';
-                $deltaAbs     = $delta >= 0 ? $delta : -$delta;
-                $runningTotal = $result->totalDeltaBytes() + $delta;
-                $totalSign    = $runningTotal >= 0 ? '+' : '-';
-                $totalAbs     = $runningTotal >= 0 ? $runningTotal : -$runningTotal;
+                if (
+                    is_int($saved)
+                    && is_int($quality)
+                    && (is_float($score) || is_int($score))
+                ) {
+                    $delta        = -$saved;
+                    $deltaSign    = $delta >= 0 ? '+' : '-';
+                    $deltaAbs     = $delta >= 0 ? $delta : -$delta;
+                    $runningTotal = $result->totalDeltaBytes() + $delta;
+                    $totalSign    = $runningTotal >= 0 ? '+' : '-';
+                    $totalAbs     = $runningTotal >= 0 ? $runningTotal : -$runningTotal;
 
-                $progressBar->setMessage(sprintf(
-                    '%s | q=%d, score=%.1f, Δ=%s%s (total %s%s) | ok=%d skip=%d err=%d',
-                    basename($path),
-                    $quality,
-                    (float) $score,
-                    $deltaSign,
-                    $this->cliHelper->formatBytes($deltaAbs),
-                    $totalSign,
-                    $this->cliHelper->formatBytes($totalAbs),
-                    $result->processedCount(),
-                    $result->skippedCount(),
-                    $result->erroredCount(),
-                ), 'status');
-                if ($output->getVerbosity() < OutputInterface::VERBOSITY_VERY_VERBOSE) {
-                    $progressBar->display();
+                    $progressBar->setMessage(sprintf(
+                        '%s | q=%d, score=%.1f, Δ=%s%s (total %s%s) | ok=%d skip=%d err=%d',
+                        basename($path),
+                        $quality,
+                        (float) $score,
+                        $deltaSign,
+                        $this->cliHelper->formatBytes($deltaAbs),
+                        $totalSign,
+                        $this->cliHelper->formatBytes($totalAbs),
+                        $result->processedCount(),
+                        $result->skippedCount(),
+                        $result->erroredCount(),
+                    ), 'status');
+                    if ($output->getVerbosity() < OutputInterface::VERBOSITY_VERY_VERBOSE) {
+                        $progressBar->display();
+                    }
                 }
 
                 return ParallelWorkerPoolPayloadResult::status();

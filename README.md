@@ -115,6 +115,17 @@ dispatch tracing while the progress bar is running. At `-vv` and above, Gallinor
 also shows a live per-worker status panel under the progress bar (when running
 in an ANSI/TTY console; otherwise it falls back to plain trace lines).
 
+Worker status phase map (panel/trace view):
+
+- `prepare` -> setup/normalization before probe loop
+- `encode` -> encode candidate image at current quality
+- `decode` -> decode candidate for quality comparison
+- `score` -> SSIMULACRA2 measurement (`q`, `score`, `Δ` vs original)
+- `decision` -> probe decision (`pass`, `score_low`, `too_big`,
+  `quality_not_achieved`)
+- `finalize` -> move final optimized file to target path
+- `metadata` -> copy + verify metadata on final output
+
 If you previously converted JPEGs to AVIF and need OneDrive compatibility:
 
 ```shell

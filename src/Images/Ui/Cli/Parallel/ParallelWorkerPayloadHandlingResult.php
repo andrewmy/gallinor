@@ -41,8 +41,12 @@ final readonly class ParallelWorkerPayloadHandlingResult
         );
     }
 
-    public static function status(string $path, int $quality, float $score, int $savedBytes): self
-    {
+    public static function status(
+        string $path,
+        int|null $quality = null,
+        float|null $score = null,
+        int|null $savedBytes = null,
+    ): self {
         return new self(
             countAsSystemError: false,
             isStatus: true,

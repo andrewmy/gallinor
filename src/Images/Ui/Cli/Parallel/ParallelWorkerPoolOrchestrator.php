@@ -20,6 +20,7 @@ use Symplify\EasyParallel\ValueObject\ParallelProcess;
 use Symplify\EasyParallel\ValueObject\ProcessPool;
 use Throwable;
 
+use function abs;
 use function array_keys;
 use function array_shift;
 use function basename;
@@ -105,11 +106,34 @@ final readonly class ParallelWorkerPoolOrchestrator
             return '[unknown-job]';
         };
         $statusGist    = static function (array $payload): string {
-            $path    = $payload['path'] ?? null;
-            $quality = $payload['quality'] ?? null;
-            $score   = $payload['score'] ?? null;
+            $path         = $payload['path'] ?? null;
+            $phase        = $payload['phase'] ?? null;
+            $quality      = $payload['quality'] ?? null;
+            $score        = $payload['score'] ?? null;
+            $savedBytes   = $payload['savedBytes'] ?? null;
+            $deltaAgainst = $payload['deltaAgainst'] ?? null;
+            $decision     = $payload['decision'] ?? null;
+            $formatDelta  = static function (int $saved): string {
+                $deltaBytes = -$saved;
+                $absBytes   = abs($deltaBytes);
+                $sign       = $deltaBytes >= 0 ? '+' : '-';
+
+                if ($absBytes >= 1024 * 1024) {
+                    return sprintf('%s%.1fMB', $sign, $absBytes / (1024 * 1024));
+                }
+
+                if ($absBytes >= 1024) {
+                    return sprintf('%s%.0fKB', $sign, $absBytes / 1024);
+                }
+
+                return sprintf('%s%dB', $sign, $absBytes);
+            };
 
             $parts = [];
+            if (is_string($phase) && $phase !== '') {
+                $parts[] = $phase;
+            }
+
             if (is_string($path) && $path !== '') {
                 $parts[] = basename($path);
             }
@@ -120,6 +144,18 @@ final readonly class ParallelWorkerPoolOrchestrator
 
             if (is_int($score) || is_float($score)) {
                 $parts[] = sprintf('s=%.1f', (float) $score);
+            }
+
+            if (is_int($savedBytes)) {
+                $parts[] = sprintf('Δ=%s', $formatDelta($savedBytes));
+            }
+
+            if (is_int($savedBytes) && is_string($deltaAgainst) && $deltaAgainst !== '') {
+                $parts[] = sprintf('vs %s', $deltaAgainst);
+            }
+
+            if (is_string($decision) && $decision !== '') {
+                $parts[] = sprintf('[%s]', $decision);
             }
 
             if ($parts === []) {

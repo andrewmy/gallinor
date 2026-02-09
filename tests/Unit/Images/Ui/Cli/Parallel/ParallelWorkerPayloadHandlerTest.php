@@ -44,7 +44,7 @@ final class ParallelWorkerPayloadHandlerTest extends TestCase
         self::assertSame([], $result->errored);
     }
 
-    public function test_invalid_status_payload_is_ignored(): void
+    public function test_partial_status_payload_is_still_status_without_metrics(): void
     {
         $result = new ImageBatchResult();
 
@@ -52,6 +52,25 @@ final class ParallelWorkerPayloadHandlerTest extends TestCase
             'type'      => 'status',
             'path'      => '/tmp/a.jpg',
             'quality'   => 'bad',
+            'score'     => 91.4,
+            'savedBytes' => 1234,
+        ], $result);
+
+        self::assertFalse($handling->countAsSystemError);
+        self::assertTrue($handling->isStatus);
+        self::assertFalse($handling->isCompleted);
+        self::assertNull($handling->quality);
+        self::assertSame(91.4, $handling->score);
+        self::assertSame(1234, $handling->savedBytes);
+    }
+
+    public function test_status_payload_without_path_is_ignored(): void
+    {
+        $result = new ImageBatchResult();
+
+        $handling = $this->handler->handle([
+            'type'      => 'status',
+            'quality'   => 72,
             'score'     => 91.4,
             'savedBytes' => 1234,
         ], $result);

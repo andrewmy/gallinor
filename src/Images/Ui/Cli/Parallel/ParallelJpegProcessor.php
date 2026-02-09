@@ -132,28 +132,26 @@ final readonly class ParallelJpegProcessor
 
             if ($handlingResult->isStatus) {
                 if (
-                    ! is_string($handlingResult->path)
-                    || ! is_int($handlingResult->quality)
-                    || ! is_int($handlingResult->savedBytes)
-                    || ! is_float($handlingResult->score)
+                    is_string($handlingResult->path)
+                    && is_int($handlingResult->quality)
+                    && is_int($handlingResult->savedBytes)
+                    && is_float($handlingResult->score)
                 ) {
-                    return ParallelWorkerPoolPayloadResult::ignored();
-                }
+                    $qualityLabel = $this->qualityLabelFromFormat($format);
+                    $runningTotal = $totalSavingsBytes + $handlingResult->savedBytes;
 
-                $qualityLabel = $this->qualityLabelFromFormat($format);
-                $runningTotal = $totalSavingsBytes + $handlingResult->savedBytes;
-
-                $progressBar->setMessage(sprintf(
-                    '%s | %s=%d, score=%.1f, saved %s (total: %s)',
-                    basename($handlingResult->path),
-                    $qualityLabel,
-                    $handlingResult->quality,
-                    $handlingResult->score,
-                    $this->cliHelper->formatBytes($handlingResult->savedBytes),
-                    $this->cliHelper->formatBytes($runningTotal),
-                ), 'status');
-                if ($output->getVerbosity() < OutputInterface::VERBOSITY_VERY_VERBOSE) {
-                    $progressBar->display();
+                    $progressBar->setMessage(sprintf(
+                        '%s | %s=%d, score=%.1f, saved %s (total: %s)',
+                        basename($handlingResult->path),
+                        $qualityLabel,
+                        $handlingResult->quality,
+                        $handlingResult->score,
+                        $this->cliHelper->formatBytes($handlingResult->savedBytes),
+                        $this->cliHelper->formatBytes($runningTotal),
+                    ), 'status');
+                    if ($output->getVerbosity() < OutputInterface::VERBOSITY_VERY_VERBOSE) {
+                        $progressBar->display();
+                    }
                 }
 
                 return ParallelWorkerPoolPayloadResult::status();

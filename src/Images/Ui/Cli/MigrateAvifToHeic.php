@@ -184,7 +184,15 @@ final class MigrateAvifToHeic extends Command
         $progressBar = $this->cliHelper->createProgressBar($output, count($avifPaths), 'AVIFs');
         $progressBar->start();
 
-        $cliHelper = $this->cliHelper;
+        $cliHelper           = $this->cliHelper;
+        $statusEventCallback = static function (
+            string $phase,
+            int|null $quality,
+            float|null $score,
+            int|null $savedBytes,
+            string|null $decision,
+        ): void {
+        };
 
         foreach ($avifPaths as $avifPath) {
             $fileName = basename($avifPath);
@@ -224,7 +232,14 @@ final class MigrateAvifToHeic extends Command
             };
 
             try {
-                $outcome = $optimizer->migrateAvifToHeic($avifPath, $targetHeic, $avifCodec, $heicCodec, $statusCallback);
+                $outcome = $optimizer->migrateAvifToHeic(
+                    $avifPath,
+                    $targetHeic,
+                    $avifCodec,
+                    $heicCodec,
+                    $statusCallback,
+                    $statusEventCallback,
+                );
                 if ($outcome instanceof CalculationSkipReason) {
                     $result->skipped[$avifPath] = $outcome->value;
                     $progressBar->advance();

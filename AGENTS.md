@@ -131,6 +131,11 @@ Use Symfony verbosity flags for worker-pool tracing:
 `-v` (lifecycle), `-vv` (dispatch/requeue details), `-vvv` (status-frame level).
 At `-vv` and above, both parallel commands also render a live per-worker status
 panel below the progress bar when the terminal supports console sections.
+Worker status phases exposed in telemetry are:
+`prepare -> encode -> decode -> score -> decision -> finalize -> metadata`.
+These phase/status payload fields are currently for operator visibility only
+(progress/panel output). Orchestration control flow (timeouts, retries, worker
+recycling, completion) does not branch on phase names.
 
 ### Important Constraints
 
@@ -151,6 +156,11 @@ panel below the progress bar when the terminal supports console sections.
 
 - **Docs must match code**: When updating docs, ensure snippets and field names
   reflect actual classes and data shapes.
+- **Parameter nullability**: Prefer non-nullable parameters by default (not
+  only callbacks). Introduce nullable args only when `null` is a real semantic
+  state. If an input is optional for a caller, prefer explicit defaults at the
+  call site (for example, a no-op closure) instead of widening callee
+  signatures with `|null`.
 - **Meaningful changes require tests + notes**: Prefer writing a failing unit
  test first (“red-green”), then implement the change. If behavior/tooling/docs
   change, update [AGENTS.md](AGENTS.md) and [README.md](README.md) in the same
@@ -191,7 +201,7 @@ Smoke tests are intentionally excluded from the default `just ci` suite.
 
 ### Current Status
 
-**Unit suite (`just ci` / `just test`)**: 120 tests — passing, with 6
+**Unit suite (`just ci` / `just test`)**: 121 tests — passing, with 6
 incomplete tests and 1 warning (as of 2026-02-09)
 
 **Smoke suite (`just smoke`)**: 5 tests with real CLI invocations; environment

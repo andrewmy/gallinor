@@ -42,10 +42,15 @@ final readonly class ImageOptimizer
      * Find minimal-quality optimized image that meets the SSIMULACRA2 threshold
      * and is smaller than the original JPEG.
      *
-     * @param callable(int, float, int): void|null $statusCallback Called with (qualityValue, score, savedBytes)
+     * @param callable(int, float, int): void                                     $statusCallback      Called with (qualityValue, score, savedBytes)
+     * @param callable(string, int|null, float|null, int|null, string|null): void $statusEventCallback
      */
-    public function optimizeJpeg(ImageFile $file, ImageCodec $codec, callable|null $statusCallback = null): ImageProcessingResult|CalculationSkipReason
-    {
+    public function optimizeJpeg(
+        ImageFile $file,
+        ImageCodec $codec,
+        callable $statusCallback,
+        callable $statusEventCallback,
+    ): ImageProcessingResult|CalculationSkipReason {
         $runId  = uniqid('gallinor-', true);
         $tmpDir = sys_get_temp_dir();
 
@@ -58,15 +63,19 @@ final readonly class ImageOptimizer
         $finalPath    = $file->optimizedPathFor($format);
 
         try {
+            $this->emitStatusEvent($statusEventCallback, 'prepare');
             $this->normalizer->jpegToUprightPng($file->path, $refPng);
 
             $totalQcTime = 0.0;
 
             if ($codec->format() === ImageFormat::Avif) {
                 for ($cq = self::AVIF_CQ_START; $cq >= self::AVIF_CQ_END; $cq -= self::AVIF_CQ_STEP) {
+                    $this->emitStatusEvent($statusEventCallback, 'encode', $cq);
                     $codec->encodeFromPng($refPng, $tmpOptimized, $cq);
+                    $this->emitStatusEvent($statusEventCallback, 'decode', $cq);
                     $codec->decodeToPng($tmpOptimized, $candPng);
 
+                    $this->emitStatusEvent($statusEventCallback, 'score', $cq);
                     $qcStart      = microtime(true);
                     $score        = $this->ssimulacra2->score($refPng, $candPng);
                     $totalQcTime += microtime(true) - $qcStart;
@@ -74,21 +83,25 @@ final readonly class ImageOptimizer
                     $size  = (int) filesize($tmpOptimized);
                     $saved = $file->size - $size;
 
-                    if ($statusCallback !== null) {
-                        $statusCallback($cq, $score, $saved);
-                    }
+                    $statusCallback($cq, $score, $saved);
 
                     // Size only gets worse as quality increases from here.
                     if ($size >= $file->size) {
+                        $this->emitStatusEvent($statusEventCallback, 'decision', $cq, $score, $saved, 'too_big');
+
                         return CalculationSkipReason::ReplacementNotSmaller;
                     }
 
                     if ($score < self::JPEG_MIN_SSIM_SCORE) {
+                        $this->emitStatusEvent($statusEventCallback, 'decision', $cq, $score, $saved, 'score_low');
                         $this->cleanup($tmpOptimized);
                         continue;
                     }
 
+                    $this->emitStatusEvent($statusEventCallback, 'decision', $cq, $score, $saved, 'pass');
+                    $this->emitStatusEvent($statusEventCallback, 'finalize', $cq, $score, $saved);
                     rename($tmpOptimized, $finalPath);
+                    $this->emitStatusEvent($statusEventCallback, 'metadata', $cq, $score, $saved);
                     $this->copyAndVerifyMetadataStrict($file->path, $finalPath);
 
                     return new ImageProcessingResult(
@@ -116,6 +129,7 @@ final readonly class ImageOptimizer
                 tmpOptimized: $tmpOptimized,
                 minScore: self::JPEG_MIN_SSIM_SCORE,
                 statusCallback: $statusCallback,
+                statusEventCallback: $statusEventCallback,
                 totalQcTime: $totalQcTime,
                 originalSize: $file->size,
                 requireSmallerThanOriginal: true,
@@ -123,14 +137,39 @@ final readonly class ImageOptimizer
             );
 
             if ($found === null) {
+                $this->emitStatusEvent($statusEventCallback, 'decision', decision: 'quality_not_achieved');
+
                 return CalculationSkipReason::QualityNotAchieved;
             }
 
             if ($found['size'] >= $file->size) {
+                $this->emitStatusEvent(
+                    $statusEventCallback,
+                    'decision',
+                    $found['quality'],
+                    $found['score'],
+                    $file->size - $found['size'],
+                    'too_big',
+                );
+
                 return CalculationSkipReason::ReplacementNotSmaller;
             }
 
+            $this->emitStatusEvent(
+                $statusEventCallback,
+                'finalize',
+                $found['quality'],
+                $found['score'],
+                $file->size - $found['size'],
+            );
             rename($tmpOptimized, $finalPath);
+            $this->emitStatusEvent(
+                $statusEventCallback,
+                'metadata',
+                $found['quality'],
+                $found['score'],
+                $file->size - $found['size'],
+            );
             $this->copyAndVerifyMetadataStrict($file->path, $finalPath);
 
             return new ImageProcessingResult(
@@ -150,14 +189,16 @@ final readonly class ImageOptimizer
     /**
      * Migrate an existing AVIF into HEIC with minimal additional loss.
      *
-     * @param callable(int, float, int): void|null $statusCallback Called with (q, score, savedBytesVsAvif)
+     * @param callable(int, float, int): void                                     $statusCallback      Called with (q, score, savedBytesVsAvif)
+     * @param callable(string, int|null, float|null, int|null, string|null): void $statusEventCallback
      */
     public function migrateAvifToHeic(
         string $avifPath,
         string $targetHeicPath,
         AvifCodec $avifCodec,
         HeicCodec $heicCodec,
-        callable|null $statusCallback = null,
+        callable $statusCallback,
+        callable $statusEventCallback,
     ): ImageProcessingResult|CalculationSkipReason {
         $runId  = uniqid('gallinor-', true);
         $tmpDir = sys_get_temp_dir();
@@ -169,6 +210,7 @@ final readonly class ImageOptimizer
         $tmpHeic = $tmpDir . DIRECTORY_SEPARATOR . $runId . '.heic';
 
         try {
+            $this->emitStatusEvent($statusEventCallback, 'prepare');
             $avifCodec->decodeToPng($avifPath, $rawPng);
 
             $orientation = $this->exiftool->orientation($avifPath);
@@ -187,6 +229,7 @@ final readonly class ImageOptimizer
                 tmpOptimized: $tmpHeic,
                 minScore: self::MIGRATION_MIN_SSIM_SCORE,
                 statusCallback: $statusCallback,
+                statusEventCallback: $statusEventCallback,
                 totalQcTime: 0.0,
                 originalSize: $avifSize,
                 requireSmallerThanOriginal: false,
@@ -194,10 +237,26 @@ final readonly class ImageOptimizer
             );
 
             if ($found === null) {
+                $this->emitStatusEvent($statusEventCallback, 'decision', decision: 'quality_not_achieved');
+
                 return CalculationSkipReason::QualityNotAchieved;
             }
 
+            $this->emitStatusEvent(
+                $statusEventCallback,
+                'finalize',
+                $found['quality'],
+                $found['score'],
+                $avifSize - $found['size'],
+            );
             rename($tmpHeic, $targetHeicPath);
+            $this->emitStatusEvent(
+                $statusEventCallback,
+                'metadata',
+                $found['quality'],
+                $found['score'],
+                $avifSize - $found['size'],
+            );
             $this->copyAndVerifyMetadataStrict($avifPath, $targetHeicPath);
 
             return new ImageProcessingResult(
@@ -215,8 +274,9 @@ final readonly class ImageOptimizer
     }
 
     /**
-     * @param callable(int, float, int): void|null $statusCallback
-     * @param float                                $totalQcTime    Mutable accumulator passed by value and returned via array
+     * @param callable(int, float, int): void                                     $statusCallback
+     * @param callable(string, int|null, float|null, int|null, string|null): void $statusEventCallback
+     * @param float                                                               $totalQcTime         Mutable accumulator passed by value and returned via array
      *
      * @return array{quality: int, score: float, size: int, qcTime: float}|null
      */
@@ -225,7 +285,8 @@ final readonly class ImageOptimizer
         string $candPng,
         string $tmpOptimized,
         float $minScore,
-        callable|null $statusCallback,
+        callable $statusCallback,
+        callable $statusEventCallback,
         float $totalQcTime,
         int $originalSize,
         bool $requireSmallerThanOriginal,
@@ -236,18 +297,22 @@ final readonly class ImageOptimizer
         $fallbackTooBig   = null;
 
         for ($q = 40; $q <= 100; $q += 10) {
-            $probe       = $this->probeHeicQuality($refPng, $candPng, $tmpOptimized, $q, $originalSize, $statusCallback, $totalQcTime, $heicCodec);
+            $probe       = $this->probeHeicQuality($refPng, $candPng, $tmpOptimized, $q, $originalSize, $statusCallback, $statusEventCallback, $totalQcTime, $heicCodec);
             $score       = $probe['score'];
             $size        = $probe['size'];
             $totalQcTime = $probe['qcTime'];
+            $saved       = $originalSize - $size;
 
             if ($requireSmallerThanOriginal && $size >= $originalSize) {
                 if ($score < $minScore) {
                     // Lower quality won't improve the score; higher quality won't improve the size.
+                    $this->emitStatusEvent($statusEventCallback, 'decision', $q, $score, $saved, 'too_big');
+
                     return ['quality' => $q, 'score' => $score, 'size' => $size, 'qcTime' => $totalQcTime];
                 }
 
                 // We might still find a smaller passing quality below this bound.
+                $this->emitStatusEvent($statusEventCallback, 'decision', $q, $score, $saved, 'too_big');
                 $fallbackTooBig   = ['quality' => $q, 'score' => $score, 'size' => $size, 'qcTime' => $totalQcTime];
                 $firstPassQuality = $q;
                 break;
@@ -255,13 +320,17 @@ final readonly class ImageOptimizer
 
             if ($score >= $minScore) {
                 if ($score <= $minScore + self::SSIM_EARLY_STOP_WINDOW) {
+                    $this->emitStatusEvent($statusEventCallback, 'decision', $q, $score, $saved, 'pass');
+
                     return ['quality' => $q, 'score' => $score, 'size' => $size, 'qcTime' => $totalQcTime];
                 }
 
+                $this->emitStatusEvent($statusEventCallback, 'decision', $q, $score, $saved, 'pass');
                 $firstPassQuality = $q;
                 break;
             }
 
+            $this->emitStatusEvent($statusEventCallback, 'decision', $q, $score, $saved, 'score_low');
             $lastFailQuality = $q;
             $this->cleanup($tmpOptimized);
         }
@@ -274,22 +343,26 @@ final readonly class ImageOptimizer
         $best  = null;
 
         for ($q = $start; $q <= $firstPassQuality; $q += self::HEIC_Q_STEP) {
-            $probe       = $this->probeHeicQuality($refPng, $candPng, $tmpOptimized, $q, $originalSize, $statusCallback, $totalQcTime, $heicCodec);
+            $probe       = $this->probeHeicQuality($refPng, $candPng, $tmpOptimized, $q, $originalSize, $statusCallback, $statusEventCallback, $totalQcTime, $heicCodec);
             $score       = $probe['score'];
             $size        = $probe['size'];
             $totalQcTime = $probe['qcTime'];
+            $saved       = $originalSize - $size;
 
             if ($requireSmallerThanOriginal && $size >= $originalSize) {
                 // Higher quality will only increase size.
+                $this->emitStatusEvent($statusEventCallback, 'decision', $q, $score, $saved, 'too_big');
                 $this->cleanup($tmpOptimized);
                 break;
             }
 
             if ($score < $minScore) {
+                $this->emitStatusEvent($statusEventCallback, 'decision', $q, $score, $saved, 'score_low');
                 $this->cleanup($tmpOptimized);
                 continue;
             }
 
+            $this->emitStatusEvent($statusEventCallback, 'decision', $q, $score, $saved, 'pass');
             $best = ['quality' => $q, 'score' => $score, 'size' => $size, 'qcTime' => $totalQcTime];
             break;
         }
@@ -298,7 +371,8 @@ final readonly class ImageOptimizer
     }
 
     /**
-     * @param callable(int, float, int): void|null $statusCallback Called with (q, score, savedBytes)
+     * @param callable(int, float, int): void                                     $statusCallback      Called with (q, score, savedBytes)
+     * @param callable(string, int|null, float|null, int|null, string|null): void $statusEventCallback
      *
      * @return array{score: float, size: int, qcTime: float}
      */
@@ -308,13 +382,17 @@ final readonly class ImageOptimizer
         string $tmpOptimized,
         int $q,
         int $originalSize,
-        callable|null $statusCallback,
+        callable $statusCallback,
+        callable $statusEventCallback,
         float $totalQcTime,
         HeicCodec $heicCodec,
     ): array {
+        $this->emitStatusEvent($statusEventCallback, 'encode', $q);
         $heicCodec->encodeFromPng($refPng, $tmpOptimized, $q);
+        $this->emitStatusEvent($statusEventCallback, 'decode', $q);
         $heicCodec->decodeToPng($tmpOptimized, $candPng);
 
+        $this->emitStatusEvent($statusEventCallback, 'score', $q);
         $qcStart      = microtime(true);
         $score        = $this->ssimulacra2->score($refPng, $candPng);
         $totalQcTime += microtime(true) - $qcStart;
@@ -322,11 +400,21 @@ final readonly class ImageOptimizer
         $size  = (int) filesize($tmpOptimized);
         $saved = $originalSize - $size;
 
-        if ($statusCallback !== null) {
-            $statusCallback($q, $score, $saved);
-        }
+        $statusCallback($q, $score, $saved);
 
         return ['score' => $score, 'size' => $size, 'qcTime' => $totalQcTime];
+    }
+
+    /** @param callable(string, int|null, float|null, int|null, string|null): void $statusEventCallback */
+    private function emitStatusEvent(
+        callable $statusEventCallback,
+        string $phase,
+        int|null $quality = null,
+        float|null $score = null,
+        int|null $savedBytes = null,
+        string|null $decision = null,
+    ): void {
+        $statusEventCallback($phase, $quality, $score, $savedBytes, $decision);
     }
 
     private function copyAndVerifyMetadataStrict(string $source, string $dest): void

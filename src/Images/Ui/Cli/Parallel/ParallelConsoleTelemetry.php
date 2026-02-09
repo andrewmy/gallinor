@@ -59,6 +59,11 @@ final class ParallelConsoleTelemetry
         }
 
         $this->workerStates[$workerId] = $state;
+
+        if ($state === 'spawned') {
+            $this->dropOneExitedWorker($workerId);
+        }
+
         ksort($this->workerStates);
         $this->renderPanel();
     }
@@ -86,6 +91,19 @@ final class ParallelConsoleTelemetry
     private function isPanelMode(): bool
     {
         return $this->statusSection !== null && $this->output->getVerbosity() >= OutputInterface::VERBOSITY_VERY_VERBOSE;
+    }
+
+    private function dropOneExitedWorker(string $spawnedWorkerId): void
+    {
+        foreach ($this->workerStates as $workerId => $summary) {
+            if ($workerId === $spawnedWorkerId || $summary !== 'exited') {
+                continue;
+            }
+
+            unset($this->workerStates[$workerId]);
+
+            return;
+        }
     }
 
     private function renderPanel(bool $force = false): void

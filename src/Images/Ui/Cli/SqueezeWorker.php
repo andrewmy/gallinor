@@ -147,24 +147,66 @@ final class SqueezeWorker extends Command
                         throw new RuntimeException('Unable to determine input JPEG size.');
                     }
 
-                    $image          = new ImageFile($path, $size);
-                    $statusCallback = function (int $quality, float $score, int $saved) use ($socket, $identifier, $jobId, $path): void {
+                    $image      = new ImageFile($path, $size);
+                    $emitStatus = function (
+                        string $phase,
+                        int|null $quality = null,
+                        float|null $score = null,
+                        int|null $savedBytes = null,
+                        string|null $decision = null,
+                    ) use (
+                        $socket,
+                        $identifier,
+                        $jobId,
+                        $path,
+): void {
+                        $statusPayload = [
+                            'v'            => self::PROTOCOL_VERSION,
+                            'type'         => 'status',
+                            'workerId'     => $identifier,
+                            'jobId'        => $jobId,
+                            'path'         => $path,
+                            'phase'        => $phase,
+                            'deltaAgainst' => 'jpg',
+                        ];
+
+                        if ($quality !== null) {
+                            $statusPayload['quality'] = $quality;
+                        }
+
+                        if ($score !== null) {
+                            $statusPayload['score'] = $score;
+                        }
+
+                        if ($savedBytes !== null) {
+                            $statusPayload['savedBytes'] = $savedBytes;
+                        }
+
+                        if ($decision !== null && $decision !== '') {
+                            $statusPayload['decision'] = $decision;
+                        }
+
                         $this->writeMessage($socket, [
                             ReactCommand::ACTION => Action::RESULT,
-                            Content::RESULT      => [
-                                'v'          => self::PROTOCOL_VERSION,
-                                'type'       => 'status',
-                                'workerId'   => $identifier,
-                                'jobId'      => $jobId,
-                                'path'       => $path,
-                                'quality'    => $quality,
-                                'score'      => $score,
-                                'savedBytes' => $saved,
-                            ],
+                            Content::RESULT      => $statusPayload,
                         ]);
                     };
 
-                    $outcome = $optimizer->optimizeJpeg($image, $codec, $statusCallback);
+                    $emitStatus('prepare');
+                    $statusCallback      = static function (int $quality, float $score, int $saved) use ($emitStatus): void {
+                        $emitStatus('score', $quality, $score, $saved);
+                    };
+                    $statusEventCallback = static function (
+                        string $phase,
+                        int|null $quality,
+                        float|null $score,
+                        int|null $savedBytes,
+                        string|null $decision,
+                    ) use ($emitStatus): void {
+                        $emitStatus($phase, $quality, $score, $savedBytes, $decision);
+                    };
+
+                    $outcome = $optimizer->optimizeJpeg($image, $codec, $statusCallback, $statusEventCallback);
                     if ($outcome instanceof CalculationSkipReason) {
                         $this->writeMessage($socket, [
                             ReactCommand::ACTION => Action::RESULT,

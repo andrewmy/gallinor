@@ -32,15 +32,15 @@ final class ParallelWorkerPayloadHandler
             $saved = $payload['savedBytes'] ?? null;
             $q     = $payload['quality'] ?? null;
 
-            if (! is_string($path) || ! is_int($saved) || ! is_int($q) || (! is_float($score) && ! is_int($score))) {
+            if (! is_string($path)) {
                 return ParallelWorkerPayloadHandlingResult::ignored();
             }
 
             return ParallelWorkerPayloadHandlingResult::status(
                 path: $path,
-                quality: $q,
-                score: (float) $score,
-                savedBytes: $saved,
+                quality: is_int($q) ? $q : null,
+                score: is_float($score) || is_int($score) ? (float) $score : null,
+                savedBytes: is_int($saved) ? $saved : null,
             );
         }
 
