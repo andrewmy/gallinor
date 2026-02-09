@@ -72,5 +72,16 @@ final class StrictMetadataVerifierTest extends TestCase
         yield 'XMP toolkit differs' => ['XMP-x:XMPToolkit', true];
 
         yield 'Focal plane resolution differs' => ['ExifIFD:FocalPlaneXResolution', true];
+
+        yield 'Unknown ExifIFD private tag missing' => ['ExifIFD:Exif_0x9aaa', false];
+        yield 'JSON vendor tag missing' => ['JSON:Mirror', false];
+        yield 'MiCamera XMP tag missing' => ['XMP-MiCamera:XMPMeta', false];
+        yield 'YCbCr positioning differs' => ['IFD0:YCbCrPositioning', true];
+        yield 'Compressed bits per pixel missing' => ['ExifIFD:CompressedBitsPerPixel', false];
+        yield 'Sony preview image missing' => ['Sony:PreviewImage', false];
+        yield 'IFD0 thumbnail offset differs' => ['IFD0:ThumbnailOffset', true];
+        yield 'IFD0 thumbnail length differs' => ['IFD0:ThumbnailLength', true];
+        yield 'IFD0 thumbnail image differs' => ['IFD0:ThumbnailImage', true];
+        yield 'Components configuration differs' => ['ExifIFD:ComponentsConfiguration', true];
     }
 }

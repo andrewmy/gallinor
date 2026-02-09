@@ -19,6 +19,10 @@ final readonly class StrictMetadataVerifier
         'QuickTime' => true,
         'IFD1' => true,
         'InteropIFD' => true,
+        // Vendor JSON payload extracted by ExifTool is not preserved across container re-encode.
+        'JSON' => true,
+        // Xiaomi vendor XMP block is not portable across AVIF/HEIC rewrite.
+        'XMP-MiCamera' => true,
     ];
 
     private const array IGNORED_TAGS = [
@@ -32,6 +36,9 @@ final readonly class StrictMetadataVerifier
         // or when ExifTool rewrites metadata into a different container.
         'ExifIFD:SceneType' => true,
         'ExifIFD:UserComment' => true,
+        // Compression/layout descriptors can differ after transcode even when visual content is intact.
+        'ExifIFD:CompressedBitsPerPixel' => true,
+        'ExifIFD:ComponentsConfiguration' => true,
         // Maker/lens derived calibration numbers are often rewritten with different formatting/precision.
         'ExifIFD:FocalPlaneXResolution' => true,
         'ExifIFD:FocalPlaneYResolution' => true,
@@ -43,6 +50,14 @@ final readonly class StrictMetadataVerifier
         'EXIF:ImageHeight' => true,
         'IFD0:ImageWidth' => true,
         'IFD0:ImageHeight' => true,
+        // Thumbnail payload and byte offsets are re-generated and inherently unstable.
+        'IFD0:ThumbnailOffset' => true,
+        'IFD0:ThumbnailLength' => true,
+        'IFD0:ThumbnailImage' => true,
+        // YCbCr positioning is encoding-layout metadata, not capture metadata.
+        'IFD0:YCbCrPositioning' => true,
+        // Vendor preview blob is not preserved in AVIF/HEIC rewrite path.
+        'Sony:PreviewImage' => true,
         // ExifTool/XMP writer signature: expected to change when rewriting metadata.
         'XMP-x:XMPToolkit' => true,
     ];
@@ -80,6 +95,11 @@ final readonly class StrictMetadataVerifier
     private function shouldIgnore(string $tag): bool
     {
         if (isset(self::IGNORED_TAGS[$tag])) {
+            return true;
+        }
+
+        // Unknown/private EXIF tags are represented as Exif_0xNNNN and are frequently dropped by container conversion.
+        if (strpos($tag, 'ExifIFD:Exif_0x') === 0) {
             return true;
         }
 

@@ -130,6 +130,17 @@ Orientation=1 in metadata to avoid viewer inconsistencies.
   PR.
 - **Cross-platform tools**: Verify binary names per OS (macOS/Windows/Linux),
   and document any platform-specific mapping when introducing external tools.
+- **Metadata verification triage**: For `Metadata verification failed` in image
+  flows, use test-first updates in
+  `tests/Unit/Images/Domain/StrictMetadataVerifierTest.php` (add failing case),
+  then adjust `src/Images/Domain/StrictMetadataVerifier.php` with a short
+  rationale comment.
+  - Ignore only non-portable metadata families (container/runtime/vendor/private
+    tags such as `System:*`, `QuickTime:*`, `JSON:*`, vendor XMP blocks,
+    `ExifIFD:Exif_0xNNNN`).
+  - Keep core capture/user metadata strict by default (`EXIF:*` camera/exposure,
+    `DateTime*`, GPS, lens/make/model). Do not relax these without explicit
+    product decision.
 - **Orchestration**: Prefer external orchestration (e.g., Docker) over in-app
   worker management when cross-platform process control would add complexity.
 - **SQLite in Docker**: Use named volumes for SQLite by default to avoid

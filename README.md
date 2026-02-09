@@ -115,6 +115,22 @@ php app.php images:migrate-avif-to-heic /path/to/photos [/path2 /path3 ...] [--d
 php app.php images:remove-avifs /path/to/photos [/path2 /path3 ...] [--dry-run]
 ```
 
+### Metadata verification failures
+
+Gallinor verifies metadata after image conversion. If you see
+`Metadata verification failed`, check the listed tags:
+
+- Usually non-portable across container rewrite (often safe to ignore in future
+  releases): `System:*`, `QuickTime:*`, `JSON:*`, vendor XMP blocks (for
+  example `XMP-MiCamera:*`), and private EXIF tags like
+  `ExifIFD:Exif_0xNNNN`.
+- Potentially important and should stay strict: camera/exposure/date/GPS/lens
+  metadata (`EXIF:*`, `DateTime*`, GPS, make/model).
+
+If the failure includes important tags, stop and report it with the full tag
+list. If it only includes non-portable tags, updating to a newer Gallinor build
+may already include verifier compatibility rules.
+
 ## Development
 
 ```shell
