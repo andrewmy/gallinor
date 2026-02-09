@@ -187,7 +187,7 @@ Smoke tests are intentionally excluded from the default `just ci` suite.
 
 ### Current Status
 
-**Unit suite (`just ci` / `just test`)**: 119 tests — passing, with 6
+**Unit suite (`just ci` / `just test`)**: 120 tests — passing, with 6
 incomplete tests and 1 warning (as of 2026-02-09)
 
 **Smoke suite (`just smoke`)**: 5 tests with real CLI invocations; environment

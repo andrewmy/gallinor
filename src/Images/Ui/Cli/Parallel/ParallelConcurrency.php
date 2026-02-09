@@ -7,6 +7,8 @@ namespace App\Images\Ui\Cli\Parallel;
 use function intdiv;
 use function max;
 use function min;
+use function round;
+use function sqrt;
 
 final class ParallelConcurrency
 {
@@ -14,6 +16,10 @@ final class ParallelConcurrency
     {
         $nCores = max(1, $nCores);
 
-        return max(1, min(intdiv($nCores, 4), intdiv($nCores, 8) + 2));
+        // Sublinear scaling to avoid oversubscription while still using modern CPUs.
+        $heuristicWorkers = (int) round(1.15 * sqrt($nCores));
+        $hardUpperBound   = intdiv($nCores + 1, 2);
+
+        return max(1, min($heuristicWorkers, $hardUpperBound));
     }
 }
