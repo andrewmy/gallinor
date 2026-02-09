@@ -27,6 +27,7 @@ final readonly class ImageOptimizer
     private const int AVIF_CQ_START = 20;
     private const int AVIF_CQ_END   = 2;
     private const int AVIF_CQ_STEP  = 2;
+    private const int HEIC_Q_STEP   = 2;
 
     public function __construct(
         private Ssimulacra2 $ssimulacra2,
@@ -264,10 +265,10 @@ final readonly class ImageOptimizer
             return null;
         }
 
-        $start = $lastFailQuality ?? 0;
+        $start = $lastFailQuality === null ? 0 : $lastFailQuality + self::HEIC_Q_STEP;
         $best  = null;
 
-        for ($q = $start; $q <= $firstPassQuality; $q += 2) {
+        for ($q = $start; $q <= $firstPassQuality; $q += self::HEIC_Q_STEP) {
             $probe       = $this->probeHeicQuality($refPng, $candPng, $tmpOptimized, $q, $originalSize, $statusCallback, $totalQcTime, $heicCodec);
             $score       = $probe['score'];
             $size        = $probe['size'];
