@@ -293,7 +293,6 @@ defined in `justfile` (`coverage-check`) and
 
 - [docs/README.md](docs/README.md) (index)
 - [docs/QUALITY_SEARCH_UNIFICATION_PLAN.md](docs/QUALITY_SEARCH_UNIFICATION_PLAN.md)
-- [docs/PARALLEL_PROCESSING_PLAN.md](docs/PARALLEL_PROCESSING_PLAN.md)
 - [docs/DOCKERIZATION_PLAN.md](docs/DOCKERIZATION_PLAN.md)
 
 ## Code Style
@@ -323,6 +322,22 @@ defined in `justfile` (`coverage-check`) and
 ## Technical Debt & Refactoring Opportunities
 
 > This section only documents remaining work. Completed items are removed.
+
+### Parallel CLI Telemetry Stability (Priority: Medium)
+
+**Issue**: High-verbosity parallel output (`-vv`/`-vvv`) blends progress-bar
+rendering, trace messages, and worker status panel updates. This can vary by
+terminal/TTY behaviour and is currently covered mostly by manual checks.
+
+**Recommended Approach**:
+
+1. Add targeted integration coverage for console rendering paths (TTY vs
+   non-TTY) for `images:squeeze --parallel` and
+   `images:migrate-avif-to-heic --parallel`
+2. Keep worker-panel redraws rate-limited and deduplicated; treat regressions as
+   behaviour bugs, not cosmetic only
+3. Consider adding a dedicated flag to disable worker panel while keeping
+   verbose traces, for troubleshooting problematic terminals
 
 ### Test IO Isolation Issues (Priority: Medium)
 

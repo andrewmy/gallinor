@@ -20,8 +20,6 @@ specific).
 ## Related plans
 
 - [README.md](README.md) (index)
-- [PARALLEL_PROCESSING_PLAN.md](PARALLEL_PROCESSING_PLAN.md) (parallelism for
-  many-probe loops)
 - [DOCKERIZATION_PLAN.md](DOCKERIZATION_PLAN.md) (toolchain standardisation;
   impacts how probes run)
 

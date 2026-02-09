@@ -12,7 +12,6 @@ child PHP worker processes inside the same container.
 ## Related plans
 
 - [README.md](README.md) (index)
-- [PARALLEL_PROCESSING_PLAN.md](PARALLEL_PROCESSING_PLAN.md) (in-app worker pool)
 - [QUALITY_SEARCH_UNIFICATION_PLAN.md](QUALITY_SEARCH_UNIFICATION_PLAN.md)
   (quality/bitrate probing + refinement)
 
