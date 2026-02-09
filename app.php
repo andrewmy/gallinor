@@ -4,9 +4,11 @@
 declare(strict_types=1);
 
 use App\Images\Ui\Cli\MigrateAvifToHeic as ImagesMigrateAvifToHeic;
+use App\Images\Ui\Cli\MigrateAvifToHeicWorker as ImagesMigrateAvifToHeicWorker;
 use App\Images\Ui\Cli\RemoveAvifs as ImagesRemoveAvifs;
 use App\Images\Ui\Cli\RemoveOriginals as ImagesRemoveOriginals;
 use App\Images\Ui\Cli\Squeeze as ImagesSqueeze;
+use App\Images\Ui\Cli\SqueezeWorker as ImagesSqueezeWorker;
 use App\Shared\Infrastructure\NativePlatform;
 use App\Shared\Infrastructure\SymfonyFilesystemScanner;
 use App\Shared\Ui\Cli\CliHelper;
@@ -39,8 +41,10 @@ $app->addCommands([
     new VideosSqueeze($logger, $cliHelper, $scanner, $timing, $ffmpegFactory, $platform),
     new VideosRename($cliHelper, $scanner, $timing),
     new ImagesSqueeze($cliHelper, $scanner, $timing, $platform, $logger),
+    new ImagesSqueezeWorker($platform),
     new ImagesRemoveOriginals($logger, $cliHelper, $scanner, $timing, $platform),
-    new ImagesMigrateAvifToHeic($cliHelper, $scanner, $timing, $platform),
+    new ImagesMigrateAvifToHeic($cliHelper, $scanner, $timing, $platform, $logger),
+    new ImagesMigrateAvifToHeicWorker($platform),
     new ImagesRemoveAvifs($cliHelper, $scanner, $timing),
 ]);
 $app->run();

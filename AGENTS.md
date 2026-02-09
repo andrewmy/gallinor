@@ -11,7 +11,8 @@ gallery sizes while maintaining quality. It supports:
 - **Videos**: Re-encode to HEVC (H.265) with adaptive bitrate, hardware
   acceleration (VideoToolbox/NVENC)
 - **Images**: Convert JPEGs to HEIC (default; AVIF optional) with quality-based
-  encoding, archive ARW files with xz compression
+  encoding, optional parallel JPEG worker-pool mode, archive ARW files with xz
+  compression
 
 Before every task implementation, interview the user until everything is clear.
 
@@ -28,6 +29,7 @@ just cbf                      # Fix code style issues
 just markdown                 # Lint Markdown files (via markdownlint-cli2; config: .markdownlint-cli2.jsonc)
 just stan                     # Run PHPStan static analysis (level max)
 just test                     # Run all tests
+just smoke                    # Run smoke tests (real CLI + toolchain + localhost worker IPC)
 ```
 
 ### Application Usage
@@ -46,14 +48,14 @@ php app.php videos:rename <path>    # Replace originals with optimized files
 **Image workflow** (2-step process):
 
 ```bash
-php app.php images:squeeze <path>           # Convert JPEGs to HEIC by default, archive ARWs
+php app.php images:squeeze <path> [--parallel] [--concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]  # Convert JPEGs to HEIC by default; ARW archival stays sequential
 php app.php images:remove-originals <path>   # Remove originals after conversion
 ```
 
 **AVIF→HEIC migration** (OneDrive compatibility):
 
 ```bash
-php app.php images:migrate-avif-to-heic <path>  # Convert existing AVIFs to HEIC (SSIMULACRA2 ≥ 90)
+php app.php images:migrate-avif-to-heic <path> [--parallel] [--concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]  # Convert existing AVIFs to HEIC (SSIMULACRA2 ≥ 90)
 php app.php images:remove-avifs <path>          # Remove AVIFs when sibling HEIC exists
 ```
 
@@ -105,6 +107,27 @@ Orientation=1 in metadata to avoid viewer inconsistencies.
 `aq-strength` (0.0–3.0). Image HEIC encoding uses libheif + x265 params via
 `heif-enc -p x265:...` (pinned defaults: `aq-mode=2`, `aq-strength=1.0`).
 
+**Parallel JPEG mode**: `images:squeeze` can run JPEG optimization through an
+internal master/worker pool (`images:squeeze:worker`) over localhost NDJSON
+messages using `symplify/easy-parallel` primitives for worker lifecycle and
+transport. `--job-timeout` is inactivity-based (no worker message), `--dry-run`
+stays single-process, and ARW archival remains sequential.
+
+**Parallel AVIF migration mode**: `images:migrate-avif-to-heic` can run AVIF
+migration through an internal master/worker pool
+(`images:migrate-avif-to-heic:worker`) over localhost NDJSON messages using
+`symplify/easy-parallel` primitives for worker lifecycle and transport.
+`--job-timeout` is inactivity-based (no worker message), and `--dry-run` stays
+single-process.
+Both parallel flows reuse a shared worker-pool orchestrator in
+`src/Images/Ui/Cli/Parallel/ParallelWorkerPoolOrchestrator.php`.
+Console tracing/panel rendering is shared via
+`src/Images/Ui/Cli/Parallel/ParallelConsoleTelemetry.php`.
+Use Symfony verbosity flags for worker-pool tracing:
+`-v` (lifecycle), `-vv` (dispatch/requeue details), `-vvv` (status-frame level).
+At `-vv` and above, both parallel commands also render a live per-worker status
+panel below the progress bar when the terminal supports console sections.
+
 ### Important Constraints
 
 - **PHP 8.5+ only** - Uses modern PHP features extensively
@@ -141,8 +164,9 @@ Orientation=1 in metadata to avoid viewer inconsistencies.
   - Keep core capture/user metadata strict by default (`EXIF:*` camera/exposure,
     `DateTime*`, GPS, lens/make/model). Do not relax these without explicit
     product decision.
-- **Orchestration**: Prefer external orchestration (e.g., Docker) over in-app
-  worker management when cross-platform process control would add complexity.
+- **Orchestration**: Current image parallelism uses an in-app worker pool for
+  single-machine acceleration. Prefer external orchestration (e.g., Docker) when
+  scaling beyond a single machine or when packaging toolchains.
 - **SQLite in Docker**: Use named volumes for SQLite by default to avoid
   macOS/Windows bind-mount slowness; bind mount only for debugging.
 - **Long-running work**: Avoid per-file timeouts for media processing; if
@@ -156,10 +180,18 @@ Tests organized by module under `tests/Unit/`. Use `FsTestCase` for
 filesystem-related tests (virtual filesystem via vfsstream). Test doubles use
 Mockery.
 
+Smoke tests live in `tests/Smoke/` and are executed explicitly via
+`just smoke` (`php vendor/bin/phpunit tests/Smoke`) using the main
+`phpunit.xml` config. Do not add separate PHPUnit config files for smoke tests.
+Smoke tests are intentionally excluded from the default `just ci` suite.
+
 ### Current Status
 
-**75 tests, 18.85% line coverage** — passing, with 6 incomplete tests and 1
-warning (as of 2026-02-07)
+**Unit suite (`just ci` / `just test`)**: 119 tests — passing, with 6
+incomplete tests and 1 warning (as of 2026-02-09)
+
+**Smoke suite (`just smoke`)**: 5 tests with real CLI invocations; environment
+dependent and may skip when toolchain/localhost IPC is unavailable.
 
 **Tested**:
 
@@ -172,6 +204,11 @@ warning (as of 2026-02-07)
 - `ImageProcessorResult` — aggregation, savings
 - `Ssimulacra2` — `fileSizeKb()` rounding
 - `StrictMetadataVerifier` — diff rules
+- `AvifMigrationBatchResult` — aggregation/counting for migration outcomes
+- `ParallelConcurrency` — default worker count formula
+- `JobRetryPolicy` — one-time requeue behavior
+- `ParallelWorkerPayloadHandler` — worker message parsing and batch mutation
+- `ParallelTempDirectoryManager` — temp dir creation/pruning/removal
 
 ### Not Yet Testable (blocked by `final` classes)
 
@@ -244,8 +281,9 @@ test file paths so `rename()` succeeds.
 ## CI/CD
 
 GitHub Actions workflow runs on push/PR to main. Workflow should match `just ci`
-command (validate, audit, analyze, lint, stan, test). Coverage threshold: 10%
-(var/coverage.xml).
+command (validate, audit, analyze, lint, stan, test). Coverage gating is
+defined in `justfile` (`coverage-check`) and
+`.github/workflows/ci.yaml` (source of truth).
 
 ## Design docs
 

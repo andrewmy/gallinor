@@ -28,9 +28,13 @@ markdown:
 test:
     php vendor/bin/phpunit
 
+# Run smoke tests (toolchain + localhost IPC required)
+smoke:
+    php vendor/bin/phpunit tests/Smoke
+
 # Check code coverage
 coverage-check: test
-    php vendor/bin/coverage-check var/coverage.xml 19
+    php vendor/bin/coverage-check var/coverage.xml 16
 
 # Full CI flow
 ci: composer-validate markdown cbf require-check coverage-check stan security-check

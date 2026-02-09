@@ -20,6 +20,8 @@ use App\Images\Domain\OptimizedFilter;
 use App\Images\Domain\RawArchiver;
 use App\Images\Domain\Ssimulacra2;
 use App\Images\Domain\StrictMetadataVerifier;
+use App\Images\Ui\Cli\Parallel\ParallelConcurrency;
+use App\Images\Ui\Cli\Parallel\ParallelJpegProcessor;
 use App\Shared\Domain\FilesystemScanner;
 use App\Shared\Domain\Platform;
 use App\Shared\Infrastructure\RealProcessExecutor;
@@ -35,9 +37,12 @@ use Throwable;
 
 use function basename;
 use function count;
+use function dirname;
 use function filesize;
 use function microtime;
 use function sprintf;
+
+use const DIRECTORY_SEPARATOR;
 
 #[AsCommand(name: 'images:squeeze', description: 'Re-encode JPEGs to optimal HEICs (or AVIFs), XZ the ARWs')]
 final class Squeeze extends Command
@@ -59,10 +64,36 @@ final class Squeeze extends Command
         bool $dryRun = false,
         #[Option(description: 'Output format: heic (default) or avif')]
         string $format = 'heic',
+        #[Option(description: 'Enable worker pool for JPEG processing')]
+        bool $parallel = false,
+        #[Option(description: 'Parallel worker count (defaults to auto when --parallel is enabled)')]
+        int|null $concurrency = null,
+        #[Option(description: 'Recycle a worker after N JPEG jobs')]
+        int $workerMaxJobs = 50,
+        #[Option(description: 'Job inactivity timeout in seconds (0 disables)')]
+        int $jobTimeout = 3600,
         #[Argument]
         array $directories = [],
     ): int {
         $startTime = $this->cliHelper->startCommand($output, $dryRun, $this->timing);
+
+        if ($concurrency !== null && $concurrency <= 0) {
+            $output->writeln('<error>Invalid --concurrency: must be a positive integer.</error>');
+
+            return self::FAILURE;
+        }
+
+        if ($workerMaxJobs <= 0) {
+            $output->writeln('<error>Invalid --worker-max-jobs: must be a positive integer.</error>');
+
+            return self::FAILURE;
+        }
+
+        if ($jobTimeout < 0) {
+            $output->writeln('<error>Invalid --job-timeout: must be zero or a positive integer.</error>');
+
+            return self::FAILURE;
+        }
 
         try {
             $imageFormat = ImageFormat::fromCli($format);
@@ -94,6 +125,21 @@ final class Squeeze extends Command
 
         $output->writeln(sprintf('<info>Found: exiftool, ffmpeg, ssimulacra2, xz, tar, %s</info>', $imageFormat->label()));
         $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores()));
+
+        $effectiveConcurrency = null;
+        if ($parallel) {
+            $effectiveConcurrency = $concurrency ?? ParallelConcurrency::defaultFromCores($this->platform->nCores());
+
+            $output->writeln(sprintf(
+                '<info>Parallel JPEG mode: enabled (workers=%d, worker-max-jobs=%d, job-timeout=%ds)</info>',
+                $effectiveConcurrency,
+                $workerMaxJobs,
+                $jobTimeout,
+            ));
+        } else {
+            $output->writeln('<info>Parallel JPEG mode: disabled</info>');
+        }
+
         $output->writeln('');
 
         $collection = $collector->collectFromDirectories(
@@ -116,7 +162,16 @@ final class Squeeze extends Command
             return self::SUCCESS;
         }
 
-        $jpegResult = $this->processJpegs($output, $collection->jpegs, $optimizer, $codec);
+        $jpegResult = $parallel
+            ? $this->processJpegsParallel(
+                $output,
+                $collection->jpegs,
+                $imageFormat,
+                $effectiveConcurrency,
+                $workerMaxJobs,
+                $jobTimeout,
+            )
+            : $this->processJpegs($output, $collection->jpegs, $optimizer, $codec);
 
         $arwResult = $this->archiveArws($output, $collection, $rawArchiver);
 
@@ -183,6 +238,33 @@ final class Squeeze extends Command
         $output->writeln('');
 
         return $result;
+    }
+
+    /** @param list<ImageFile> $jpegs */
+    private function processJpegsParallel(
+        OutputInterface $output,
+        array $jpegs,
+        ImageFormat $format,
+        int $concurrency,
+        int $workerMaxJobs,
+        int $jobTimeout,
+    ): ImageBatchResult {
+        $appPath = dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'app.php';
+
+        $processor = new ParallelJpegProcessor(
+            $this->cliHelper,
+            $this->logger,
+            $appPath,
+        );
+
+        return $processor->process(
+            $output,
+            $jpegs,
+            $format,
+            $concurrency,
+            $workerMaxJobs,
+            $jobTimeout,
+        );
     }
 
     /** @return array{archived: int, sizeBefore: int, sizeAfter: int} */
