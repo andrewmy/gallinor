@@ -96,13 +96,15 @@ final class ParallelConsoleTelemetry
     private function dropOneExitedWorker(string $spawnedWorkerId): void
     {
         foreach ($this->workerStates as $workerId => $summary) {
-            if ($workerId === $spawnedWorkerId || $summary !== 'exited') {
+            if ($workerId === $spawnedWorkerId) {
+                continue;
+            }
+
+            if ($summary !== 'exited') {
                 continue;
             }
 
             unset($this->workerStates[$workerId]);
-
-            return;
         }
     }
 
