@@ -83,5 +83,7 @@ final class StrictMetadataVerifierTest extends TestCase
         yield 'IFD0 thumbnail length differs' => ['IFD0:ThumbnailLength', true];
         yield 'IFD0 thumbnail image differs' => ['IFD0:ThumbnailImage', true];
         yield 'Components configuration differs' => ['ExifIFD:ComponentsConfiguration', true];
+        yield 'Adobe Camera Raw mask dabs missing' => ['XMP-crs:MaskGroupBasedCorrMaskMasksDabs', false];
+        yield 'Adobe Camera Raw mask what missing' => ['XMP-crs:MaskGroupBasedCorrMaskMasksWhat', false];
     }
 }

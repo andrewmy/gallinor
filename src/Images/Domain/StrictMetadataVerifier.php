@@ -60,6 +60,10 @@ final readonly class StrictMetadataVerifier
         'Sony:PreviewImage' => true,
         // ExifTool/XMP writer signature: expected to change when rewriting metadata.
         'XMP-x:XMPToolkit' => true,
+        // Adobe Camera Raw mask metadata: editing instructions for gradient-based corrections
+        // stored by Lightroom/ACR. These are non-portable editing parameters, not capture metadata.
+        'XMP-crs:MaskGroupBasedCorrMaskMasksDabs' => true,
+        'XMP-crs:MaskGroupBasedCorrMaskMasksWhat' => true,
     ];
 
     /**
