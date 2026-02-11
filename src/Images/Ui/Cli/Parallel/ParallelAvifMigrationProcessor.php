@@ -99,16 +99,14 @@ final readonly class ParallelAvifMigrationProcessor
         $requestedWorkers = min($concurrency, count($pendingJobs));
         $telemetry        = new ParallelConsoleTelemetry($output, $progressBar);
 
-        $reportErrorForPath = static function (string $path, string $message) use ($output, $progressBar, $result): void {
+        $reportErrorForPath = static function (string $path, string $message) use ($progressBar, $result, $telemetry): void {
             if (isset($result->processed[$path]) || isset($result->skipped[$path]) || isset($result->errored[$path])) {
                 return;
             }
 
             $result->errored[$path] = $message;
             $progressBar->setMessage(sprintf('%s | <error>Error</error>', basename($path)), 'status');
-            $progressBar->clear();
-            $output->writeln(sprintf('<error>%s: %s</error>', basename($path), $message));
-            $progressBar->display();
+            $telemetry->printInlineError(sprintf('%s: %s', basename($path), $message));
         };
 
         $buildWorkerCommand = function (string $workerId, int $port) use ($workerMaxJobs): string {

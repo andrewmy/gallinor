@@ -153,6 +153,10 @@ If the failure includes important tags, stop and report it with the full tag
 list. If it only includes non-portable tags, updating to a newer Gallinor build
 may already include verifier compatibility rules.
 
+If an ExifTool write step fails (for example while forcing `Orientation=1` on
+HEIC), Gallinor now retries once for transient temp-file write/rename errors
+and surfaces ExifTool stderr directly in the CLI error message.
+
 ## Development
 
 ```shell

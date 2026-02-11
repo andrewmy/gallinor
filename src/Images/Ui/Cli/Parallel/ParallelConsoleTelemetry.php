@@ -79,6 +79,21 @@ final class ParallelConsoleTelemetry
         $statusSection->clear();
     }
 
+    public function printInlineError(string $message): void
+    {
+        if ($this->statusSection !== null) {
+            $this->statusSection->clear();
+        }
+
+        $this->progressBar->clear();
+        $this->output->writeln(sprintf('<error>%s</error>', $message));
+        if ($this->isPanelMode()) {
+            $this->renderPanel(force: true);
+        } else {
+            $this->progressBar->display();
+        }
+    }
+
     private function workerLabel(string $workerId): string
     {
         if (preg_match('/worker-(\d+)$/', $workerId, $matches) === 1) {

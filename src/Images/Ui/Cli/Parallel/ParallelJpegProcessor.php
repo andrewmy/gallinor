@@ -124,6 +124,7 @@ final readonly class ParallelJpegProcessor
             &$totalSavingsBytes,
             $output,
             $progressBar,
+            $telemetry,
         ): ParallelWorkerPoolPayloadResult {
             $handlingResult = $payloadHandler->handle($payload, $result);
             if ($handlingResult->countAsSystemError) {
@@ -178,9 +179,7 @@ final readonly class ParallelJpegProcessor
                 }
 
                 $progressBar->setMessage(sprintf('%s | <error>Error</error>', basename($handlingResult->path)), 'status');
-                $progressBar->clear();
-                $output->writeln(sprintf('<error>%s: %s</error>', basename($handlingResult->path), $handlingResult->error));
-                $progressBar->display();
+                $telemetry->printInlineError(sprintf('%s: %s', basename($handlingResult->path), $handlingResult->error));
             } else {
                 return ParallelWorkerPoolPayloadResult::systemError();
             }
@@ -189,7 +188,7 @@ final readonly class ParallelJpegProcessor
         };
 
         /** @param array{id: string, image: ImageFile, attempt: int} $job */
-        $onJobTerminalFailure = static function (array $job, string $message) use ($output, $progressBar, $result): void {
+        $onJobTerminalFailure = static function (array $job, string $message) use ($progressBar, $result, $telemetry): void {
             $image = $job['image'] ?? null;
             if (! $image instanceof ImageFile) {
                 return;
@@ -202,9 +201,7 @@ final readonly class ParallelJpegProcessor
 
             $result->errored[$path] = $message;
             $progressBar->setMessage(sprintf('%s | <error>Error</error>', basename($path)), 'status');
-            $progressBar->clear();
-            $output->writeln(sprintf('<error>%s: %s</error>', basename($path), $message));
-            $progressBar->display();
+            $telemetry->printInlineError(sprintf('%s: %s', basename($path), $message));
         };
 
         $orchestrator->run(
