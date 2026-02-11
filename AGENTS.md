@@ -175,8 +175,11 @@ recycling, completion) does not branch on phase names.
   then adjust `src/Images/Domain/StrictMetadataVerifier.php` with a short
   rationale comment.
   - Ignore only non-portable metadata families (container/runtime/vendor/private
-    tags such as `System:*`, `QuickTime:*`, `JSON:*`, vendor XMP blocks,
-    `ExifIFD:Exif_0xNNNN`).
+    tags such as `System:*`, `QuickTime:*`, `JSON:*`, `MakerUnknown:*`,
+    `ExifIFD:MakerNoteUnknown*`, `XMP-crs:MaskGroupBasedCorrMaskMasks*`,
+    vendor XMP blocks, `ExifIFD:Exif_0xNNNN`).
+  - Treat `ExifIFD:ShutterSpeedValue` rewrites as equivalent when
+    `ExifIFD:ExposureTime` is unchanged.
   - Keep core capture/user metadata strict by default (`EXIF:*` camera/exposure,
     `DateTime*`, GPS, lens/make/model). Do not relax these without explicit
     product decision.

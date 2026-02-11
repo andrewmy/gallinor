@@ -99,6 +99,7 @@ final readonly class Exiftool implements ExifMetadata
         $this->runWriteCommand(
             [
                 $this->exiftoolPath,
+                '-m',
                 '-overwrite_original',
                 '-n',
                 '-Orientation=1',

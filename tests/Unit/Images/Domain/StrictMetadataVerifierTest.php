@@ -43,6 +43,41 @@ final class StrictMetadataVerifierTest extends TestCase
         );
     }
 
+    public function test_diffs_ignores_shutter_speed_difference_when_exposure_time_matches(): void
+    {
+        $verifier = new StrictMetadataVerifier();
+
+        $source = [
+            'ExifIFD:ShutterSpeedValue' => '1/999963365',
+            'ExifIFD:ExposureTime' => '1/33',
+        ];
+        $dest   = [
+            'ExifIFD:ShutterSpeedValue' => '1/999963296',
+            'ExifIFD:ExposureTime' => '1/33',
+        ];
+
+        self::assertSame([], $verifier->diffs($source, $dest));
+    }
+
+    public function test_diffs_flags_shutter_speed_difference_when_exposure_time_differs(): void
+    {
+        $verifier = new StrictMetadataVerifier();
+
+        $source = [
+            'ExifIFD:ShutterSpeedValue' => '1/999963365',
+            'ExifIFD:ExposureTime' => '1/33',
+        ];
+        $dest   = [
+            'ExifIFD:ShutterSpeedValue' => '1/999963296',
+            'ExifIFD:ExposureTime' => '1/30',
+        ];
+
+        self::assertSame(
+            ['Tag differs: ExifIFD:ShutterSpeedValue', 'Tag differs: ExifIFD:ExposureTime'],
+            $verifier->diffs($source, $dest),
+        );
+    }
+
     /** @return iterable<array{string, bool}> */
     public static function ignoredTagProvider(): iterable
     {
@@ -74,8 +109,10 @@ final class StrictMetadataVerifierTest extends TestCase
         yield 'Focal plane resolution differs' => ['ExifIFD:FocalPlaneXResolution', true];
 
         yield 'Unknown ExifIFD private tag missing' => ['ExifIFD:Exif_0x9aaa', false];
+        yield 'MakerNote unknown text missing' => ['ExifIFD:MakerNoteUnknownText', false];
         yield 'JSON vendor tag missing' => ['JSON:Mirror', false];
         yield 'MiCamera XMP tag missing' => ['XMP-MiCamera:XMPMeta', false];
+        yield 'MakerUnknown private tag missing' => ['MakerUnknown:Unknown_0x0000', false];
         yield 'YCbCr positioning differs' => ['IFD0:YCbCrPositioning', true];
         yield 'Compressed bits per pixel missing' => ['ExifIFD:CompressedBitsPerPixel', false];
         yield 'Sony preview image missing' => ['Sony:PreviewImage', false];
@@ -85,5 +122,7 @@ final class StrictMetadataVerifierTest extends TestCase
         yield 'Components configuration differs' => ['ExifIFD:ComponentsConfiguration', true];
         yield 'Adobe Camera Raw mask dabs missing' => ['XMP-crs:MaskGroupBasedCorrMaskMasksDabs', false];
         yield 'Adobe Camera Raw mask what missing' => ['XMP-crs:MaskGroupBasedCorrMaskMasksWhat', false];
+        yield 'Adobe Camera Raw mask active missing' => ['XMP-crs:MaskGroupBasedCorrMaskMasksMaskActive', false];
+        yield 'Adobe Camera Raw mask sync id missing' => ['XMP-crs:MaskGroupBasedCorrMaskMasksMaskSyncID', false];
     }
 }

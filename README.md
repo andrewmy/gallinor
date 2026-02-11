@@ -144,8 +144,13 @@ Gallinor verifies metadata after image conversion. If you see
 
 - Usually non-portable across container rewrite (often safe to ignore in future
   releases): `System:*`, `QuickTime:*`, `JSON:*`, vendor XMP blocks (for
-  example `XMP-MiCamera:*`), and private EXIF tags like
-  `ExifIFD:Exif_0xNNNN`.
+  example `XMP-MiCamera:*`), maker-note projection tags
+  (`MakerUnknown:Unknown_0xNNNN`, `ExifIFD:MakerNoteUnknown*`), Adobe Camera
+  Raw local mask tags (`XMP-crs:MaskGroupBasedCorrMaskMasks*`), and private
+  EXIF tags like `ExifIFD:Exif_0xNNNN`.
+- `ExifIFD:ShutterSpeedValue` can be rewritten with different numeric
+  representation when `ExifIFD:ExposureTime` is preserved; Gallinor treats this
+  pair as equivalent capture metadata.
 - Potentially important and should stay strict: camera/exposure/date/GPS/lens
   metadata (`EXIF:*`, `DateTime*`, GPS, make/model).
 

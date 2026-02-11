@@ -75,6 +75,11 @@ if (! in_array('-Orientation=1', $argv, true)) {
     exit(0);
 }
 
+if (! in_array('-m', $argv, true)) {
+    fwrite(STDERR, "Error: missing -m\n");
+    exit(1);
+}
+
 if (! file_exists($statePath)) {
     file_put_contents($statePath, 'retry-once');
     fwrite(STDOUT, "    0 image files updated\n    1 files weren't updated due to errors\n");

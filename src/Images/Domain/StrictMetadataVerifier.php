@@ -23,7 +23,13 @@ final readonly class StrictMetadataVerifier
         'JSON' => true,
         // Xiaomi vendor XMP block is not portable across AVIF/HEIC rewrite.
         'XMP-MiCamera' => true,
+        // Vendor/private maker-note projection tags are unstable across container rewrite.
+        'MakerUnknown' => true,
     ];
+
+    private const string SHUTTER_SPEED_TAG = 'ExifIFD:ShutterSpeedValue';
+    private const string EXPOSURE_TIME_TAG = 'ExifIFD:ExposureTime';
+    private const string ACR_MASK_PREFIX   = 'XMP-crs:MaskGroupBasedCorrMaskMasks';
 
     private const array IGNORED_TAGS = [
         'SourceFile' => true,
@@ -81,6 +87,10 @@ final readonly class StrictMetadataVerifier
                 continue;
             }
 
+            if ($this->shouldIgnoreShutterSpeedDifference($tag, $value, $source, $dest)) {
+                continue;
+            }
+
             if (! array_key_exists($tag, $dest)) {
                 $diffs[] = sprintf('Missing tag in destination: %s', $tag);
                 continue;
@@ -107,6 +117,16 @@ final readonly class StrictMetadataVerifier
             return true;
         }
 
+        // ExifTool-generated MakerNote text projections are non-portable across AVIF/HEIC rewrites.
+        if (strpos($tag, 'ExifIFD:MakerNoteUnknown') === 0) {
+            return true;
+        }
+
+        // Adobe Camera Raw local adjustment mask payload is non-portable across container rewrites.
+        if (strpos($tag, self::ACR_MASK_PREFIX) === 0) {
+            return true;
+        }
+
         $pos = strpos($tag, ':');
         if ($pos === false) {
             return false;
@@ -115,5 +135,33 @@ final readonly class StrictMetadataVerifier
         $group = substr($tag, 0, $pos);
 
         return isset(self::IGNORED_GROUPS[$group]);
+    }
+
+    /**
+     * Some containers rewrite ShutterSpeedValue representation while preserving ExposureTime.
+     * Treat this as equivalent capture metadata when ExposureTime remains identical.
+     *
+     * @param array<string, string> $source
+     * @param array<string, string> $dest
+     */
+    private function shouldIgnoreShutterSpeedDifference(string $tag, string $sourceValue, array $source, array $dest): bool
+    {
+        if ($tag !== self::SHUTTER_SPEED_TAG) {
+            return false;
+        }
+
+        if (! array_key_exists($tag, $dest)) {
+            return false;
+        }
+
+        if ((string) $dest[$tag] === $sourceValue) {
+            return false;
+        }
+
+        if (! array_key_exists(self::EXPOSURE_TIME_TAG, $source) || ! array_key_exists(self::EXPOSURE_TIME_TAG, $dest)) {
+            return false;
+        }
+
+        return (string) $source[self::EXPOSURE_TIME_TAG] === (string) $dest[self::EXPOSURE_TIME_TAG];
     }
 }
