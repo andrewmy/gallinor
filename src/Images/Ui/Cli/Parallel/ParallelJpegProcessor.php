@@ -179,7 +179,7 @@ final readonly class ParallelJpegProcessor
                 }
 
                 $progressBar->setMessage(sprintf('%s | <error>Error</error>', basename($handlingResult->path)), 'status');
-                $telemetry->printInlineError(sprintf('%s: %s', basename($handlingResult->path), $handlingResult->error));
+                $telemetry->printInlineError(sprintf('%s: %s', $handlingResult->path, $handlingResult->error));
             } else {
                 return ParallelWorkerPoolPayloadResult::systemError();
             }
@@ -201,7 +201,7 @@ final readonly class ParallelJpegProcessor
 
             $result->errored[$path] = $message;
             $progressBar->setMessage(sprintf('%s | <error>Error</error>', basename($path)), 'status');
-            $telemetry->printInlineError(sprintf('%s: %s', basename($path), $message));
+            $telemetry->printInlineError(sprintf('%s: %s', $path, $message));
         };
 
         $orchestrator->run(

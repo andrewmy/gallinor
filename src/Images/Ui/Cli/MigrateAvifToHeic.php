@@ -250,7 +250,7 @@ final class MigrateAvifToHeic extends Command
             } catch (Throwable $exception) {
                 $result->errored[$avifPath] = $exception->getMessage();
                 $progressBar->clear();
-                $output->writeln(sprintf('<error>%s: %s</error>', $fileName, $exception->getMessage()));
+                $output->writeln(sprintf('<error>%s: %s</error>', $avifPath, $exception->getMessage()));
                 $progressBar->display();
             }
 

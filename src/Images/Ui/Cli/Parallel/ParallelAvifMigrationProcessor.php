@@ -106,7 +106,7 @@ final readonly class ParallelAvifMigrationProcessor
 
             $result->errored[$path] = $message;
             $progressBar->setMessage(sprintf('%s | <error>Error</error>', basename($path)), 'status');
-            $telemetry->printInlineError(sprintf('%s: %s', basename($path), $message));
+            $telemetry->printInlineError(sprintf('%s: %s', $path, $message));
         };
 
         $buildWorkerCommand = function (string $workerId, int $port) use ($workerMaxJobs): string {

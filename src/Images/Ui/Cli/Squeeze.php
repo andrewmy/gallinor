@@ -234,7 +234,7 @@ final class Squeeze extends Command
                 $result->errored[$image->path] = $e->getMessage();
                 $progressBar->setMessage(sprintf('%s | <error>Error</error>', $fileName), 'status');
                 $progressBar->clear();
-                $output->writeln(sprintf('<error>%s: %s</error>', $fileName, $e->getMessage()));
+                $output->writeln(sprintf('<error>%s: %s</error>', $image->path, $e->getMessage()));
                 $progressBar->display();
             }
 
