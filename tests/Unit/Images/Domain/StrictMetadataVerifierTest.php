@@ -91,6 +91,8 @@ final class StrictMetadataVerifierTest extends TestCase
         yield 'QuickTime missing' => ['QuickTime:MajorBrand', false];
 
         yield 'ExifIFD dimensions missing' => ['ExifIFD:ExifImageWidth', false];
+        yield 'ExifIFD image width missing' => ['ExifIFD:ImageWidth', false];
+        yield 'ExifIFD image height missing' => ['ExifIFD:ImageHeight', false];
 
         yield 'IFD1 thumbnail differs' => ['IFD1:ThumbnailOffset', true];
 
@@ -115,6 +117,7 @@ final class StrictMetadataVerifierTest extends TestCase
         yield 'MakerUnknown private tag missing' => ['MakerUnknown:Unknown_0x0000', false];
         yield 'YCbCr positioning differs' => ['IFD0:YCbCrPositioning', true];
         yield 'Compressed bits per pixel missing' => ['ExifIFD:CompressedBitsPerPixel', false];
+        yield 'Brightness value differs' => ['ExifIFD:BrightnessValue', true];
         yield 'Sony preview image missing' => ['Sony:PreviewImage', false];
         yield 'IFD0 thumbnail offset differs' => ['IFD0:ThumbnailOffset', true];
         yield 'IFD0 thumbnail length differs' => ['IFD0:ThumbnailLength', true];
@@ -127,5 +130,9 @@ final class StrictMetadataVerifierTest extends TestCase
         yield 'Adobe Camera Raw local grain missing' => ['XMP-crs:MaskGroupBasedCorrLocalGrain', false];
         yield 'Adobe Camera Raw local corrected depth missing' => ['XMP-crs:MaskGroupBasedCorrLocalCorrectedDepth', false];
         yield 'Adobe Camera Raw mask error reason missing' => ['XMP-crs:MaskGroupBasedCorrMaskErrorReason', false];
+        yield 'Adobe Camera Raw retouch heal version missing' => ['XMP-crs:RetouchAreaHealVersion', false];
+        yield 'Adobe Camera Raw retouch blend mode missing' => ['XMP-crs:RetouchAreaBlendMode', false];
+        yield 'Photoshop camera profile vignette x center missing' => ['XMP-photoshop:CameraProfilesPerspectiveModelVignetteModelImageXCenter', false];
+        yield 'Photoshop camera profile vignette piecewise missing' => ['XMP-photoshop:CameraProfilesPerspectiveModelVignetteModelVignetteModelPiecewiseParam', false];
     }
 }

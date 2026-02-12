@@ -181,7 +181,11 @@ recycling, completion) does not branch on phase names.
   - Ignore only non-portable metadata families (container/runtime/vendor/private
     tags such as `System:*`, `QuickTime:*`, `JSON:*`, `MakerUnknown:*`,
     `ExifIFD:MakerNoteUnknown*`, `XMP-crs:MaskGroupBasedCorr*`,
-    vendor XMP blocks, `ExifIFD:Exif_0xNNNN`).
+    `XMP-crs:RetouchArea*`,
+    `XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel*`,
+    vendor XMP blocks, `ExifIFD:Exif_0xNNNN`,
+    dimension projection tags (`ExifIFD:ImageWidth`, `ExifIFD:ImageHeight`),
+    and derived brightness metric (`ExifIFD:BrightnessValue`).
   - Treat `ExifIFD:ShutterSpeedValue` rewrites as equivalent when
     `ExifIFD:ExposureTime` is unchanged.
   - Keep core capture/user metadata strict by default (`EXIF:*` camera/exposure,

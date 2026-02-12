@@ -27,9 +27,11 @@ final readonly class StrictMetadataVerifier
         'MakerUnknown' => true,
     ];
 
-    private const string SHUTTER_SPEED_TAG     = 'ExifIFD:ShutterSpeedValue';
-    private const string EXPOSURE_TIME_TAG     = 'ExifIFD:ExposureTime';
-    private const string ACR_LOCAL_CORR_PREFIX = 'XMP-crs:MaskGroupBasedCorr';
+    private const string SHUTTER_SPEED_TAG                        = 'ExifIFD:ShutterSpeedValue';
+    private const string EXPOSURE_TIME_TAG                        = 'ExifIFD:ExposureTime';
+    private const string ACR_LOCAL_CORR_PREFIX                    = 'XMP-crs:MaskGroupBasedCorr';
+    private const string ACR_RETOUCH_AREA_PREFIX                  = 'XMP-crs:RetouchArea';
+    private const string PHOTOSHOP_CAMERA_PROFILE_VIGNETTE_PREFIX = 'XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel';
 
     private const array IGNORED_TAGS = [
         'SourceFile' => true,
@@ -45,9 +47,13 @@ final readonly class StrictMetadataVerifier
         // Compression/layout descriptors can differ after transcode even when visual content is intact.
         'ExifIFD:CompressedBitsPerPixel' => true,
         'ExifIFD:ComponentsConfiguration' => true,
+        // BrightnessValue is a derived exposure metric and can be re-normalized by metadata rewrite.
+        'ExifIFD:BrightnessValue' => true,
         // Maker/lens derived calibration numbers are often rewritten with different formatting/precision.
         'ExifIFD:FocalPlaneXResolution' => true,
         'ExifIFD:FocalPlaneYResolution' => true,
+        'ExifIFD:ImageWidth' => true,
+        'ExifIFD:ImageHeight' => true,
         'ExifIFD:ExifImageWidth' => true,
         'ExifIFD:ExifImageHeight' => true,
         'EXIF:ExifImageWidth' => true,
@@ -124,6 +130,16 @@ final readonly class StrictMetadataVerifier
 
         // Adobe Camera Raw local adjustment payload is non-portable across container rewrites.
         if (strpos($tag, self::ACR_LOCAL_CORR_PREFIX) === 0) {
+            return true;
+        }
+
+        // Adobe Camera Raw retouch-area payload is non-portable across container rewrites.
+        if (strpos($tag, self::ACR_RETOUCH_AREA_PREFIX) === 0) {
+            return true;
+        }
+
+        // Photoshop camera-profile vignette calibration payload is non-portable across container rewrites.
+        if (strpos($tag, self::PHOTOSHOP_CAMERA_PROFILE_VIGNETTE_PREFIX) === 0) {
             return true;
         }
 
