@@ -107,6 +107,8 @@ php app.php images:squeeze /path/to/photos [/path2 /path3 ...] [--dry-run] [--fo
 
 Converts JPEGs to HEIC by default (saving alongside originals as `.heic`) and
 archives ARW files per directory as `raws-N.tar.xz`.
+HEIC encode/decode subprocesses run without Symfony's default 60s timeout to
+avoid false failures on large frames.
 
 Parallel mode is optional and applies only to JPEG optimisation. ARW archival
 remains sequential. `--job-timeout` is an inactivity timeout (no worker message

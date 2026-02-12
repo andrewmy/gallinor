@@ -58,7 +58,7 @@ final readonly class HeicCodec implements ImageCodec
         $args[] = $sourcePng;
 
         $process = new Process($args);
-        $process->mustRun();
+        $this->mustRunWithoutTimeout($process);
     }
 
     /** @throws RuntimeException */
@@ -69,6 +69,15 @@ final readonly class HeicCodec implements ImageCodec
             $sourcePath,
             $targetPng,
         ]);
+        $this->mustRunWithoutTimeout($process);
+    }
+
+    /** @throws RuntimeException */
+    private function mustRunWithoutTimeout(Process $process): void
+    {
+        // Large HEIC frames can legitimately exceed Symfony's default 60s timeout.
+        $process->setTimeout(null);
+        $process->setIdleTimeout(null);
         $process->mustRun();
     }
 }
