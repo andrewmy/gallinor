@@ -176,7 +176,7 @@ recycling, completion) does not branch on phase names.
   rationale comment.
   - Ignore only non-portable metadata families (container/runtime/vendor/private
     tags such as `System:*`, `QuickTime:*`, `JSON:*`, `MakerUnknown:*`,
-    `ExifIFD:MakerNoteUnknown*`, `XMP-crs:MaskGroupBasedCorrMaskMasks*`,
+    `ExifIFD:MakerNoteUnknown*`, `XMP-crs:MaskGroupBasedCorr*`,
     vendor XMP blocks, `ExifIFD:Exif_0xNNNN`).
   - Treat `ExifIFD:ShutterSpeedValue` rewrites as equivalent when
     `ExifIFD:ExposureTime` is unchanged.

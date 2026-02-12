@@ -124,5 +124,8 @@ final class StrictMetadataVerifierTest extends TestCase
         yield 'Adobe Camera Raw mask what missing' => ['XMP-crs:MaskGroupBasedCorrMaskMasksWhat', false];
         yield 'Adobe Camera Raw mask active missing' => ['XMP-crs:MaskGroupBasedCorrMaskMasksMaskActive', false];
         yield 'Adobe Camera Raw mask sync id missing' => ['XMP-crs:MaskGroupBasedCorrMaskMasksMaskSyncID', false];
+        yield 'Adobe Camera Raw local grain missing' => ['XMP-crs:MaskGroupBasedCorrLocalGrain', false];
+        yield 'Adobe Camera Raw local corrected depth missing' => ['XMP-crs:MaskGroupBasedCorrLocalCorrectedDepth', false];
+        yield 'Adobe Camera Raw mask error reason missing' => ['XMP-crs:MaskGroupBasedCorrMaskErrorReason', false];
     }
 }

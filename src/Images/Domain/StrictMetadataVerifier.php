@@ -27,9 +27,9 @@ final readonly class StrictMetadataVerifier
         'MakerUnknown' => true,
     ];
 
-    private const string SHUTTER_SPEED_TAG = 'ExifIFD:ShutterSpeedValue';
-    private const string EXPOSURE_TIME_TAG = 'ExifIFD:ExposureTime';
-    private const string ACR_MASK_PREFIX   = 'XMP-crs:MaskGroupBasedCorrMaskMasks';
+    private const string SHUTTER_SPEED_TAG     = 'ExifIFD:ShutterSpeedValue';
+    private const string EXPOSURE_TIME_TAG     = 'ExifIFD:ExposureTime';
+    private const string ACR_LOCAL_CORR_PREFIX = 'XMP-crs:MaskGroupBasedCorr';
 
     private const array IGNORED_TAGS = [
         'SourceFile' => true,
@@ -122,8 +122,8 @@ final readonly class StrictMetadataVerifier
             return true;
         }
 
-        // Adobe Camera Raw local adjustment mask payload is non-portable across container rewrites.
-        if (strpos($tag, self::ACR_MASK_PREFIX) === 0) {
+        // Adobe Camera Raw local adjustment payload is non-portable across container rewrites.
+        if (strpos($tag, self::ACR_LOCAL_CORR_PREFIX) === 0) {
             return true;
         }
 
