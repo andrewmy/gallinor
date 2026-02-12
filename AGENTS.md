@@ -108,6 +108,8 @@ before QC. Optimized outputs bake rotation into pixels and force
 Orientation=1 in metadata to avoid viewer inconsistencies.
 ExifTool metadata-write steps retry once on transient temp-file write/rename
 errors and include ExifTool stderr in thrown error messages for diagnosis.
+Metadata read/write invocations use ExifTool `-m` mode to tolerate minor
+vendor-parser warnings.
 
 **AQ note**: Video NVENC `-aq-strength` is NVENC-specific and unrelated to x265
 `aq-strength` (0.0–3.0). Image HEIC encoding uses libheif + x265 params via

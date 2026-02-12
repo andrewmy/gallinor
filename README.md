@@ -160,7 +160,9 @@ may already include verifier compatibility rules.
 
 If an ExifTool write step fails (for example while forcing `Orientation=1` on
 HEIC), Gallinor now retries once for transient temp-file write/rename errors
-and surfaces ExifTool stderr directly in the CLI error message.
+and surfaces ExifTool stderr directly in the CLI error message. ExifTool
+read/write metadata operations also use minor-error mode (`-m`) to tolerate
+non-critical parser warnings in vendor blocks.
 
 ## Development
 

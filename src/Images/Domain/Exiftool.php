@@ -83,6 +83,7 @@ final readonly class Exiftool implements ExifMetadata
         $this->runWriteCommand(
             [
                 $this->exiftoolPath,
+                '-m',
                 '-overwrite_original',
                 '-P',
                 '-tagsFromFile',
@@ -138,6 +139,7 @@ final readonly class Exiftool implements ExifMetadata
     {
         $process = new Process([
             $this->exiftoolPath,
+            '-m',
             '-G1',
             '-a',
             '-u',

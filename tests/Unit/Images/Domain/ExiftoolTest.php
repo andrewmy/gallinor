@@ -13,6 +13,7 @@ use function chmod;
 use function file_exists;
 use function file_get_contents;
 use function file_put_contents;
+use function is_array;
 use function mkdir;
 use function rmdir;
 use function scandir;
@@ -133,6 +134,38 @@ PHP,
         ));
 
         $exiftool->forceOrientationTo1($target);
+    }
+
+    public function test_metadata_map_uses_minor_error_mode_and_returns_json_map(): void
+    {
+        $toolPath = $this->createFakeExiftool(
+            'fake-exiftool-metadata.php',
+            <<<'PHP'
+#!/usr/bin/env php
+<?php
+if (in_array('-json', $argv, true)) {
+    if (! in_array('-m', $argv, true)) {
+        fwrite(STDERR, "Error: missing -m\n");
+        exit(1);
+    }
+
+    fwrite(STDOUT, '[{"SourceFile":"/tmp/source.heic","EXIF:Make":"samsung"}]');
+    exit(0);
+}
+
+fwrite(STDOUT, "    1 image files updated\n");
+PHP,
+        );
+
+        $platform = new StubPlatform();
+        $platform->setTool('exiftool', $toolPath);
+
+        $exiftool = new Exiftool($platform);
+        $map      = $exiftool->metadataMap('/tmp/source.heic');
+
+        self::assertTrue(is_array($map));
+        self::assertSame('/tmp/source.heic', $map['SourceFile']);
+        self::assertSame('samsung', $map['EXIF:Make']);
     }
 
     private function createFakeExiftool(string $name, string $body): string
