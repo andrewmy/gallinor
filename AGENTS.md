@@ -227,9 +227,11 @@ other timing buckets.
     `ExifIFD:MakerNoteUnknown*`, `XMP-crs:MaskGroupBasedCorr*`,
     `XMP-crs:RetouchArea*`,
     `XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel*`,
+    `XMP-alienexposure:*`,
     `Samsung:*`,
     vendor XMP blocks, `ExifIFD:Exif_0xNNNN`,
-    dimension projection tags (`ExifIFD:ImageWidth`, `ExifIFD:ImageHeight`),
+    dimension projection tags (`ExifIFD:ImageWidth`, `ExifIFD:ImageHeight`,
+    `XMP-tiff:ImageWidth`, `XMP-tiff:ImageHeight`),
     and derived brightness metric (`ExifIFD:BrightnessValue`).
   - Treat `ExifIFD:ShutterSpeedValue` rewrites as equivalent when
     `ExifIFD:ExposureTime` is unchanged.

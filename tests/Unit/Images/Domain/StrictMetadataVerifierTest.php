@@ -135,5 +135,8 @@ final class StrictMetadataVerifierTest extends TestCase
         yield 'Adobe Camera Raw retouch blend mode missing' => ['XMP-crs:RetouchAreaBlendMode', false];
         yield 'Photoshop camera profile vignette x center missing' => ['XMP-photoshop:CameraProfilesPerspectiveModelVignetteModelImageXCenter', false];
         yield 'Photoshop camera profile vignette piecewise missing' => ['XMP-photoshop:CameraProfilesPerspectiveModelVignetteModelVignetteModelPiecewiseParam', false];
+        yield 'Alien Exposure virtual paths missing' => ['XMP-alienexposure:Virtualpaths', false];
+        yield 'XMP TIFF image width missing' => ['XMP-tiff:ImageWidth', false];
+        yield 'XMP TIFF image height missing' => ['XMP-tiff:ImageHeight', false];
     }
 }

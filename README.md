@@ -151,15 +151,16 @@ Gallinor verifies metadata after image conversion. If you see
 
 - Usually non-portable across container rewrite (often safe to ignore in future
   releases): `System:*`, `QuickTime:*`, `JSON:*`, vendor XMP blocks (for
-  example `XMP-MiCamera:*`), maker-note projection tags
+  example `XMP-MiCamera:*`, `XMP-alienexposure:*`), maker-note projection tags
   (`MakerUnknown:Unknown_0xNNNN`, `ExifIFD:MakerNoteUnknown*`), Adobe Camera
   Raw local-correction/retouch tags (`XMP-crs:MaskGroupBasedCorr*`,
   `XMP-crs:RetouchArea*`), Photoshop camera-profile vignette tags
   (`XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel*`), and private
   EXIF tags like `ExifIFD:Exif_0xNNNN`. Dimension projection tags
-  (`ExifIFD:ImageWidth`, `ExifIFD:ImageHeight`) and derived brightness metric
-  (`ExifIFD:BrightnessValue`) are also treated as non-portable. Samsung
-  trailer/vendor tags (`Samsung:*`) are treated as non-portable as well.
+  (`ExifIFD:ImageWidth`, `ExifIFD:ImageHeight`, `XMP-tiff:ImageWidth`,
+  `XMP-tiff:ImageHeight`) and derived brightness metric (`ExifIFD:BrightnessValue`)
+  are also treated as non-portable. Samsung trailer/vendor tags (`Samsung:*`)
+  are treated as non-portable as well.
 - `ExifIFD:ShutterSpeedValue` can be rewritten with different numeric
   representation when `ExifIFD:ExposureTime` is preserved; Gallinor treats this
   pair as equivalent capture metadata.

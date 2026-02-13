@@ -34,6 +34,7 @@ final readonly class StrictMetadataVerifier
     private const string ACR_LOCAL_CORR_PREFIX                    = 'XMP-crs:MaskGroupBasedCorr';
     private const string ACR_RETOUCH_AREA_PREFIX                  = 'XMP-crs:RetouchArea';
     private const string PHOTOSHOP_CAMERA_PROFILE_VIGNETTE_PREFIX = 'XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel';
+    private const string ALIEN_EXPOSURE_XMP_PREFIX                = 'XMP-alienexposure:';
 
     private const array IGNORED_TAGS = [
         'SourceFile' => true,
@@ -78,6 +79,9 @@ final readonly class StrictMetadataVerifier
         // stored by Lightroom/ACR. These are non-portable editing parameters, not capture metadata.
         'XMP-crs:MaskGroupBasedCorrMaskMasksDabs' => true,
         'XMP-crs:MaskGroupBasedCorrMaskMasksWhat' => true,
+        // XMP TIFF dimensions are projection metadata and can be dropped/recomputed during container rewrite.
+        'XMP-tiff:ImageWidth' => true,
+        'XMP-tiff:ImageHeight' => true,
     ];
 
     /**
@@ -142,6 +146,11 @@ final readonly class StrictMetadataVerifier
 
         // Photoshop camera-profile vignette calibration payload is non-portable across container rewrites.
         if (strpos($tag, self::PHOTOSHOP_CAMERA_PROFILE_VIGNETTE_PREFIX) === 0) {
+            return true;
+        }
+
+        // Alien Exposure vendor XMP block stores editor-local state and is non-portable across container rewrites.
+        if (strpos($tag, self::ALIEN_EXPOSURE_XMP_PREFIX) === 0) {
             return true;
         }
 
