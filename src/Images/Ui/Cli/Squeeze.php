@@ -173,11 +173,22 @@ final class Squeeze extends Command
             )
             : $this->processJpegs($output, $collection->jpegs, $optimizer, $codec);
 
-        $arwResult = $this->archiveArws($output, $collection, $rawArchiver);
+        $archivingStart = microtime(true);
+        $arwResult      = $this->archiveArws($output, $collection, $rawArchiver);
+        $archivingTime  = microtime(true) - $archivingStart;
 
         $endTime = microtime(true);
 
-        $this->printSummaries($output, $collection, $jpegResult, $arwResult, $startTime, $gatherTime, $endTime);
+        $this->printSummaries(
+            $output,
+            $collection,
+            $jpegResult,
+            $arwResult,
+            $startTime,
+            $gatherTime,
+            $endTime,
+            $archivingTime,
+        );
 
         return self::SUCCESS;
     }
@@ -344,6 +355,7 @@ final class Squeeze extends Command
         float $startTime,
         float $gatherTime,
         float $endTime,
+        float $archivingTime,
     ): void {
         $output->writeln('');
 
@@ -376,7 +388,7 @@ final class Squeeze extends Command
         $this->timing
             ->withGather($gatherTime - $startTime)
             ->withQc($jpegResult->totalQcTime())
-            ->withArchiving($endTime - $gatherTime - $jpegResult->totalQcTime())
+            ->withArchiving($archivingTime)
             ->withTotal($this->timing->initSeconds() + $endTime - $startTime)
             ->print($output);
     }

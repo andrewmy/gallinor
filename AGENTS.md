@@ -147,6 +147,10 @@ These phase/status payload fields are currently for operator visibility only
 (progress/panel output). Orchestration control flow (timeouts, retries, worker
 recycling, completion) does not branch on phase names.
 
+**Timing accounting**: `images:squeeze` reports archiving time using direct
+wall-clock measurement around ARW archival, not derived residual math from
+other timing buckets.
+
 ### Important Constraints
 
 - **PHP 8.5+ only** - Uses modern PHP features extensively
