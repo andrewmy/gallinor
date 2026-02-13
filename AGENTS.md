@@ -141,6 +141,9 @@ via
 Adaptive ramp runtime state in orchestrator is carried by DTO
 `src/Images/Ui/Cli/Parallel/AdaptiveConcurrencyState.php` (avoid untyped
 array/hash state in hot loop logic).
+When stopping workers through `ProcessPool::tryQuitProcess()`, only issue quit
+for workers that already completed HELLO/bind; pre-HELLO quit can trigger
+EasyParallel encoder-initialization fatals.
 Use Symfony verbosity flags for worker-pool tracing:
 `-v` (lifecycle), `-vv` (dispatch/requeue details), `-vvv` (status-frame level).
 At `-vv` and above, both parallel commands also render a live per-worker status

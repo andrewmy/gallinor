@@ -297,6 +297,39 @@ final readonly class ParallelWorkerPoolOrchestrator
             throw new RuntimeException(sprintf('Invalid worker server address: %s', $address));
         }
 
+        $tryQuitWorker = static function (string $workerId, string $reason = '') use (&$workers, $processPool, $traceEvent): void {
+            if (! isset($workers[$workerId])) {
+                return;
+            }
+
+            if (! $workers[$workerId]['connected']) {
+                $traceEvent(
+                    OutputInterface::VERBOSITY_DEBUG,
+                    sprintf(
+                        '[parallel] skip quit for %s before HELLO%s',
+                        $workerId,
+                        $reason !== '' ? sprintf(' (%s)', $reason) : '',
+                    ),
+                );
+
+                return;
+            }
+
+            try {
+                $processPool->tryQuitProcess($workerId);
+            } catch (Throwable $throwable) {
+                $traceEvent(
+                    OutputInterface::VERBOSITY_VERBOSE,
+                    sprintf(
+                        '[parallel] quit failed for %s%s: %s',
+                        $workerId,
+                        $reason !== '' ? sprintf(' (%s)', $reason) : '',
+                        $throwable->getMessage(),
+                    ),
+                );
+            }
+        };
+
         $retryOrFail = static function (
             array $job,
             string $message,
@@ -351,6 +384,7 @@ final readonly class ParallelWorkerPoolOrchestrator
             &$inFlight,
             &$systemErrors,
             $processPool,
+            $tryQuitWorker,
             $buildRequestPayload,
             $traceEvent,
             $jobId,
@@ -385,7 +419,7 @@ final readonly class ParallelWorkerPoolOrchestrator
                 $systemErrors++;
                 $pendingJobs[]                      = $job;
                 $workers[$workerId]['expectedStop'] = true;
-                $processPool->tryQuitProcess($workerId);
+                $tryQuitWorker($workerId, 'dispatch-failed');
                 $traceEvent(
                     OutputInterface::VERBOSITY_VERBOSE,
                     sprintf('[parallel] dispatch failed %s -> %s: %s', $jobId($job), $workerId, $throwable->getMessage()),
@@ -419,6 +453,7 @@ final readonly class ParallelWorkerPoolOrchestrator
             &$spawnWorker,
             $dispatchIfPossible,
             $processPool,
+            $tryQuitWorker,
             $buildWorkerCommand,
             $handlePayload,
             $retryOrFail,
@@ -452,7 +487,7 @@ final readonly class ParallelWorkerPoolOrchestrator
                     &$requestedWorkers,
                     &$spawnWorker,
                     $dispatchIfPossible,
-                    $processPool,
+                    $tryQuitWorker,
                     $handlePayload,
                     $traceEvent,
                     $jobId,
@@ -523,7 +558,7 @@ final readonly class ParallelWorkerPoolOrchestrator
                         }
 
                         $workers[$workerId]['expectedStop'] = true;
-                        $processPool->tryQuitProcess($workerId);
+                        $tryQuitWorker($workerId, 'worker-max-jobs');
 
                         return;
                     }
@@ -535,7 +570,7 @@ final readonly class ParallelWorkerPoolOrchestrator
                     &$workers,
                     &$inFlight,
                     &$systemErrors,
-                    $processPool,
+                    $tryQuitWorker,
                     $retryOrFail,
                     $traceEvent,
                     $updateWorker,
@@ -558,7 +593,7 @@ final readonly class ParallelWorkerPoolOrchestrator
                     }
 
                     $workers[$workerId]['expectedStop'] = true;
-                    $processPool->tryQuitProcess($workerId);
+                    $tryQuitWorker($workerId, 'runtime-error');
                 },
                 static function (
                     $exitCode,
@@ -571,7 +606,6 @@ final readonly class ParallelWorkerPoolOrchestrator
                     &$systemErrors,
                     &$requestedWorkers,
                     &$spawnWorker,
-                    $processPool,
                     $retryOrFail,
                     $traceEvent,
                     $updateWorker,
@@ -602,13 +636,10 @@ final readonly class ParallelWorkerPoolOrchestrator
                     unset($workers[$workerId]);
 
                     if ($pendingJobs === [] || count($workers) >= $requestedWorkers) {
-                        $processPool->tryQuitProcess($workerId);
-
                         return;
                     }
 
                     $spawnWorker();
-                    $processPool->tryQuitProcess($workerId);
                 },
             );
 
@@ -685,11 +716,11 @@ final readonly class ParallelWorkerPoolOrchestrator
             &$requestedWorkers,
             &$spawnWorker,
             $dispatchIfPossible,
+            $tryQuitWorker,
             &$completedJobs,
             $totalJobs,
             $loop,
             $tcpServer,
-            $processPool,
             $retryOrFail,
             $onJobTerminalFailure,
             $progressBar,
@@ -719,7 +750,7 @@ final readonly class ParallelWorkerPoolOrchestrator
                     }
 
                     $workers[$workerId]['expectedStop'] = true;
-                    $processPool->tryQuitProcess($workerId);
+                    $tryQuitWorker($workerId, 'timeout');
                 }
             }
 
@@ -753,7 +784,7 @@ final readonly class ParallelWorkerPoolOrchestrator
                 );
 
                 foreach (array_keys($workers) as $workerId) {
-                    $processPool->tryQuitProcess($workerId);
+                    $tryQuitWorker($workerId, 'system-error-limit');
                 }
 
                 $tcpServer->close();
@@ -768,7 +799,7 @@ final readonly class ParallelWorkerPoolOrchestrator
                     sprintf('[parallel] all jobs completed (%d/%d)', $completedJobs, $totalJobs),
                 );
                 foreach (array_keys($workers) as $workerId) {
-                    $processPool->tryQuitProcess($workerId);
+                    $tryQuitWorker($workerId, 'all-jobs-complete');
                 }
 
                 $tcpServer->close();
