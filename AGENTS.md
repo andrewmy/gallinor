@@ -144,6 +144,9 @@ array/hash state in hot loop logic).
 When stopping workers through `ProcessPool::tryQuitProcess()`, only issue quit
 for workers that already completed HELLO/bind; pre-HELLO quit can trigger
 EasyParallel encoder-initialization fatals.
+Worker startup/bind robustness: unconnected workers are recycled after a
+connect-timeout window, and HELLO bind failures remove the worker from the live
+set so deficit-respawn logic can recover instead of stalling progress.
 Use Symfony verbosity flags for worker-pool tracing:
 `-v` (lifecycle), `-vv` (dispatch/requeue details), `-vvv` (status-frame level).
 At `-vv` and above, both parallel commands also render a live per-worker status

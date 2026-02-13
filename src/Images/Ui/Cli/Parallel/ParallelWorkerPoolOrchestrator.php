@@ -46,6 +46,7 @@ final readonly class ParallelWorkerPoolOrchestrator
     private const int SYSTEM_ERROR_LIMIT                   = 50;
     private const int STATUS_FRAME_MAX_BYTES               = 4 * 1024 * 1024;
     private const int WORKER_TICK_SECONDS                  = 1;
+    private const int WORKER_CONNECT_TIMEOUT_SECONDS       = 20;
     private const int ADAPTIVE_WINDOW_COMPLETIONS          = 12;
     private const float ADAPTIVE_MIN_THROUGHPUT_GAIN_RATIO = 0.03;
 
@@ -279,7 +280,8 @@ final readonly class ParallelWorkerPoolOrchestrator
          * @var array<string, array{
          *   connected: bool,
          *   expectedStop: bool,
-         *   jobsProcessed: int
+         *   jobsProcessed: int,
+         *   spawnedAt: float
          * }> $workers
          */
         $workers = [];
@@ -648,6 +650,7 @@ final readonly class ParallelWorkerPoolOrchestrator
                 'connected'     => false,
                 'expectedStop'  => false,
                 'jobsProcessed' => 0,
+                'spawnedAt'     => microtime(true),
             ];
 
             return $workerId;
@@ -675,8 +678,14 @@ final readonly class ParallelWorkerPoolOrchestrator
                 $updateWorker($workerId, 'ready');
                 try {
                     $processPool->getProcess($workerId)->bindConnection($decoder, $encoder);
-                } catch (Throwable) {
+                } catch (Throwable $throwable) {
                     $systemErrors++;
+                    $traceEvent(
+                        OutputInterface::VERBOSITY_VERBOSE,
+                        sprintf('[parallel] worker bind failed %s: %s', $workerId, $throwable->getMessage()),
+                    );
+                    $updateWorker($workerId, 'bind-failed');
+                    unset($workers[$workerId]);
 
                     return;
                 }
@@ -752,6 +761,28 @@ final readonly class ParallelWorkerPoolOrchestrator
                     $workers[$workerId]['expectedStop'] = true;
                     $tryQuitWorker($workerId, 'timeout');
                 }
+            }
+
+            foreach (array_keys($workers) as $workerId) {
+                if ($workers[$workerId]['connected']) {
+                    continue;
+                }
+
+                if ($now - $workers[$workerId]['spawnedAt'] <= self::WORKER_CONNECT_TIMEOUT_SECONDS) {
+                    continue;
+                }
+
+                $systemErrors++;
+                $traceEvent(
+                    OutputInterface::VERBOSITY_VERBOSE,
+                    sprintf(
+                        '[parallel] worker connect timeout %s after %ds',
+                        $workerId,
+                        self::WORKER_CONNECT_TIMEOUT_SECONDS,
+                    ),
+                );
+                $updateWorker($workerId, 'connect-timeout');
+                unset($workers[$workerId]);
             }
 
             if ($pendingJobs !== [] && count($workers) < $requestedWorkers) {
