@@ -19,8 +19,10 @@ use function is_string;
 use function json_decode;
 use function json_encode;
 use function preg_match;
+use function realpath;
 use function sprintf;
 use function str_contains;
+use function str_replace;
 use function strtolower;
 use function trim;
 use function usleep;
@@ -85,33 +87,38 @@ final readonly class Exiftool implements ExifMetadata
     /** Copy metadata from one file to another (overwrites destination metadata). */
     public function copyAllMetadata(string $from, string $to): void
     {
+        $sourcePath      = $this->normalizePathArgument($from, mustExist: true);
+        $destinationPath = $this->normalizePathArgument($to, mustExist: true);
+
         $this->runWriteCommand(
             [
                 '-m',
                 '-overwrite_original',
                 '-P',
                 '-tagsFromFile',
-                $from,
+                $sourcePath,
                 '-all:all',
-                $to,
+                $destinationPath,
             ],
-            sprintf('copy metadata from %s to %s', $from, $to),
-            pathArguments: [$from, $to],
+            sprintf('copy metadata from %s to %s', $sourcePath, $destinationPath),
+            pathArguments: [$sourcePath, $destinationPath],
         );
     }
 
     public function forceOrientationTo1(string $path): void
     {
+        $targetPath = $this->normalizePathArgument($path, mustExist: true);
+
         $this->runWriteCommand(
             [
                 '-m',
                 '-overwrite_original',
                 '-n',
                 '-Orientation=1',
-                $path,
+                $targetPath,
             ],
-            sprintf('set Orientation=1 for %s', $path),
-            pathArguments: [$path],
+            sprintf('set Orientation=1 for %s', $targetPath),
+            pathArguments: [$targetPath],
         );
     }
 
@@ -120,6 +127,8 @@ final readonly class Exiftool implements ExifMetadata
      */
     public function deleteDerivedDimensionTags(string $path): void
     {
+        $targetPath = $this->normalizePathArgument($path, mustExist: true);
+
         $this->runWriteCommand(
             [
                 '-overwrite_original',
@@ -127,11 +136,11 @@ final readonly class Exiftool implements ExifMetadata
                 '-ExifImageHeight=',
                 '-ImageWidth=',
                 '-ImageHeight=',
-                $path,
+                $targetPath,
             ],
-            sprintf('delete derived dimension tags for %s', $path),
+            sprintf('delete derived dimension tags for %s', $targetPath),
             throwOnFailure: false,
-            pathArguments: [$path],
+            pathArguments: [$targetPath],
         );
     }
 
@@ -307,6 +316,25 @@ final readonly class Exiftool implements ExifMetadata
         }
 
         return true;
+    }
+
+    private function normalizePathArgument(string $path, bool $mustExist): string
+    {
+        if (! $this->platform->isWindows()) {
+            return $path;
+        }
+
+        $normalizedPath = str_replace('/', '\\', $path);
+        if (! $mustExist) {
+            return $normalizedPath;
+        }
+
+        $resolvedPath = realpath($normalizedPath);
+        if (is_string($resolvedPath)) {
+            return $resolvedPath;
+        }
+
+        return $normalizedPath;
     }
 
     private function isTransientWriteFailure(string $stdout, string $stderr): bool

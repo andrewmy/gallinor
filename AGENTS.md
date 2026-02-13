@@ -115,6 +115,8 @@ vendor-parser warnings.
 ExifTool filename charset on Windows is selected adaptively:
 use `-charset filename=UTF8` only when input paths are valid UTF-8; otherwise
 omit charset override to preserve legacy codepage paths.
+For ExifTool write operations on Windows, file paths are normalized to native
+separators and resolved through `realpath()` when possible before invocation.
 
 **AQ note**: Video NVENC `-aq-strength` is NVENC-specific and unrelated to x265
 `aq-strength` (0.0–3.0). Image HEIC encoding uses libheif + x265 params via

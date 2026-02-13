@@ -198,6 +198,44 @@ PHP,
         self::assertTrue(true);
     }
 
+    public function test_copy_all_metadata_normalizes_windows_path_separators(): void
+    {
+        $toolPath = $this->createFakeExiftool(
+            'fake-exiftool-copy-separators.php',
+            <<<'PHP'
+#!/usr/bin/env php
+<?php
+$fromIndex = array_search('-tagsFromFile', $argv, true);
+$fromPath = $fromIndex === false ? null : ($argv[$fromIndex + 1] ?? null);
+$toPath = $argv[count($argv) - 1] ?? null;
+
+if (! is_string($fromPath) || ! is_string($toPath)) {
+    fwrite(STDERR, "Error: missing copy paths\n");
+    exit(1);
+}
+
+if (str_contains($fromPath, '/') || str_contains($toPath, '/')) {
+    fwrite(STDERR, "Error: path separators were not normalized\n");
+    exit(1);
+}
+
+fwrite(STDOUT, "    1 image files updated\n");
+PHP,
+        );
+
+        $platform            = new StubPlatform();
+        $platform->isWindows = true;
+        $platform->setTool('exiftool', $toolPath);
+
+        $exiftool = new Exiftool($platform);
+        $exiftool->copyAllMetadata(
+            'C:/Users/andre/OneDrive/Pictures/source.avif',
+            'C:/Users/andre/OneDrive/Pictures/target.heic',
+        );
+
+        self::assertTrue(true);
+    }
+
     public function test_metadata_map_uses_minor_error_mode_and_returns_json_map(): void
     {
         $toolPath = $this->createFakeExiftool(
