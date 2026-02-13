@@ -10,6 +10,7 @@ use RuntimeException;
 use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
 
+use function array_merge;
 use function explode;
 use function is_array;
 use function is_numeric;
@@ -49,8 +50,7 @@ final readonly class Exiftool implements ExifMetadata
      */
     public function orientation(string $path): int
     {
-        $process = new Process([
-            $this->exiftoolPath,
+        $process = new Process($this->command([
             '-m',
             '-s',
             '-s',
@@ -58,7 +58,7 @@ final readonly class Exiftool implements ExifMetadata
             '-n',
             '-Orientation#',
             $path,
-        ]);
+        ]));
         $process->run();
 
         if (! $process->isSuccessful()) {
@@ -83,7 +83,6 @@ final readonly class Exiftool implements ExifMetadata
     {
         $this->runWriteCommand(
             [
-                $this->exiftoolPath,
                 '-m',
                 '-overwrite_original',
                 '-P',
@@ -100,7 +99,6 @@ final readonly class Exiftool implements ExifMetadata
     {
         $this->runWriteCommand(
             [
-                $this->exiftoolPath,
                 '-m',
                 '-overwrite_original',
                 '-n',
@@ -118,7 +116,6 @@ final readonly class Exiftool implements ExifMetadata
     {
         $this->runWriteCommand(
             [
-                $this->exiftoolPath,
                 '-overwrite_original',
                 '-ExifImageWidth=',
                 '-ExifImageHeight=',
@@ -138,8 +135,7 @@ final readonly class Exiftool implements ExifMetadata
      */
     public function metadataMap(string $path): array
     {
-        $process = new Process([
-            $this->exiftoolPath,
+        $process = new Process($this->command([
             '-m',
             '-G1',
             '-a',
@@ -147,7 +143,7 @@ final readonly class Exiftool implements ExifMetadata
             '-s',
             '-json',
             $path,
-        ]);
+        ]));
         $process->mustRun();
 
         try {
@@ -193,8 +189,7 @@ final readonly class Exiftool implements ExifMetadata
     /** @return array<string, true> Filenames (with path) to skip */
     public function findPortraitAndLivePhotos(string $dir): array
     {
-        $process = new Process([
-            $this->exiftoolPath,
+        $process = new Process($this->command([
             '-if',
             '$DepthMapData or $EmbeddedVideoFile',
             '-p',
@@ -204,7 +199,7 @@ final readonly class Exiftool implements ExifMetadata
             '-ext',
             'jpeg',
             $dir,
-        ]);
+        ]));
         $process->run();
 
         if (! $process->isSuccessful()) {
@@ -233,7 +228,7 @@ final readonly class Exiftool implements ExifMetadata
     private function runWriteCommand(array $command, string $operation, bool $throwOnFailure = true): void
     {
         for ($attempt = 1; $attempt <= self::WRITE_MAX_ATTEMPTS; $attempt++) {
-            $process = new Process($command);
+            $process = new Process($this->command($command));
 
             try {
                 $process->mustRun();
@@ -259,6 +254,26 @@ final readonly class Exiftool implements ExifMetadata
                 );
             }
         }
+    }
+
+    /**
+     * Keep filename decoding deterministic across platforms.
+     * ExifTool on Windows can misread UTF-8 paths unless filename charset is explicit.
+     *
+     * @param list<string> $arguments
+     *
+     * @return list<string>
+     */
+    private function command(array $arguments): array
+    {
+        return array_merge(
+            [
+                $this->exiftoolPath,
+                '-charset',
+                'filename=UTF8',
+            ],
+            $arguments,
+        );
     }
 
     private function isTransientWriteFailure(string $stdout, string $stderr): bool

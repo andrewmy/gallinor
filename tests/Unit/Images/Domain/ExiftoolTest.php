@@ -136,6 +136,36 @@ PHP,
         $exiftool->forceOrientationTo1($target);
     }
 
+    public function test_copy_all_metadata_uses_utf8_filename_charset(): void
+    {
+        $toolPath = $this->createFakeExiftool(
+            'fake-exiftool-copy-charset.php',
+            <<<'PHP'
+#!/usr/bin/env php
+<?php
+$charsetIndex = array_search('-charset', $argv, true);
+$charsetValue = $charsetIndex === false ? null : ($argv[$charsetIndex + 1] ?? null);
+if ($charsetValue !== 'filename=UTF8') {
+    fwrite(STDERR, "Error: missing filename charset\n");
+    exit(1);
+}
+
+fwrite(STDOUT, "    1 image files updated\n");
+PHP,
+        );
+
+        $platform = new StubPlatform();
+        $platform->setTool('exiftool', $toolPath);
+
+        $exiftool = new Exiftool($platform);
+        $exiftool->copyAllMetadata(
+            '/tmp/Laucu — avif.avif',
+            '/tmp/Laucu — heic.heic',
+        );
+
+        self::assertTrue(true);
+    }
+
     public function test_metadata_map_uses_minor_error_mode_and_returns_json_map(): void
     {
         $toolPath = $this->createFakeExiftool(
