@@ -151,6 +151,10 @@ Workers are marked connected only after `bindConnection()` succeeds (not on
 HELLO receipt alone), and unexpected worker exits count as system errors even
 when the process exit code is `null` (important on Windows where `null` exits
 can otherwise cause endless respawn loops without progress).
+Worker/master NDJSON payload serialization is centralized in
+`src/Images/Ui/Cli/Parallel/ParallelJsonEncoder.php` and uses
+`JSON_INVALID_UTF8_SUBSTITUTE` to tolerate non-UTF-8 bytes from tool stderr on
+Windows (preventing worker crash at message encode).
 Use Symfony verbosity flags for worker-pool tracing:
 `-v` (lifecycle), `-vv` (dispatch/requeue details), `-vvv` (status-frame level).
 At `-vv` and above, both parallel commands also render a live per-worker status

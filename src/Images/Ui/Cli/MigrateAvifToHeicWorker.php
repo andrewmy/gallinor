@@ -13,6 +13,7 @@ use App\Images\Domain\ImageOptimizer;
 use App\Images\Domain\LibAvifTools;
 use App\Images\Domain\Ssimulacra2;
 use App\Images\Domain\StrictMetadataVerifier;
+use App\Images\Ui\Cli\Parallel\ParallelJsonEncoder;
 use App\Images\Ui\Cli\Parallel\ParallelTempDirectoryManager;
 use App\Shared\Domain\Platform;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -32,7 +33,6 @@ use function is_array;
 use function is_resource;
 use function is_string;
 use function json_decode;
-use function json_encode;
 use function putenv;
 use function sprintf;
 use function stream_socket_client;
@@ -40,7 +40,6 @@ use function trim;
 use function usleep;
 
 use const DIRECTORY_SEPARATOR;
-use const JSON_THROW_ON_ERROR;
 
 #[AsCommand(name: 'images:migrate-avif-to-heic:worker', description: 'Internal worker for images:migrate-avif-to-heic parallel mode', hidden: true)]
 final class MigrateAvifToHeicWorker extends Command
@@ -274,7 +273,7 @@ final class MigrateAvifToHeicWorker extends Command
      */
     private function writeMessage($socket, array $payload): void
     {
-        $json = json_encode($payload, JSON_THROW_ON_ERROR);
+        $json = ParallelJsonEncoder::encode($payload);
         fwrite($socket, $json . "\n");
     }
 

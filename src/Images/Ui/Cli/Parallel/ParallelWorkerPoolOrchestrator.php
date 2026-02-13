@@ -31,7 +31,6 @@ use function is_float;
 use function is_int;
 use function is_object;
 use function is_string;
-use function json_encode;
 use function max;
 use function microtime;
 use function parse_url;
@@ -42,7 +41,6 @@ use function strtok;
 use function substr;
 use function trim;
 
-use const JSON_THROW_ON_ERROR;
 use const PHP_URL_PORT;
 
 final readonly class ParallelWorkerPoolOrchestrator
@@ -927,6 +925,6 @@ final readonly class ParallelWorkerPoolOrchestrator
             return $id;
         }
 
-        return json_encode($job, JSON_THROW_ON_ERROR);
+        return ParallelJsonEncoder::encode($job);
     }
 }
