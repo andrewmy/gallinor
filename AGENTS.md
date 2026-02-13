@@ -137,6 +137,8 @@ Use Symfony verbosity flags for worker-pool tracing:
 `-v` (lifecycle), `-vv` (dispatch/requeue details), `-vvv` (status-frame level).
 At `-vv` and above, both parallel commands also render a live per-worker status
 panel below the progress bar when the terminal supports console sections.
+In panel mode, trace updates are coalesced with worker-state refreshes to avoid
+trace-only redraw spam (for example repeated `Workers` headers at `-vvv`).
 Worker status phases exposed in telemetry are:
 `prepare -> encode -> decode -> score -> decision -> finalize -> metadata`.
 These phase/status payload fields are currently for operator visibility only
@@ -214,8 +216,8 @@ Smoke tests are intentionally excluded from the default `just ci` suite.
 
 ### Current Status
 
-**Unit suite (`just ci` / `just test`)**: 121 tests — passing, with 6
-incomplete tests and 1 warning (as of 2026-02-09)
+**Unit suite (`just ci` / `just test`)**: 138 tests — passing, with 6
+incomplete tests and 1 warning (as of 2026-02-12)
 
 **Smoke suite (`just smoke`)**: 5 tests with real CLI invocations; environment
 dependent and may skip when toolchain/localhost IPC is unavailable.
@@ -236,6 +238,7 @@ dependent and may skip when toolchain/localhost IPC is unavailable.
 - `JobRetryPolicy` — one-time requeue behavior
 - `ParallelWorkerPayloadHandler` — worker message parsing and batch mutation
 - `ParallelTempDirectoryManager` — temp dir creation/pruning/removal
+- `ParallelConsoleTelemetry` — panel redraw behavior and trace coalescing
 
 ### Not Yet Testable (blocked by `final` classes)
 

@@ -42,7 +42,8 @@ final class ParallelConsoleTelemetry
 
         if ($this->isPanelMode()) {
             $this->lastTrace = $message;
-            $this->renderPanel();
+            // Avoid panel redraw storms from verbose trace-only events.
+            // The panel is refreshed on worker state changes and finish().
 
             return;
         }
@@ -127,6 +128,10 @@ final class ParallelConsoleTelemetry
     {
         $statusSection = $this->statusSection;
         if ($statusSection === null) {
+            return;
+        }
+
+        if (! $force && $this->workerStates === []) {
             return;
         }
 

@@ -116,6 +116,8 @@ for that job). Use `-v`/`-vv`/`-vvv` to print worker-pool lifecycle and
 dispatch tracing while the progress bar is running. At `-vv` and above, Gallinor
 also shows a live per-worker status panel under the progress bar (when running
 in an ANSI/TTY console; otherwise it falls back to plain trace lines).
+In panel mode, trace updates are coalesced with worker-status refreshes to
+avoid trace-only redraw spam.
 
 Worker status phase map (panel/trace view):
 
