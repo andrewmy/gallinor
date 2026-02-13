@@ -18,6 +18,7 @@ use function is_scalar;
 use function is_string;
 use function json_decode;
 use function json_encode;
+use function preg_match;
 use function sprintf;
 use function str_contains;
 use function strtolower;
@@ -50,15 +51,18 @@ final readonly class Exiftool implements ExifMetadata
      */
     public function orientation(string $path): int
     {
-        $process = new Process($this->command([
-            '-m',
-            '-s',
-            '-s',
-            '-s',
-            '-n',
-            '-Orientation#',
-            $path,
-        ]));
+        $process = new Process($this->command(
+            [
+                '-m',
+                '-s',
+                '-s',
+                '-s',
+                '-n',
+                '-Orientation#',
+                $path,
+            ],
+            [$path],
+        ));
         $process->run();
 
         if (! $process->isSuccessful()) {
@@ -92,6 +96,7 @@ final readonly class Exiftool implements ExifMetadata
                 $to,
             ],
             sprintf('copy metadata from %s to %s', $from, $to),
+            pathArguments: [$from, $to],
         );
     }
 
@@ -106,6 +111,7 @@ final readonly class Exiftool implements ExifMetadata
                 $path,
             ],
             sprintf('set Orientation=1 for %s', $path),
+            pathArguments: [$path],
         );
     }
 
@@ -125,6 +131,7 @@ final readonly class Exiftool implements ExifMetadata
             ],
             sprintf('delete derived dimension tags for %s', $path),
             throwOnFailure: false,
+            pathArguments: [$path],
         );
     }
 
@@ -135,15 +142,18 @@ final readonly class Exiftool implements ExifMetadata
      */
     public function metadataMap(string $path): array
     {
-        $process = new Process($this->command([
-            '-m',
-            '-G1',
-            '-a',
-            '-u',
-            '-s',
-            '-json',
-            $path,
-        ]));
+        $process = new Process($this->command(
+            [
+                '-m',
+                '-G1',
+                '-a',
+                '-u',
+                '-s',
+                '-json',
+                $path,
+            ],
+            [$path],
+        ));
         $process->mustRun();
 
         try {
@@ -189,17 +199,20 @@ final readonly class Exiftool implements ExifMetadata
     /** @return array<string, true> Filenames (with path) to skip */
     public function findPortraitAndLivePhotos(string $dir): array
     {
-        $process = new Process($this->command([
-            '-if',
-            '$DepthMapData or $EmbeddedVideoFile',
-            '-p',
-            '$directory/$filename',
-            '-ext',
-            'jpg',
-            '-ext',
-            'jpeg',
-            $dir,
-        ]));
+        $process = new Process($this->command(
+            [
+                '-if',
+                '$DepthMapData or $EmbeddedVideoFile',
+                '-p',
+                '$directory/$filename',
+                '-ext',
+                'jpg',
+                '-ext',
+                'jpeg',
+                $dir,
+            ],
+            [$dir],
+        ));
         $process->run();
 
         if (! $process->isSuccessful()) {
@@ -224,11 +237,14 @@ final readonly class Exiftool implements ExifMetadata
         return $skipSet;
     }
 
-    /** @param list<string> $command */
-    private function runWriteCommand(array $command, string $operation, bool $throwOnFailure = true): void
+    /**
+     * @param list<string> $command
+     * @param list<string> $pathArguments
+     */
+    private function runWriteCommand(array $command, string $operation, bool $throwOnFailure = true, array $pathArguments = []): void
     {
         for ($attempt = 1; $attempt <= self::WRITE_MAX_ATTEMPTS; $attempt++) {
-            $process = new Process($this->command($command));
+            $process = new Process($this->command($command, $pathArguments));
 
             try {
                 $process->mustRun();
@@ -257,23 +273,40 @@ final readonly class Exiftool implements ExifMetadata
     }
 
     /**
-     * Keep filename decoding deterministic across platforms.
-     * ExifTool on Windows can misread UTF-8 paths unless filename charset is explicit.
-     *
      * @param list<string> $arguments
+     * @param list<string> $pathArguments
      *
      * @return list<string>
      */
-    private function command(array $arguments): array
+    private function command(array $arguments, array $pathArguments = []): array
     {
-        return array_merge(
-            [
-                $this->exiftoolPath,
-                '-charset',
-                'filename=UTF8',
-            ],
-            $arguments,
-        );
+        $command = [$this->exiftoolPath];
+        if ($this->shouldUseUtf8FilenameCharset($pathArguments)) {
+            $command[] = '-charset';
+            $command[] = 'filename=UTF8';
+        }
+
+        return array_merge($command, $arguments);
+    }
+
+    /** @param list<string> $pathArguments */
+    private function shouldUseUtf8FilenameCharset(array $pathArguments): bool
+    {
+        if (! $this->platform->isWindows()) {
+            return false;
+        }
+
+        foreach ($pathArguments as $pathArgument) {
+            if ($pathArgument === '') {
+                continue;
+            }
+
+            if (preg_match('//u', $pathArgument) !== 1) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function isTransientWriteFailure(string $stdout, string $stderr): bool

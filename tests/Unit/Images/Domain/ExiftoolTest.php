@@ -136,7 +136,7 @@ PHP,
         $exiftool->forceOrientationTo1($target);
     }
 
-    public function test_copy_all_metadata_uses_utf8_filename_charset(): void
+    public function test_copy_all_metadata_uses_utf8_filename_charset_on_windows_for_utf8_paths(): void
     {
         $toolPath = $this->createFakeExiftool(
             'fake-exiftool-copy-charset.php',
@@ -154,13 +154,45 @@ fwrite(STDOUT, "    1 image files updated\n");
 PHP,
         );
 
-        $platform = new StubPlatform();
+        $platform            = new StubPlatform();
+        $platform->isWindows = true;
         $platform->setTool('exiftool', $toolPath);
 
         $exiftool = new Exiftool($platform);
         $exiftool->copyAllMetadata(
             '/tmp/Laucu — avif.avif',
             '/tmp/Laucu — heic.heic',
+        );
+
+        self::assertTrue(true);
+    }
+
+    public function test_copy_all_metadata_skips_utf8_filename_charset_on_windows_for_non_utf8_paths(): void
+    {
+        $toolPath = $this->createFakeExiftool(
+            'fake-exiftool-copy-no-charset.php',
+            <<<'PHP'
+#!/usr/bin/env php
+<?php
+$charsetIndex = array_search('-charset', $argv, true);
+$charsetValue = $charsetIndex === false ? null : ($argv[$charsetIndex + 1] ?? null);
+if ($charsetValue === 'filename=UTF8') {
+    fwrite(STDERR, "Error: unexpected filename charset\n");
+    exit(1);
+}
+
+fwrite(STDOUT, "    1 image files updated\n");
+PHP,
+        );
+
+        $platform            = new StubPlatform();
+        $platform->isWindows = true;
+        $platform->setTool('exiftool', $toolPath);
+
+        $exiftool = new Exiftool($platform);
+        $exiftool->copyAllMetadata(
+            "/tmp/Laucu\x96avif.avif",
+            "/tmp/Laucu\x96heic.heic",
         );
 
         self::assertTrue(true);

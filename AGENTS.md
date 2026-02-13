@@ -112,8 +112,9 @@ ExifTool metadata-write steps retry once on transient temp-file write/rename
 errors and include ExifTool stderr in thrown error messages for diagnosis.
 Metadata read/write invocations use ExifTool `-m` mode to tolerate minor
 vendor-parser warnings.
-ExifTool invocations also pin `-charset filename=UTF8` so Windows Unicode paths
-(`—`, diacritics, etc.) are resolved correctly during read/write operations.
+ExifTool filename charset on Windows is selected adaptively:
+use `-charset filename=UTF8` only when input paths are valid UTF-8; otherwise
+omit charset override to preserve legacy codepage paths.
 
 **AQ note**: Video NVENC `-aq-strength` is NVENC-specific and unrelated to x265
 `aq-strength` (0.0–3.0). Image HEIC encoding uses libheif + x265 params via
