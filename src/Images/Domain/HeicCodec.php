@@ -13,7 +13,7 @@ use function sprintf;
 final readonly class HeicCodec implements ImageCodec
 {
     private string $heifEncPath;
-    private string $heifConvertPath;
+    private string $heifDecPath;
 
     public function __construct(
         private Platform $platform,
@@ -23,8 +23,8 @@ final readonly class HeicCodec implements ImageCodec
             'aq-strength' => 1.0,
         ],
     ) {
-        $this->heifEncPath     = $this->platform->findTool('heif-enc');
-        $this->heifConvertPath = $this->platform->findTool('heif-convert');
+        $this->heifEncPath = $this->platform->findTool('heif-enc');
+        $this->heifDecPath = $this->platform->findTool('heif-dec');
     }
 
     public function format(): ImageFormat
@@ -65,10 +65,12 @@ final readonly class HeicCodec implements ImageCodec
     public function decodeToPng(string $sourcePath, string $targetPng): void
     {
         $process = new Process([
-            $this->heifConvertPath,
-            $sourcePath,
+            $this->heifDecPath,
+            '-o',
             $targetPng,
+            $sourcePath,
         ]);
+
         $this->mustRunWithoutTimeout($process);
     }
 

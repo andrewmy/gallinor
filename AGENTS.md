@@ -117,7 +117,7 @@ vendor-parser warnings.
 `aq-strength` (0.0–3.0). Image HEIC encoding uses libheif + x265 params via
 `heif-enc -p x265:...` (pinned defaults: `aq-mode=2`, `aq-strength=1.0`).
 HEIC encode/decode subprocesses run without Symfony's default 60s timeout to
-avoid false timeouts on large images.
+avoid false timeouts on large images. HEIC decode uses `heif-dec`.
 
 **Parallel JPEG mode**: `images:squeeze` can run JPEG optimization through an
 internal master/worker pool (`images:squeeze:worker`) over localhost NDJSON

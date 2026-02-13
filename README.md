@@ -44,10 +44,10 @@ simplicity and ease of use.
       - MSYS2:
         - Install MSYS2, then: `pacman -S mingw-w64-x86_64-libheif`
         - Add `C:\\msys64\\mingw64\\bin` to PATH (so `heif-enc` and
-          `heif-convert` are discoverable)
+          `heif-dec` are discoverable)
       - Conda (verify tools are present):
         - `conda install conda-forge::libheif`
-        - Ensure `heif-enc` and `heif-convert` are available in that environment
+        - Ensure `heif-enc` and `heif-dec` are available in that environment
     - Advanced: when `heif-enc` uses x265, Gallinor passes a couple x265 params
       via `heif-enc -p x265:...` to stabilize quality/size (AQ defaults).
   - libavif (only if using `--format=avif` or AVIF→HEIC migration)
