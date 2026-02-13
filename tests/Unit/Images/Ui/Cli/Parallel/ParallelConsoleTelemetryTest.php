@@ -6,9 +6,11 @@ namespace App\Tests\Unit\Images\Ui\Cli\Parallel;
 
 use App\Images\Ui\Cli\Parallel\ParallelConsoleTelemetry;
 use PHPUnit\Framework\TestCase;
+use ReflectionClass;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Output\OutputInterface;
 
+use function array_filter;
 use function fclose;
 use function fseek;
 use function ftell;
@@ -39,6 +41,40 @@ final class ParallelConsoleTelemetryTest extends TestCase
         self::assertStringContainsString('[parallel] debug trace', $rendered);
 
         fclose($stream);
+    }
+
+    public function test_spawned_update_prunes_only_one_exited_worker(): void
+    {
+        $output = new TestConsoleOutput();
+        $stream = $output->stream();
+
+        $progressBar = new ProgressBar($output, 10);
+        $progressBar->setFormat(' %current%/%max% %status%');
+        $progressBar->setMessage('Starting...', 'status');
+
+        $telemetry = new ParallelConsoleTelemetry($output, $progressBar);
+        $telemetry->onWorkerUpdate('run-123-worker-1', 'exited');
+        $telemetry->onWorkerUpdate('run-123-worker-2', 'exited');
+        $telemetry->onWorkerUpdate('run-123-worker-3', 'spawned');
+
+        $states = $this->workerStates($telemetry);
+        self::assertCount(2, $states);
+        self::assertSame('spawned', $states['run-123-worker-3']);
+        self::assertCount(1, array_filter($states, static fn (string $state): bool => $state === 'exited'));
+
+        fclose($stream);
+    }
+
+    /** @return array<string, string> */
+    private function workerStates(ParallelConsoleTelemetry $telemetry): array
+    {
+        $reflection = new ReflectionClass($telemetry);
+        $property   = $reflection->getProperty('workerStates');
+
+        /** @var array<string, string> $states */
+        $states = $property->getValue($telemetry);
+
+        return $states;
     }
 
     /** @param resource $stream */

@@ -147,6 +147,10 @@ EasyParallel encoder-initialization fatals.
 Worker startup/bind robustness: unconnected workers are recycled after a
 connect-timeout window, and HELLO bind failures remove the worker from the live
 set so deficit-respawn logic can recover instead of stalling progress.
+Workers are marked connected only after `bindConnection()` succeeds (not on
+HELLO receipt alone), and unexpected worker exits count as system errors even
+when the process exit code is `null` (important on Windows where `null` exits
+can otherwise cause endless respawn loops without progress).
 Use Symfony verbosity flags for worker-pool tracing:
 `-v` (lifecycle), `-vv` (dispatch/requeue details), `-vvv` (status-frame level).
 At `-vv` and above, both parallel commands also render a live per-worker status

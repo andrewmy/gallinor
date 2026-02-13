@@ -121,6 +121,7 @@ final class ParallelConsoleTelemetry
             }
 
             unset($this->workerStates[$workerId]);
+            break;
         }
     }
 

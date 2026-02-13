@@ -37,6 +37,10 @@ use function microtime;
 use function parse_url;
 use function property_exists;
 use function sprintf;
+use function strlen;
+use function strtok;
+use function substr;
+use function trim;
 
 use const JSON_THROW_ON_ERROR;
 use const PHP_URL_PORT;
@@ -299,7 +303,7 @@ final readonly class ParallelWorkerPoolOrchestrator
             throw new RuntimeException(sprintf('Invalid worker server address: %s', $address));
         }
 
-        $tryQuitWorker = static function (string $workerId, string $reason = '') use (&$workers, $processPool, $traceEvent): void {
+        $tryQuitWorker = static function (string $workerId, string $reason = '') use (&$workers, &$systemErrors, $processPool, $traceEvent, $updateWorker): void {
             if (! isset($workers[$workerId])) {
                 return;
             }
@@ -308,7 +312,7 @@ final readonly class ParallelWorkerPoolOrchestrator
                 $traceEvent(
                     OutputInterface::VERBOSITY_DEBUG,
                     sprintf(
-                        '[parallel] skip quit for %s before HELLO%s',
+                        '[parallel] skip quit for %s before bind%s',
                         $workerId,
                         $reason !== '' ? sprintf(' (%s)', $reason) : '',
                     ),
@@ -329,6 +333,9 @@ final readonly class ParallelWorkerPoolOrchestrator
                         $throwable->getMessage(),
                     ),
                 );
+                $updateWorker($workerId, 'quit-failed');
+                $systemErrors++;
+                unset($workers[$workerId]);
             }
         };
 
@@ -612,7 +619,12 @@ final readonly class ParallelWorkerPoolOrchestrator
                     $traceEvent,
                     $updateWorker,
                 ): void {
-                    $expectedStop = $workers[$workerId]['expectedStop'] ?? false;
+                    $expectedStop    = $workers[$workerId]['expectedStop'] ?? false;
+                    $stdErrFirstLine = trim(strtok($stdErr, "\r\n") ?: '');
+                    if ($stdErrFirstLine !== '' && strlen($stdErrFirstLine) > 120) {
+                        $stdErrFirstLine = substr($stdErrFirstLine, 0, 117) . '...';
+                    }
+
                     $traceEvent(
                         OutputInterface::VERBOSITY_VERBOSE,
                         sprintf(
@@ -620,10 +632,14 @@ final readonly class ParallelWorkerPoolOrchestrator
                             $workerId,
                             $exitCode === null ? 'null' : (string) $exitCode,
                             $expectedStop ? 'yes' : 'no',
-                            $stdErr !== '' ? ', stderr=' . $stdErr : '',
+                            $stdErrFirstLine !== '' ? ', stderr=' . $stdErrFirstLine : '',
                         ),
                     );
-                    $updateWorker($workerId, 'exited');
+                    $updateWorker($workerId, $expectedStop ? 'exited' : sprintf(
+                        'exit-error code=%s%s',
+                        $exitCode === null ? 'null' : (string) $exitCode,
+                        $stdErrFirstLine !== '' ? sprintf(' (%s)', $stdErrFirstLine) : '',
+                    ));
 
                     if (isset($inFlight[$workerId])) {
                         $job = $inFlight[$workerId]['job'];
@@ -631,7 +647,7 @@ final readonly class ParallelWorkerPoolOrchestrator
                         $retryOrFail($job, sprintf('Worker exited unexpectedly%s', $stdErr !== '' ? ': ' . $stdErr : '.'));
                     }
 
-                    if (! $expectedStop && $exitCode !== 0 && $exitCode !== null) {
+                    if (! $expectedStop && $exitCode !== 0) {
                         $systemErrors++;
                     }
 
@@ -673,9 +689,6 @@ final readonly class ParallelWorkerPoolOrchestrator
                     return;
                 }
 
-                $workers[$workerId]['connected'] = true;
-                $traceEvent(OutputInterface::VERBOSITY_VERBOSE, sprintf('[parallel] worker connected %s', $workerId));
-                $updateWorker($workerId, 'ready');
                 try {
                     $processPool->getProcess($workerId)->bindConnection($decoder, $encoder);
                 } catch (Throwable $throwable) {
@@ -690,6 +703,9 @@ final readonly class ParallelWorkerPoolOrchestrator
                     return;
                 }
 
+                $workers[$workerId]['connected'] = true;
+                $traceEvent(OutputInterface::VERBOSITY_VERBOSE, sprintf('[parallel] worker connected %s', $workerId));
+                $updateWorker($workerId, 'ready');
                 $dispatchIfPossible($workerId);
             });
 
