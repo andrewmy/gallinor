@@ -168,6 +168,35 @@ PHP,
         self::assertSame('samsung', $map['EXIF:Make']);
     }
 
+    public function test_orientation_uses_minor_error_mode_for_vendor_warning_tolerance(): void
+    {
+        $toolPath = $this->createFakeExiftool(
+            'fake-exiftool-orientation.php',
+            <<<'PHP'
+#!/usr/bin/env php
+<?php
+if (in_array('-Orientation#', $argv, true)) {
+    if (! in_array('-m', $argv, true)) {
+        fwrite(STDERR, "Error: missing -m\n");
+        exit(1);
+    }
+
+    fwrite(STDOUT, "6\n");
+    exit(0);
+}
+
+fwrite(STDOUT, "    1 image files updated\n");
+PHP,
+        );
+
+        $platform = new StubPlatform();
+        $platform->setTool('exiftool', $toolPath);
+
+        $exiftool = new Exiftool($platform);
+
+        self::assertSame(6, $exiftool->orientation('/tmp/source.heic'));
+    }
+
     private function createFakeExiftool(string $name, string $body): string
     {
         $path = $this->tmpDir . '/' . $name;

@@ -104,7 +104,9 @@ ssimulacra2, exiftool, xz) invoked via `ProcessExecutor` and located through
 `Platform::findTool()`.
 
 **Images rotation**: JPEGs with EXIF orientation are normalized via FFmpeg
-before QC. Optimized outputs bake rotation into pixels and force
+before QC. FFmpeg normalization runs with `-noautorotate` so Gallinor applies
+exactly one explicit EXIF-orientation transform (no double-rotation drift).
+Optimized outputs bake rotation into pixels and force
 Orientation=1 in metadata to avoid viewer inconsistencies.
 ExifTool metadata-write steps retry once on transient temp-file write/rename
 errors and include ExifTool stderr in thrown error messages for diagnosis.

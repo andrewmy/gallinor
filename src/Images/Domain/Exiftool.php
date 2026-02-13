@@ -51,6 +51,7 @@ final readonly class Exiftool implements ExifMetadata
     {
         $process = new Process([
             $this->exiftoolPath,
+            '-m',
             '-s',
             '-s',
             '-s',

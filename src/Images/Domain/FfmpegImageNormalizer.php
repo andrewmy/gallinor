@@ -47,6 +47,8 @@ final readonly class FfmpegImageNormalizer
             '-hide_banner',
             '-loglevel',
             'error',
+            // Keep rotation deterministic: we apply EXIF orientation explicitly via filter below.
+            '-noautorotate',
             '-i',
             $sourcePath,
             '-frames:v',

@@ -109,6 +109,9 @@ Converts JPEGs to HEIC by default (saving alongside originals as `.heic`) and
 archives ARW files per directory as `raws-N.tar.xz`.
 HEIC encode/decode subprocesses run without Symfony's default 60s timeout to
 avoid false failures on large frames.
+JPEG orientation normalization is deterministic: Gallinor disables FFmpeg
+autorotate and applies EXIF-orientation transform explicitly before quality
+checks, then forces `Orientation=1` on outputs.
 
 Parallel mode is optional and applies only to JPEG optimisation. ARW archival
 remains sequential. `--job-timeout` is an inactivity timeout (no worker message
