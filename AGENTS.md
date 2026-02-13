@@ -48,14 +48,14 @@ php app.php videos:rename <path>    # Replace originals with optimized files
 **Image workflow** (2-step process):
 
 ```bash
-php app.php images:squeeze <path> [--parallel] [--concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]  # Convert JPEGs to HEIC by default; ARW archival stays sequential
+php app.php images:squeeze <path> [--parallel] [--concurrency=N | --adaptive-concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]  # Convert JPEGs to HEIC by default; ARW archival stays sequential
 php app.php images:remove-originals <path>   # Remove originals after conversion
 ```
 
 **AVIF→HEIC migration** (OneDrive compatibility):
 
 ```bash
-php app.php images:migrate-avif-to-heic <path> [--parallel] [--concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]  # Convert existing AVIFs to HEIC (SSIMULACRA2 ≥ 85)
+php app.php images:migrate-avif-to-heic <path> [--parallel] [--concurrency=N | --adaptive-concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]  # Convert existing AVIFs to HEIC (SSIMULACRA2 ≥ 85)
 php app.php images:remove-avifs <path>          # Remove AVIFs when sibling HEIC exists
 ```
 
@@ -135,12 +135,29 @@ Both parallel flows reuse a shared worker-pool orchestrator in
 `src/Images/Ui/Cli/Parallel/ParallelWorkerPoolOrchestrator.php`.
 Console tracing/panel rendering is shared via
 `src/Images/Ui/Cli/Parallel/ParallelConsoleTelemetry.php`.
+Parallel option validation and fixed/adaptive worker-plan selection are shared
+via
+`src/Images/Ui/Cli/Parallel/ParallelExecutionPlanResolver.php`.
+Adaptive ramp runtime state in orchestrator is carried by DTO
+`src/Images/Ui/Cli/Parallel/AdaptiveConcurrencyState.php` (avoid untyped
+array/hash state in hot loop logic).
 Use Symfony verbosity flags for worker-pool tracing:
 `-v` (lifecycle), `-vv` (dispatch/requeue details), `-vvv` (status-frame level).
 At `-vv` and above, both parallel commands also render a live per-worker status
 panel below the progress bar when the terminal supports console sections.
 In panel mode, trace updates are coalesced with worker-state refreshes to avoid
 trace-only redraw spam (for example repeated `Workers` headers at `-vvv`).
+Parallel worker policy:
+
+- no `--concurrency` and no `--adaptive-concurrency`: fixed safe worker count
+  from `ParallelConcurrency::defaultFromCores()`
+- `--concurrency=N`: fixed `N` workers
+- `--adaptive-concurrency=N`: start from safe workers and ramp up to max `N`
+  while throughput gains remain meaningful
+
+The current adaptive gain threshold is a code constant in
+`src/Images/Ui/Cli/Parallel/ParallelWorkerPoolOrchestrator.php`
+(`ADAPTIVE_MIN_THROUGHPUT_GAIN_RATIO`).
 Worker status phases exposed in telemetry are:
 `prepare -> encode -> decode -> score -> decision -> finalize -> metadata`.
 These phase/status payload fields are currently for operator visibility only

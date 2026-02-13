@@ -49,6 +49,7 @@ final readonly class ParallelJpegProcessor
         int $concurrency,
         int $workerMaxJobs,
         int $jobTimeout,
+        int|null $adaptiveStartWorkers = null,
     ): ImageBatchResult {
         $totalJobs   = count($jpegs);
         $progressBar = $this->cliHelper->createProgressBar($output, $totalJobs, 'JPEGs');
@@ -80,6 +81,9 @@ final readonly class ParallelJpegProcessor
         $orchestrator      = new ParallelWorkerPoolOrchestrator($this->logger);
         $retryPolicy       = new JobRetryPolicy();
         $requestedWorkers  = min($concurrency, $totalJobs);
+        $adaptiveStart     = $adaptiveStartWorkers === null
+            ? null
+            : min($requestedWorkers, max(1, $adaptiveStartWorkers));
         $totalSavingsBytes = 0;
         $telemetry         = new ParallelConsoleTelemetry($output, $progressBar);
 
@@ -212,6 +216,7 @@ final readonly class ParallelJpegProcessor
             workerMaxJobs: $workerMaxJobs,
             jobTimeout: $jobTimeout,
             retryPolicy: $retryPolicy,
+            adaptiveStartWorkers: $adaptiveStart,
             buildWorkerCommand: $buildWorkerCommand,
             buildRequestPayload: $buildRequestPayload,
             handlePayload: $handlePayload,

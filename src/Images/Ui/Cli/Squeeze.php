@@ -20,7 +20,7 @@ use App\Images\Domain\OptimizedFilter;
 use App\Images\Domain\RawArchiver;
 use App\Images\Domain\Ssimulacra2;
 use App\Images\Domain\StrictMetadataVerifier;
-use App\Images\Ui\Cli\Parallel\ParallelConcurrency;
+use App\Images\Ui\Cli\Parallel\ParallelExecutionPlanResolver;
 use App\Images\Ui\Cli\Parallel\ParallelJpegProcessor;
 use App\Shared\Domain\FilesystemScanner;
 use App\Shared\Domain\Platform;
@@ -66,8 +66,10 @@ final class Squeeze extends Command
         string $format = 'heic',
         #[Option(description: 'Enable worker pool for JPEG processing')]
         bool $parallel = false,
-        #[Option(description: 'Parallel worker count (defaults to auto when --parallel is enabled)')]
+        #[Option(description: 'Fixed parallel worker count override')]
         int|null $concurrency = null,
+        #[Option(description: 'Adaptive max worker count: start from safe workers and ramp up to this max')]
+        int|null $adaptiveConcurrency = null,
         #[Option(description: 'Recycle a worker after N JPEG jobs')]
         int $workerMaxJobs = 50,
         #[Option(description: 'Job inactivity timeout in seconds (0 disables)')]
@@ -77,20 +79,14 @@ final class Squeeze extends Command
     ): int {
         $startTime = $this->cliHelper->startCommand($output, $dryRun, $this->timing);
 
-        if ($concurrency !== null && $concurrency <= 0) {
-            $output->writeln('<error>Invalid --concurrency: must be a positive integer.</error>');
-
-            return self::FAILURE;
-        }
-
-        if ($workerMaxJobs <= 0) {
-            $output->writeln('<error>Invalid --worker-max-jobs: must be a positive integer.</error>');
-
-            return self::FAILURE;
-        }
-
-        if ($jobTimeout < 0) {
-            $output->writeln('<error>Invalid --job-timeout: must be zero or a positive integer.</error>');
+        $validationError = ParallelExecutionPlanResolver::validationError(
+            concurrency: $concurrency,
+            adaptiveConcurrency: $adaptiveConcurrency,
+            workerMaxJobs: $workerMaxJobs,
+            jobTimeout: $jobTimeout,
+        );
+        if ($validationError !== null) {
+            $output->writeln(sprintf('<error>%s</error>', $validationError));
 
             return self::FAILURE;
         }
@@ -126,15 +122,20 @@ final class Squeeze extends Command
         $output->writeln(sprintf('<info>Found: exiftool, ffmpeg, ssimulacra2, xz, tar, %s</info>', $imageFormat->label()));
         $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores()));
 
-        $effectiveConcurrency = null;
+        $effectiveConcurrency = 1;
+        $adaptiveStartWorkers = null;
         if ($parallel) {
-            $effectiveConcurrency = $concurrency ?? ParallelConcurrency::defaultFromCores($this->platform->nCores());
+            $parallelPlan         = ParallelExecutionPlanResolver::resolve(
+                nCores: $this->platform->nCores(),
+                concurrency: $concurrency,
+                adaptiveConcurrency: $adaptiveConcurrency,
+            );
+            $effectiveConcurrency = $parallelPlan->workers;
+            $adaptiveStartWorkers = $parallelPlan->adaptiveStartWorkers;
 
             $output->writeln(sprintf(
-                '<info>Parallel JPEG mode: enabled (workers=%d, worker-max-jobs=%d, job-timeout=%ds)</info>',
-                $effectiveConcurrency,
-                $workerMaxJobs,
-                $jobTimeout,
+                '<info>%s</info>',
+                $parallelPlan->enabledMessage('JPEG', $workerMaxJobs, $jobTimeout),
             ));
         } else {
             $output->writeln('<info>Parallel JPEG mode: disabled</info>');
@@ -170,6 +171,7 @@ final class Squeeze extends Command
                 $effectiveConcurrency,
                 $workerMaxJobs,
                 $jobTimeout,
+                $adaptiveStartWorkers,
             )
             : $this->processJpegs($output, $collection->jpegs, $optimizer, $codec);
 
@@ -267,6 +269,7 @@ final class Squeeze extends Command
         int $concurrency,
         int $workerMaxJobs,
         int $jobTimeout,
+        int|null $adaptiveStartWorkers,
     ): ImageBatchResult {
         $appPath = dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'app.php';
 
@@ -283,6 +286,7 @@ final class Squeeze extends Command
             $concurrency,
             $workerMaxJobs,
             $jobTimeout,
+            $adaptiveStartWorkers,
         );
     }
 

@@ -51,6 +51,7 @@ final readonly class ParallelAvifMigrationProcessor
         int $concurrency,
         int $workerMaxJobs,
         int $jobTimeout,
+        int|null $adaptiveStartWorkers = null,
     ): AvifMigrationBatchResult {
         $totalJobs   = count($avifPaths);
         $progressBar = $this->cliHelper->createProgressBar($output, $totalJobs, 'AVIFs');
@@ -97,6 +98,9 @@ final readonly class ParallelAvifMigrationProcessor
         $orchestrator     = new ParallelWorkerPoolOrchestrator($this->logger);
         $retryPolicy      = new JobRetryPolicy();
         $requestedWorkers = min($concurrency, count($pendingJobs));
+        $adaptiveStart    = $adaptiveStartWorkers === null
+            ? null
+            : min($requestedWorkers, max(1, $adaptiveStartWorkers));
         $telemetry        = new ParallelConsoleTelemetry($output, $progressBar);
 
         $reportErrorForPath = static function (string $path, string $message) use ($progressBar, $result, $telemetry): void {
@@ -266,6 +270,7 @@ final readonly class ParallelAvifMigrationProcessor
             workerMaxJobs: $workerMaxJobs,
             jobTimeout: $jobTimeout,
             retryPolicy: $retryPolicy,
+            adaptiveStartWorkers: $adaptiveStart,
             buildWorkerCommand: $buildWorkerCommand,
             buildRequestPayload: $buildRequestPayload,
             handlePayload: $handlePayload,

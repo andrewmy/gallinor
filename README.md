@@ -102,7 +102,7 @@ After checking the quality, finish the job here.
 ### Process images
 
 ```shell
-php app.php images:squeeze /path/to/photos [/path2 /path3 ...] [--dry-run] [--format=heic|avif] [--parallel] [--concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]
+php app.php images:squeeze /path/to/photos [/path2 /path3 ...] [--dry-run] [--format=heic|avif] [--parallel] [--concurrency=N | --adaptive-concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]
 ```
 
 Converts JPEGs to HEIC by default (saving alongside originals as `.heic`) and
@@ -119,6 +119,15 @@ for that job). Use `-v`/`-vv`/`-vvv` to print worker-pool lifecycle and
 dispatch tracing while the progress bar is running. At `-vv` and above, Gallinor
 also shows a live per-worker status panel under the progress bar (when running
 in an ANSI/TTY console; otherwise it falls back to plain trace lines).
+Parallel worker policy:
+
+- no `--concurrency` and no `--adaptive-concurrency`: fixed safe worker count
+  from `ParallelConcurrency::defaultFromCores()`
+- `--concurrency=N`: fixed `N` workers
+- `--adaptive-concurrency=N`: start from safe workers and ramp up to max `N`
+  while throughput gains remain meaningful (current gain threshold is 3% per
+  scaling window)
+
 In panel mode, trace updates are coalesced with worker-status refreshes to
 avoid trace-only redraw spam.
 
@@ -136,7 +145,7 @@ Worker status phase map (panel/trace view):
 If you previously converted JPEGs to AVIF and need OneDrive compatibility:
 
 ```shell
-php app.php images:migrate-avif-to-heic /path/to/photos [/path2 /path3 ...] [--dry-run] [--parallel] [--concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]
+php app.php images:migrate-avif-to-heic /path/to/photos [/path2 /path3 ...] [--dry-run] [--parallel] [--concurrency=N | --adaptive-concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]
 php app.php images:remove-avifs /path/to/photos [/path2 /path3 ...] [--dry-run]
 ```
 

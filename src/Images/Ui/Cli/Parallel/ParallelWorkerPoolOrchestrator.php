@@ -43,9 +43,11 @@ use const PHP_URL_PORT;
 
 final readonly class ParallelWorkerPoolOrchestrator
 {
-    private const int SYSTEM_ERROR_LIMIT     = 50;
-    private const int STATUS_FRAME_MAX_BYTES = 4 * 1024 * 1024;
-    private const int WORKER_TICK_SECONDS    = 1;
+    private const int SYSTEM_ERROR_LIMIT                   = 50;
+    private const int STATUS_FRAME_MAX_BYTES               = 4 * 1024 * 1024;
+    private const int WORKER_TICK_SECONDS                  = 1;
+    private const int ADAPTIVE_WINDOW_COMPLETIONS          = 12;
+    private const float ADAPTIVE_MIN_THROUGHPUT_GAIN_RATIO = 0.03;
 
     public function __construct(private LoggerInterface $logger)
     {
@@ -72,6 +74,7 @@ final readonly class ParallelWorkerPoolOrchestrator
         callable $buildRequestPayload,
         callable $handlePayload,
         callable $onJobTerminalFailure,
+        int|null $adaptiveStartWorkers = null,
         callable|null $trace = null,
         callable|null $onWorkerUpdate = null,
     ): void {
@@ -79,25 +82,28 @@ final readonly class ParallelWorkerPoolOrchestrator
             return;
         }
 
-        $systemErrors  = 0;
-        $completedJobs = 0;
-        $workerSeq     = 0;
-        $runId         = sprintf('run-%d-%d', getmypid(), (int) (microtime(true) * 1_000_000));
-        $traceEvent    = static function (int $verbosity, string $message) use ($trace): void {
+        $systemErrors     = 0;
+        $completedJobs    = 0;
+        $workerSeq        = 0;
+        $adaptiveState    = new AdaptiveConcurrencyState($requestedWorkers, $adaptiveStartWorkers);
+        $requestedWorkers = $adaptiveState->initialRequestedWorkers;
+
+        $runId                = sprintf('run-%d-%d', getmypid(), (int) (microtime(true) * 1_000_000));
+        $traceEvent           = static function (int $verbosity, string $message) use ($trace): void {
             if ($trace === null) {
                 return;
             }
 
             $trace($message, $verbosity);
         };
-        $updateWorker  = static function (string $workerId, string $state) use ($onWorkerUpdate): void {
+        $updateWorker         = static function (string $workerId, string $state) use ($onWorkerUpdate): void {
             if ($onWorkerUpdate === null) {
                 return;
             }
 
             $onWorkerUpdate($workerId, $state);
         };
-        $jobId         = static function (array $job): string {
+        $jobId                = static function (array $job): string {
             $id = $job['id'] ?? null;
             if (is_string($id) && $id !== '') {
                 return $id;
@@ -105,7 +111,7 @@ final readonly class ParallelWorkerPoolOrchestrator
 
             return '[unknown-job]';
         };
-        $statusGist    = static function (array $payload): string {
+        $statusGist           = static function (array $payload): string {
             $path         = $payload['path'] ?? null;
             $phase        = $payload['phase'] ?? null;
             $quality      = $payload['quality'] ?? null;
@@ -164,7 +170,7 @@ final readonly class ParallelWorkerPoolOrchestrator
 
             return implode(' ', $parts);
         };
-        $jobGist       = static function (array $job) use ($jobId): string {
+        $jobGist              = static function (array $job) use ($jobId): string {
             $path = $job['path'] ?? null;
             if (is_string($path) && $path !== '') {
                 return basename($path);
@@ -177,14 +183,93 @@ final readonly class ParallelWorkerPoolOrchestrator
 
             return $jobId($job);
         };
+        $updateAdaptiveTarget = static function () use (
+            $adaptiveState,
+            &$requestedWorkers,
+            $traceEvent,
+        ): void {
+            if (! $adaptiveState->enabled) {
+                return;
+            }
+
+            $now = microtime(true);
+
+            if (! is_float($adaptiveState->windowStartedAt)) {
+                $adaptiveState->windowStartedAt = $now;
+            }
+
+            $adaptiveState->windowCompleted++;
+            if ($adaptiveState->windowCompleted < self::ADAPTIVE_WINDOW_COMPLETIONS) {
+                return;
+            }
+
+            $windowStartedAt   = $adaptiveState->windowStartedAt;
+            $windowCompletions = $adaptiveState->windowCompleted;
+            $durationSeconds   = max(0.001, $now - $windowStartedAt);
+            $throughput        = $windowCompletions / $durationSeconds;
+
+            $adaptiveState->windowStartedAt = null;
+            $adaptiveState->windowCompleted = 0;
+
+            $previousThroughput = $adaptiveState->lastThroughput;
+            if (! is_float($previousThroughput)) {
+                $adaptiveState->lastThroughput = $throughput;
+
+                if ($requestedWorkers < $adaptiveState->maxWorkers) {
+                    $requestedWorkers++;
+                    $traceEvent(
+                        OutputInterface::VERBOSITY_VERBOSE,
+                        sprintf(
+                            '[parallel] adaptive scale-up to %d workers (warm-up throughput %.2f jobs/s)',
+                            $requestedWorkers,
+                            $throughput,
+                        ),
+                    );
+                }
+
+                return;
+            }
+
+            $gainRatio = $previousThroughput > 0 ? ($throughput - $previousThroughput) / $previousThroughput : 1.0;
+            if (
+                $requestedWorkers < $adaptiveState->maxWorkers
+                && $gainRatio > self::ADAPTIVE_MIN_THROUGHPUT_GAIN_RATIO
+            ) {
+                $requestedWorkers++;
+                $adaptiveState->lastThroughput = $throughput;
+                $traceEvent(
+                    OutputInterface::VERBOSITY_VERBOSE,
+                    sprintf(
+                        '[parallel] adaptive scale-up to %d workers (gain %.1f%%, throughput %.2f jobs/s)',
+                        $requestedWorkers,
+                        $gainRatio * 100,
+                        $throughput,
+                    ),
+                );
+
+                return;
+            }
+
+            $adaptiveState->enabled = false;
+            $traceEvent(
+                OutputInterface::VERBOSITY_VERBOSE,
+                sprintf(
+                    '[parallel] adaptive scaling locked at %d workers (gain %.1f%% <= %.1f%%)',
+                    $requestedWorkers,
+                    $gainRatio * 100,
+                    self::ADAPTIVE_MIN_THROUGHPUT_GAIN_RATIO * 100,
+                ),
+            );
+        };
 
         $traceEvent(
             OutputInterface::VERBOSITY_VERBOSE,
             sprintf(
-                '[parallel:%s] starting (jobs=%d, workers=%d, worker-max-jobs=%d, timeout=%ds)',
+                '[parallel:%s] starting (jobs=%d, workers=%d%s, worker-max-jobs=%d, timeout=%ds)',
                 $runId,
                 $totalJobs,
                 $requestedWorkers,
+                $adaptiveState->enabled ? sprintf('..%d adaptive', $adaptiveState->maxWorkers) : '',
                 $workerMaxJobs,
                 $jobTimeout,
             ),
@@ -337,6 +422,7 @@ final readonly class ParallelWorkerPoolOrchestrator
             $buildWorkerCommand,
             $handlePayload,
             $retryOrFail,
+            $updateAdaptiveTarget,
             $traceEvent,
             $jobId,
             $statusGist,
@@ -371,6 +457,7 @@ final readonly class ParallelWorkerPoolOrchestrator
                     $traceEvent,
                     $jobId,
                     $statusGist,
+                    $updateAdaptiveTarget,
                     $updateWorker,
                 ): void {
                     if (! isset($workers[$workerId])) {
@@ -423,6 +510,7 @@ final readonly class ParallelWorkerPoolOrchestrator
                         sprintf('[parallel] completed %s on %s (%d/%d)', $finishedJobId, $workerId, $completedJobs, $totalJobs),
                     );
                     $updateWorker($workerId, 'idle');
+                    $updateAdaptiveTarget();
 
                     if ($workers[$workerId]['jobsProcessed'] >= $workerMaxJobs) {
                         $traceEvent(

@@ -15,7 +15,7 @@ use App\Images\Domain\LibAvifTools;
 use App\Images\Domain\Ssimulacra2;
 use App\Images\Domain\StrictMetadataVerifier;
 use App\Images\Ui\Cli\Parallel\ParallelAvifMigrationProcessor;
-use App\Images\Ui\Cli\Parallel\ParallelConcurrency;
+use App\Images\Ui\Cli\Parallel\ParallelExecutionPlanResolver;
 use App\Shared\Domain\FilesystemScanner;
 use App\Shared\Domain\Platform;
 use App\Shared\Ui\Cli\CliHelper;
@@ -59,8 +59,10 @@ final class MigrateAvifToHeic extends Command
         bool $dryRun = false,
         #[Option(description: 'Enable worker pool for AVIF migration processing')]
         bool $parallel = false,
-        #[Option(description: 'Parallel worker count (defaults to auto when --parallel is enabled)')]
+        #[Option(description: 'Fixed parallel worker count override')]
         int|null $concurrency = null,
+        #[Option(description: 'Adaptive max worker count: start from safe workers and ramp up to this max')]
+        int|null $adaptiveConcurrency = null,
         #[Option(description: 'Recycle a worker after N AVIF jobs')]
         int $workerMaxJobs = 50,
         #[Option(description: 'Job inactivity timeout in seconds (0 disables)')]
@@ -70,20 +72,14 @@ final class MigrateAvifToHeic extends Command
     ): int {
         $startTime = $this->cliHelper->startCommand($output, $dryRun, $this->timing);
 
-        if ($concurrency !== null && $concurrency <= 0) {
-            $output->writeln('<error>Invalid --concurrency: must be a positive integer.</error>');
-
-            return self::FAILURE;
-        }
-
-        if ($workerMaxJobs <= 0) {
-            $output->writeln('<error>Invalid --worker-max-jobs: must be a positive integer.</error>');
-
-            return self::FAILURE;
-        }
-
-        if ($jobTimeout < 0) {
-            $output->writeln('<error>Invalid --job-timeout: must be zero or a positive integer.</error>');
+        $validationError = ParallelExecutionPlanResolver::validationError(
+            concurrency: $concurrency,
+            adaptiveConcurrency: $adaptiveConcurrency,
+            workerMaxJobs: $workerMaxJobs,
+            jobTimeout: $jobTimeout,
+        );
+        if ($validationError !== null) {
+            $output->writeln(sprintf('<error>%s</error>', $validationError));
 
             return self::FAILURE;
         }
@@ -112,15 +108,20 @@ final class MigrateAvifToHeic extends Command
         ));
         $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores()));
 
-        $effectiveConcurrency = null;
+        $effectiveConcurrency = 1;
+        $adaptiveStartWorkers = null;
         if ($parallel) {
-            $effectiveConcurrency = $concurrency ?? ParallelConcurrency::defaultFromCores($this->platform->nCores());
+            $parallelPlan         = ParallelExecutionPlanResolver::resolve(
+                nCores: $this->platform->nCores(),
+                concurrency: $concurrency,
+                adaptiveConcurrency: $adaptiveConcurrency,
+            );
+            $effectiveConcurrency = $parallelPlan->workers;
+            $adaptiveStartWorkers = $parallelPlan->adaptiveStartWorkers;
 
             $output->writeln(sprintf(
-                '<info>Parallel AVIF migration mode: enabled (workers=%d, worker-max-jobs=%d, job-timeout=%ds)</info>',
-                $effectiveConcurrency,
-                $workerMaxJobs,
-                $jobTimeout,
+                '<info>%s</info>',
+                $parallelPlan->enabledMessage('AVIF migration', $workerMaxJobs, $jobTimeout),
             ));
         } else {
             $output->writeln('<info>Parallel AVIF migration mode: disabled</info>');
@@ -143,6 +144,7 @@ final class MigrateAvifToHeic extends Command
                 $effectiveConcurrency,
                 $workerMaxJobs,
                 $jobTimeout,
+                $adaptiveStartWorkers,
             )
             : $this->processAvifsSequential(
                 $output,
@@ -271,6 +273,7 @@ final class MigrateAvifToHeic extends Command
         int $concurrency,
         int $workerMaxJobs,
         int $jobTimeout,
+        int|null $adaptiveStartWorkers,
     ): AvifMigrationBatchResult {
         $appPath = dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'app.php';
 
@@ -286,6 +289,7 @@ final class MigrateAvifToHeic extends Command
             $concurrency,
             $workerMaxJobs,
             $jobTimeout,
+            $adaptiveStartWorkers,
         );
     }
 }
