@@ -185,6 +185,7 @@ recycling, completion) does not branch on phase names.
     `ExifIFD:MakerNoteUnknown*`, `XMP-crs:MaskGroupBasedCorr*`,
     `XMP-crs:RetouchArea*`,
     `XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel*`,
+    `Samsung:*`,
     vendor XMP blocks, `ExifIFD:Exif_0xNNNN`,
     dimension projection tags (`ExifIFD:ImageWidth`, `ExifIFD:ImageHeight`),
     and derived brightness metric (`ExifIFD:BrightnessValue`).

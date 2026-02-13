@@ -155,7 +155,8 @@ Gallinor verifies metadata after image conversion. If you see
   (`XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel*`), and private
   EXIF tags like `ExifIFD:Exif_0xNNNN`. Dimension projection tags
   (`ExifIFD:ImageWidth`, `ExifIFD:ImageHeight`) and derived brightness metric
-  (`ExifIFD:BrightnessValue`) are also treated as non-portable.
+  (`ExifIFD:BrightnessValue`) are also treated as non-portable. Samsung
+  trailer/vendor tags (`Samsung:*`) are treated as non-portable as well.
 - `ExifIFD:ShutterSpeedValue` can be rewritten with different numeric
   representation when `ExifIFD:ExposureTime` is preserved; Gallinor treats this
   pair as equivalent capture metadata.

@@ -25,6 +25,8 @@ final readonly class StrictMetadataVerifier
         'XMP-MiCamera' => true,
         // Vendor/private maker-note projection tags are unstable across container rewrite.
         'MakerUnknown' => true,
+        // Samsung trailer blocks are proprietary metadata payloads and non-portable across container rewrite.
+        'Samsung' => true,
     ];
 
     private const string SHUTTER_SPEED_TAG                        = 'ExifIFD:ShutterSpeedValue';

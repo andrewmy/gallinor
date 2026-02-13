@@ -114,6 +114,7 @@ final class StrictMetadataVerifierTest extends TestCase
         yield 'MakerNote unknown text missing' => ['ExifIFD:MakerNoteUnknownText', false];
         yield 'JSON vendor tag missing' => ['JSON:Mirror', false];
         yield 'MiCamera XMP tag missing' => ['XMP-MiCamera:XMPMeta', false];
+        yield 'Samsung trailer tag missing' => ['Samsung:SamsungTrailer_0x0d01', false];
         yield 'MakerUnknown private tag missing' => ['MakerUnknown:Unknown_0x0000', false];
         yield 'YCbCr positioning differs' => ['IFD0:YCbCrPositioning', true];
         yield 'Compressed bits per pixel missing' => ['ExifIFD:CompressedBitsPerPixel', false];
