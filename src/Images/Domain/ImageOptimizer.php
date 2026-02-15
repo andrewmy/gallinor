@@ -422,6 +422,7 @@ final readonly class ImageOptimizer
         $this->exiftool->copyAllMetadata($source, $dest);
         $this->exiftool->forceOrientationTo1($dest);
         $this->exiftool->deleteDerivedDimensionTags($dest);
+        $this->exiftool->restoreCriticalCaptureMetadata($source, $dest);
 
         $sourceMap = $this->exiftool->metadataMap($source);
         $destMap   = $this->exiftool->metadataMap($dest);

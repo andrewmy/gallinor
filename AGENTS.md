@@ -112,6 +112,12 @@ ExifTool metadata-write steps retry once on transient temp-file write/rename
 errors and include ExifTool stderr in thrown error messages for diagnosis.
 Metadata read/write invocations use ExifTool `-m` mode to tolerate minor
 vendor-parser warnings.
+After orientation/dimension rewrites, Gallinor re-applies critical capture tags
+(`GPSLatitude*`, `GPSLongitude*`, `GPSAltitude`, `ExifIFD:ColorSpace`) from
+source before strict verification, and additionally projects GPS coordinates
+into HEIC-friendly containers (`QuickTime:GPSCoordinates`,
+`Keys:GPSCoordinates`, `ItemList:GPSCoordinates`, `UserData:GPSCoordinates`
+and XMP GPS projection tags) when source GPS is available.
 ExifTool filename charset on Windows is selected adaptively:
 use `-charset filename=UTF8` only when input paths are valid UTF-8; otherwise
 omit charset override to preserve legacy codepage paths.
@@ -228,6 +234,8 @@ other timing buckets.
     `XMP-crs:RetouchArea*`,
     `XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel*`,
     `XMP-alienexposure:*`,
+    `XMP-xmpNote:*`,
+    `XMP-exif:ExposureCompensation`,
     `Samsung:*`,
     vendor XMP blocks, `ExifIFD:Exif_0xNNNN`,
     dimension projection tags (`ExifIFD:ImageWidth`, `ExifIFD:ImageHeight`,
@@ -235,6 +243,14 @@ other timing buckets.
     and derived brightness metric (`ExifIFD:BrightnessValue`).
   - Treat `ExifIFD:ShutterSpeedValue` rewrites as equivalent when
     `ExifIFD:ExposureTime` is unchanged.
+  - Treat `GPS:GPSAltitude` and `GPS:GPSHPositioningError` rewrites as
+    equivalent when numeric values differ only by formatting/rounding
+    (tolerance: `<= 0.01 m`).
+  - If source GPS values are placeholders only (for example empty/`Unknown ()`/
+    `undef`), treat them as missing-at-source and do not fail destination for
+    absent GPS core tags.
+  - For missing `ExifIFD:ColorSpace`, accept equivalent `*:ColorSpace`
+    projection when value is unchanged.
   - Keep core capture/user metadata strict by default (`EXIF:*` camera/exposure,
     `DateTime*`, GPS, lens/make/model). Do not relax these without explicit
     product decision.

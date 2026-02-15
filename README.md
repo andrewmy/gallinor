@@ -151,12 +151,14 @@ Gallinor verifies metadata after image conversion. If you see
 
 - Usually non-portable across container rewrite (often safe to ignore in future
   releases): `System:*`, `QuickTime:*`, `JSON:*`, vendor XMP blocks (for
-  example `XMP-MiCamera:*`, `XMP-alienexposure:*`), maker-note projection tags
+  example `XMP-MiCamera:*`, `XMP-alienexposure:*`, `XMP-xmpNote:*`),
+  maker-note projection tags
   (`MakerUnknown:Unknown_0xNNNN`, `ExifIFD:MakerNoteUnknown*`), Adobe Camera
   Raw local-correction/retouch tags (`XMP-crs:MaskGroupBasedCorr*`,
   `XMP-crs:RetouchArea*`), Photoshop camera-profile vignette tags
-  (`XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel*`), and private
-  EXIF tags like `ExifIFD:Exif_0xNNNN`. Dimension projection tags
+  (`XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel*`), XMP EXIF
+  projection tag (`XMP-exif:ExposureCompensation`), and private EXIF tags like
+  `ExifIFD:Exif_0xNNNN`. Dimension projection tags
   (`ExifIFD:ImageWidth`, `ExifIFD:ImageHeight`, `XMP-tiff:ImageWidth`,
   `XMP-tiff:ImageHeight`) and derived brightness metric (`ExifIFD:BrightnessValue`)
   are also treated as non-portable. Samsung trailer/vendor tags (`Samsung:*`)
@@ -164,8 +166,22 @@ Gallinor verifies metadata after image conversion. If you see
 - `ExifIFD:ShutterSpeedValue` can be rewritten with different numeric
   representation when `ExifIFD:ExposureTime` is preserved; Gallinor treats this
   pair as equivalent capture metadata.
+- `GPS:GPSAltitude` and `GPS:GPSHPositioningError` remain strict, but Gallinor
+  tolerates equivalent numeric rewrite noise (units/rounding format only,
+  `<= 0.01 m` difference).
+- If source GPS is placeholder-only (for example empty/`Unknown ()`/`undef`),
+  Gallinor treats it as missing-at-source and won't fail destination for absent
+  core GPS tags.
+- For missing `ExifIFD:ColorSpace`, Gallinor accepts equivalent `*:ColorSpace`
+  projection when value is unchanged.
 - Potentially important and should stay strict: camera/exposure/date/GPS/lens
   metadata (`EXIF:*`, `DateTime*`, GPS, make/model).
+
+Gallinor also performs a post-rewrite repair pass for critical capture fields
+(`GPSLatitude*`, `GPSLongitude*`, `GPSAltitude`, `ExifIFD:ColorSpace`). If
+these still appear as missing, treat it as a real metadata-write problem.
+When source GPS is present, Gallinor also writes HEIC-friendly GPS projection
+tags (`QuickTime/Keys/ItemList/UserData:GPSCoordinates` and XMP GPS tags).
 
 If the failure includes important tags, stop and report it with the full tag
 list. If it only includes non-portable tags, updating to a newer Gallinor build

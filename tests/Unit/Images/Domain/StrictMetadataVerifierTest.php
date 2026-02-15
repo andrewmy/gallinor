@@ -78,6 +78,100 @@ final class StrictMetadataVerifierTest extends TestCase
         );
     }
 
+    public function test_diffs_ignores_gps_altitude_difference_when_numeric_values_match_with_rounding_noise(): void
+    {
+        $verifier = new StrictMetadataVerifier();
+
+        $source = ['GPS:GPSAltitude' => '123.456 m Above Sea Level'];
+        $dest   = ['GPS:GPSAltitude' => '123.46 m Above Sea Level'];
+
+        self::assertSame([], $verifier->diffs($source, $dest));
+    }
+
+    public function test_diffs_ignores_gps_horizontal_error_difference_when_numeric_values_match_with_rounding_noise(): void
+    {
+        $verifier = new StrictMetadataVerifier();
+
+        $source = ['GPS:GPSHPositioningError' => '5.004 m'];
+        $dest   = ['GPS:GPSHPositioningError' => '5.00 m'];
+
+        self::assertSame([], $verifier->diffs($source, $dest));
+    }
+
+    public function test_diffs_flags_gps_altitude_difference_when_numeric_delta_is_meaningful(): void
+    {
+        $verifier = new StrictMetadataVerifier();
+
+        $source = ['GPS:GPSAltitude' => '123.4 m Above Sea Level'];
+        $dest   = ['GPS:GPSAltitude' => '124.0 m Above Sea Level'];
+
+        self::assertSame(
+            ['Tag differs: GPS:GPSAltitude'],
+            $verifier->diffs($source, $dest),
+        );
+    }
+
+    public function test_diffs_flags_missing_gps_tags_when_source_has_values_even_if_quicktime_coordinates_exist(): void
+    {
+        $verifier = new StrictMetadataVerifier();
+
+        $source = [
+            'GPS:GPSLatitudeRef' => 'N',
+            'GPS:GPSLatitude' => '56 deg 57\' 34.66" N',
+            'GPS:GPSLongitudeRef' => 'E',
+            'GPS:GPSLongitude' => '24 deg 6\' 45.80" E',
+            'GPS:GPSAltitude' => '12.34 m Above Sea Level',
+        ];
+        $dest   = ['QuickTime:GPSCoordinates' => '56.9000000, 24.1000000, 12.34'];
+
+        self::assertSame(
+            [
+                'Missing tag in destination: GPS:GPSLatitudeRef',
+                'Missing tag in destination: GPS:GPSLatitude',
+                'Missing tag in destination: GPS:GPSLongitudeRef',
+                'Missing tag in destination: GPS:GPSLongitude',
+                'Missing tag in destination: GPS:GPSAltitude',
+            ],
+            $verifier->diffs($source, $dest),
+        );
+    }
+
+    public function test_diffs_ignores_missing_gps_tags_when_source_values_are_only_placeholders(): void
+    {
+        $verifier = new StrictMetadataVerifier();
+
+        $source = [
+            'GPS:GPSLatitudeRef' => 'Unknown ()',
+            'GPS:GPSLatitude' => '',
+            'GPS:GPSLongitudeRef' => 'Unknown ()',
+            'GPS:GPSLongitude' => '',
+            'GPS:GPSAltitude' => 'undef',
+        ];
+        $dest   = [];
+
+        self::assertSame([], $verifier->diffs($source, $dest));
+    }
+
+    public function test_diffs_ignores_missing_exif_colorspace_when_equivalent_projection_exists(): void
+    {
+        $verifier = new StrictMetadataVerifier();
+
+        $source = ['ExifIFD:ColorSpace' => 'sRGB'];
+        $dest   = ['EXIF:ColorSpace' => 'sRGB'];
+
+        self::assertSame([], $verifier->diffs($source, $dest));
+    }
+
+    public function test_diffs_ignores_missing_exif_colorspace_when_numeric_projection_matches(): void
+    {
+        $verifier = new StrictMetadataVerifier();
+
+        $source = ['ExifIFD:ColorSpace' => 'sRGB'];
+        $dest   = ['EXIF:ColorSpace' => '1'];
+
+        self::assertSame([], $verifier->diffs($source, $dest));
+    }
+
     /** @return iterable<array{string, bool}> */
     public static function ignoredTagProvider(): iterable
     {
@@ -138,5 +232,7 @@ final class StrictMetadataVerifierTest extends TestCase
         yield 'Alien Exposure virtual paths missing' => ['XMP-alienexposure:Virtualpaths', false];
         yield 'XMP TIFF image width missing' => ['XMP-tiff:ImageWidth', false];
         yield 'XMP TIFF image height missing' => ['XMP-tiff:ImageHeight', false];
+        yield 'XMP extended packet marker missing' => ['XMP-xmpNote:HasExtendedXMP', false];
+        yield 'XMP EXIF exposure compensation differs' => ['XMP-exif:ExposureCompensation', true];
     }
 }

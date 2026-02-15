@@ -10,6 +10,7 @@ use RuntimeException;
 use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
 
+use function abs;
 use function array_merge;
 use function explode;
 use function is_array;
@@ -103,6 +104,49 @@ final readonly class Exiftool implements ExifMetadata
             sprintf('copy metadata from %s to %s', $sourcePath, $destinationPath),
             pathArguments: [$sourcePath, $destinationPath],
         );
+    }
+
+    public function restoreCriticalCaptureMetadata(string $from, string $to): void
+    {
+        $sourcePath      = $this->normalizePathArgument($from, mustExist: true);
+        $destinationPath = $this->normalizePathArgument($to, mustExist: true);
+
+        $this->runWriteCommand(
+            [
+                '-m',
+                '-overwrite_original',
+                '-P',
+                '-tagsFromFile',
+                $sourcePath,
+                '-GPS:GPSLatitudeRef',
+                '-GPS:GPSLatitude',
+                '-GPS:GPSLongitudeRef',
+                '-GPS:GPSLongitude',
+                '-GPS:GPSAltitude',
+                '-ExifIFD:ColorSpace',
+                $destinationPath,
+            ],
+            sprintf('restore critical capture metadata from %s to %s', $sourcePath, $destinationPath),
+            pathArguments: [$sourcePath, $destinationPath],
+        );
+
+        // Mirror EXIF ColorSpace into XMP projection for containers that persist XMP better than EXIF IFD.
+        $this->runWriteCommand(
+            [
+                '-m',
+                '-overwrite_original',
+                '-P',
+                '-tagsFromFile',
+                $sourcePath,
+                '-XMP-exif:ColorSpace<ExifIFD:ColorSpace',
+                $destinationPath,
+            ],
+            sprintf('project ExifIFD:ColorSpace into XMP-exif:ColorSpace for %s', $destinationPath),
+            throwOnFailure: false,
+            pathArguments: [$sourcePath, $destinationPath],
+        );
+
+        $this->projectGpsMetadataForHeic($sourcePath, $destinationPath);
     }
 
     public function forceOrientationTo1(string $path): void
@@ -335,6 +379,118 @@ final readonly class Exiftool implements ExifMetadata
         }
 
         return $normalizedPath;
+    }
+
+    private function projectGpsMetadataForHeic(string $sourcePath, string $destinationPath): void
+    {
+        $coordinates = $this->readNumericGpsCoordinates($sourcePath);
+        if ($coordinates === null) {
+            return;
+        }
+
+        $coordinateValue = $this->formatGpsCoordinateValue($coordinates['lat'], $coordinates['lon'], $coordinates['alt']);
+
+        foreach (['QuickTime:GPSCoordinates', 'Keys:GPSCoordinates', 'ItemList:GPSCoordinates', 'UserData:GPSCoordinates'] as $gpsTag) {
+            $this->runWriteCommand(
+                [
+                    '-m',
+                    '-overwrite_original',
+                    sprintf('-%s=%s', $gpsTag, $coordinateValue),
+                    $destinationPath,
+                ],
+                sprintf('set %s for %s', $gpsTag, $destinationPath),
+                throwOnFailure: false,
+                pathArguments: [$destinationPath],
+            );
+        }
+
+        $latitudeRef  = $coordinates['lat'] < 0 ? 'S' : 'N';
+        $longitudeRef = $coordinates['lon'] < 0 ? 'W' : 'E';
+
+        $xmpArguments = [
+            '-m',
+            '-overwrite_original',
+            '-n',
+            sprintf('-XMP-exif:GPSLatitude=%0.8f', abs($coordinates['lat'])),
+            sprintf('-XMP-exif:GPSLatitudeRef=%s', $latitudeRef),
+            sprintf('-XMP-exif:GPSLongitude=%0.8f', abs($coordinates['lon'])),
+            sprintf('-XMP-exif:GPSLongitudeRef=%s', $longitudeRef),
+        ];
+        if ($coordinates['alt'] !== null) {
+            $xmpArguments[] = sprintf('-XMP-exif:GPSAltitude=%0.2f', $coordinates['alt']);
+        }
+
+        $xmpArguments[] = $destinationPath;
+
+        $this->runWriteCommand(
+            $xmpArguments,
+            sprintf('set XMP GPS projection tags for %s', $destinationPath),
+            throwOnFailure: false,
+            pathArguments: [$destinationPath],
+        );
+    }
+
+    /** @return array{lat: float, lon: float, alt: float|null}|null */
+    private function readNumericGpsCoordinates(string $sourcePath): array|null
+    {
+        $process = new Process($this->command(
+            [
+                '-m',
+                '-n',
+                '-G1',
+                '-a',
+                '-u',
+                '-s',
+                '-json',
+                '-GPS:GPSLatitude',
+                '-GPS:GPSLongitude',
+                '-GPS:GPSAltitude',
+                $sourcePath,
+            ],
+            [$sourcePath],
+        ));
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            return null;
+        }
+
+        try {
+            $decoded = json_decode($process->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return null;
+        }
+
+        if (! is_array($decoded) || ! isset($decoded[0]) || ! is_array($decoded[0])) {
+            return null;
+        }
+
+        $first = $decoded[0];
+
+        $latitudeValue  = $first['GPS:GPSLatitude'] ?? $first['GPSLatitude'] ?? null;
+        $longitudeValue = $first['GPS:GPSLongitude'] ?? $first['GPSLongitude'] ?? null;
+        if (! is_numeric($latitudeValue) || ! is_numeric($longitudeValue)) {
+            return null;
+        }
+
+        $altitudeValue = $first['GPS:GPSAltitude'] ?? $first['GPSAltitude'] ?? null;
+        $altitude      = is_numeric($altitudeValue) ? (float) $altitudeValue : null;
+
+        return [
+            'lat' => (float) $latitudeValue,
+            'lon' => (float) $longitudeValue,
+            'alt' => $altitude,
+        ];
+    }
+
+    private function formatGpsCoordinateValue(float $latitude, float $longitude, float|null $altitude): string
+    {
+        $formatted = sprintf('%0.8f, %0.8f', $latitude, $longitude);
+        if ($altitude !== null) {
+            $formatted .= sprintf(', %0.2f', $altitude);
+        }
+
+        return $formatted;
     }
 
     private function isTransientWriteFailure(string $stdout, string $stderr): bool

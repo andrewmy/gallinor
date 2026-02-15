@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace App\Images\Domain;
 
+use function abs;
 use function array_key_exists;
+use function in_array;
+use function preg_match;
 use function sprintf;
+use function str_ends_with;
+use function str_replace;
 use function strpos;
+use function strtolower;
 use function substr;
+use function trim;
 
 final readonly class StrictMetadataVerifier
 {
@@ -23,6 +30,8 @@ final readonly class StrictMetadataVerifier
         'JSON' => true,
         // Xiaomi vendor XMP block is not portable across AVIF/HEIC rewrite.
         'XMP-MiCamera' => true,
+        // XMP packet bookkeeping block (extended payload references) is rewritten/dropped on metadata rewrite.
+        'XMP-xmpNote' => true,
         // Vendor/private maker-note projection tags are unstable across container rewrite.
         'MakerUnknown' => true,
         // Samsung trailer blocks are proprietary metadata payloads and non-portable across container rewrite.
@@ -31,12 +40,19 @@ final readonly class StrictMetadataVerifier
 
     private const string SHUTTER_SPEED_TAG                        = 'ExifIFD:ShutterSpeedValue';
     private const string EXPOSURE_TIME_TAG                        = 'ExifIFD:ExposureTime';
+    private const string COLOR_SPACE_TAG                          = 'ExifIFD:ColorSpace';
+    private const string GPS_ALTITUDE_TAG                         = 'GPS:GPSAltitude';
+    private const string GPS_LATITUDE_TAG                         = 'GPS:GPSLatitude';
+    private const string GPS_LATITUDE_REF_TAG                     = 'GPS:GPSLatitudeRef';
+    private const string GPS_LONGITUDE_TAG                        = 'GPS:GPSLongitude';
+    private const string GPS_LONGITUDE_REF_TAG                    = 'GPS:GPSLongitudeRef';
+    private const string GPS_H_POSITIONING_ERROR_TAG              = 'GPS:GPSHPositioningError';
     private const string ACR_LOCAL_CORR_PREFIX                    = 'XMP-crs:MaskGroupBasedCorr';
     private const string ACR_RETOUCH_AREA_PREFIX                  = 'XMP-crs:RetouchArea';
     private const string PHOTOSHOP_CAMERA_PROFILE_VIGNETTE_PREFIX = 'XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel';
     private const string ALIEN_EXPOSURE_XMP_PREFIX                = 'XMP-alienexposure:';
 
-    private const array IGNORED_TAGS = [
+    private const array IGNORED_TAGS                    = [
         'SourceFile' => true,
         // File format/container details: must differ across AVIF→HEIC / JPEG→HEIC.
         'IFD0:Compression' => true,
@@ -75,6 +91,8 @@ final readonly class StrictMetadataVerifier
         'Sony:PreviewImage' => true,
         // ExifTool/XMP writer signature: expected to change when rewriting metadata.
         'XMP-x:XMPToolkit' => true,
+        // XMP projection of EXIF exposure compensation may be rewritten independently of core EXIF fields.
+        'XMP-exif:ExposureCompensation' => true,
         // Adobe Camera Raw mask metadata: editing instructions for gradient-based corrections
         // stored by Lightroom/ACR. These are non-portable editing parameters, not capture metadata.
         'XMP-crs:MaskGroupBasedCorrMaskMasksDabs' => true,
@@ -83,6 +101,7 @@ final readonly class StrictMetadataVerifier
         'XMP-tiff:ImageWidth' => true,
         'XMP-tiff:ImageHeight' => true,
     ];
+    private const float GPS_NUMERIC_EQ_TOLERANCE_METERS = 0.01;
 
     /**
      * @param array<string, string> $source
@@ -103,7 +122,15 @@ final readonly class StrictMetadataVerifier
                 continue;
             }
 
+            if ($this->shouldIgnoreGpsNumericDifference($tag, $value, $dest)) {
+                continue;
+            }
+
             if (! array_key_exists($tag, $dest)) {
+                if ($this->shouldTreatMissingTagAsEquivalentProjection($tag, $source, $dest, $value)) {
+                    continue;
+                }
+
                 $diffs[] = sprintf('Missing tag in destination: %s', $tag);
                 continue;
             }
@@ -162,6 +189,144 @@ final readonly class StrictMetadataVerifier
         $group = substr($tag, 0, $pos);
 
         return isset(self::IGNORED_GROUPS[$group]);
+    }
+
+    /**
+     * GPS altitude/accuracy tags may be rewritten with equivalent numeric values
+     * (units/precision formatting) during metadata rewrite.
+     *
+     * @param array<string, string> $dest
+     */
+    private function shouldIgnoreGpsNumericDifference(string $tag, string $sourceValue, array $dest): bool
+    {
+        if ($tag !== self::GPS_ALTITUDE_TAG && $tag !== self::GPS_H_POSITIONING_ERROR_TAG) {
+            return false;
+        }
+
+        if (! array_key_exists($tag, $dest)) {
+            return false;
+        }
+
+        if ((string) $dest[$tag] === $sourceValue) {
+            return false;
+        }
+
+        $sourceNumeric = $this->extractFirstNumericValue($sourceValue);
+        $destNumeric   = $this->extractFirstNumericValue((string) $dest[$tag]);
+
+        if ($sourceNumeric === null || $destNumeric === null) {
+            return false;
+        }
+
+        return abs($sourceNumeric - $destNumeric) <= self::GPS_NUMERIC_EQ_TOLERANCE_METERS;
+    }
+
+    private function extractFirstNumericValue(string $value): float|null
+    {
+        if (preg_match('/[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?/', $value, $matches) !== 1) {
+            return null;
+        }
+
+        return (float) $matches[0];
+    }
+
+    /**
+     * Some containers keep critical capture metadata in equivalent projection tags
+     * (for example QuickTime/Keys GPS coordinates or EXIF-vs-XMP ColorSpace).
+     *
+     * @param array<string, string> $source
+     * @param array<string, string> $dest
+     */
+    private function shouldTreatMissingTagAsEquivalentProjection(
+        string $missingTag,
+        array $source,
+        array $dest,
+        string $sourceValue,
+    ): bool {
+        return $this->hasEquivalentColorSpaceProjection($missingTag, $sourceValue, $dest)
+            || $this->shouldIgnoreMissingGpsTagFromEmptySource($missingTag, $source);
+    }
+
+    /** @param array<string, string> $dest */
+    private function hasEquivalentColorSpaceProjection(string $missingTag, string $sourceValue, array $dest): bool
+    {
+        if ($missingTag !== self::COLOR_SPACE_TAG) {
+            return false;
+        }
+
+        $normalizedSource = $this->normalizeColorSpaceValue($sourceValue);
+
+        foreach ($dest as $tag => $value) {
+            if (! str_ends_with($tag, ':ColorSpace')) {
+                continue;
+            }
+
+            if ($this->normalizeColorSpaceValue((string) $value) === $normalizedSource) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @param array<string, string> $source */
+    private function shouldIgnoreMissingGpsTagFromEmptySource(string $missingTag, array $source): bool
+    {
+        if (
+            ! in_array($missingTag, [
+                self::GPS_LATITUDE_REF_TAG,
+                self::GPS_LATITUDE_TAG,
+                self::GPS_LONGITUDE_REF_TAG,
+                self::GPS_LONGITUDE_TAG,
+                self::GPS_ALTITUDE_TAG,
+            ], true)
+        ) {
+            return false;
+        }
+
+        $rawTokens = [
+            (string) ($source[self::GPS_LATITUDE_REF_TAG] ?? ''),
+            (string) ($source[self::GPS_LATITUDE_TAG] ?? ''),
+            (string) ($source[self::GPS_LONGITUDE_REF_TAG] ?? ''),
+            (string) ($source[self::GPS_LONGITUDE_TAG] ?? ''),
+            (string) ($source[self::GPS_ALTITUDE_TAG] ?? ''),
+        ];
+
+        foreach ($rawTokens as $rawToken) {
+            if (! $this->isGpsSourcePlaceholderValue($rawToken)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function normalizeColorSpaceValue(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+        if ($normalized === '1') {
+            return 'srgb';
+        }
+
+        if ($normalized === '65535') {
+            return 'uncalibrated';
+        }
+
+        if ($normalized === 's-rgb') {
+            return 'srgb';
+        }
+
+        return str_replace(' ', '', $normalized);
+    }
+
+    private function isGpsSourcePlaceholderValue(string $value): bool
+    {
+        $normalized = strtolower(trim($value));
+        if ($normalized === '') {
+            return true;
+        }
+
+        return in_array($normalized, ['undef', 'unknown', 'unknown ()'], true);
     }
 
     /**

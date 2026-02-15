@@ -10,14 +10,20 @@ use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
 use function chmod;
+use function count;
+use function explode;
 use function file_exists;
 use function file_get_contents;
 use function file_put_contents;
+use function in_array;
 use function is_array;
+use function is_string;
+use function json_decode;
 use function mkdir;
 use function rmdir;
 use function scandir;
 use function sprintf;
+use function str_starts_with;
 use function sys_get_temp_dir;
 use function trim;
 use function uniqid;
@@ -234,6 +240,105 @@ PHP,
         );
 
         self::assertTrue(true);
+    }
+
+    public function test_restore_critical_capture_metadata_copies_expected_tags(): void
+    {
+        $logPath  = $this->tmpDir . '/restore-critical-commands.log';
+        $toolPath = $this->createFakeExiftool(
+            'fake-exiftool-restore-critical.php',
+            sprintf(
+                <<<'PHP'
+#!/usr/bin/env php
+<?php
+$logPath = %s;
+file_put_contents($logPath, json_encode($argv) . "\n", FILE_APPEND);
+
+if (in_array('-json', $argv, true)) {
+    // Simulate short-name JSON keys (no group prefix) to ensure parser fallback works.
+    fwrite(STDOUT, '[{"GPSLatitude":56.9596278,"GPSLongitude":24.1127222,"GPSAltitude":12.34}]');
+    exit(0);
+}
+
+fwrite(STDOUT, "    1 image files updated\n");
+PHP,
+                var_export($logPath, true),
+            ),
+        );
+
+        $platform = new StubPlatform();
+        $platform->setTool('exiftool', $toolPath);
+
+        $exiftool = new Exiftool($platform);
+        $exiftool->restoreCriticalCaptureMetadata('/tmp/source.jpg', '/tmp/target.heic');
+
+        $lines = explode("\n", trim((string) file_get_contents($logPath)));
+        self::assertTrue(count($lines) >= 3);
+
+        $commands = [];
+        foreach ($lines as $line) {
+            if ($line === '') {
+                continue;
+            }
+
+            $decoded = json_decode($line, true);
+            self::assertTrue(is_array($decoded));
+            $commands[] = $decoded;
+        }
+
+        $foundCriticalCopy         = false;
+        $foundColorSpaceProjection = false;
+        $foundQuickTime            = false;
+        $foundKeys                 = false;
+        $foundXmpGps               = false;
+
+        foreach ($commands as $command) {
+            if (! is_array($command)) {
+                continue;
+            }
+
+            if (
+                in_array('-tagsFromFile', $command, true)
+                && in_array('-GPS:GPSLatitudeRef', $command, true)
+                && in_array('-GPS:GPSLatitude', $command, true)
+                && in_array('-GPS:GPSLongitudeRef', $command, true)
+                && in_array('-GPS:GPSLongitude', $command, true)
+                && in_array('-GPS:GPSAltitude', $command, true)
+                && in_array('-ExifIFD:ColorSpace', $command, true)
+            ) {
+                $foundCriticalCopy = true;
+            }
+
+            if (in_array('-XMP-exif:ColorSpace<ExifIFD:ColorSpace', $command, true)) {
+                $foundColorSpaceProjection = true;
+            }
+
+            foreach ($command as $argument) {
+                if (! is_string($argument)) {
+                    continue;
+                }
+
+                if (str_starts_with($argument, '-QuickTime:GPSCoordinates=')) {
+                    $foundQuickTime = true;
+                }
+
+                if (str_starts_with($argument, '-Keys:GPSCoordinates=')) {
+                    $foundKeys = true;
+                }
+
+                if (! str_starts_with($argument, '-XMP-exif:GPSLatitude=')) {
+                    continue;
+                }
+
+                $foundXmpGps = true;
+            }
+        }
+
+        self::assertTrue($foundCriticalCopy);
+        self::assertTrue($foundColorSpaceProjection);
+        self::assertTrue($foundQuickTime);
+        self::assertTrue($foundKeys);
+        self::assertTrue($foundXmpGps);
     }
 
     public function test_metadata_map_uses_minor_error_mode_and_returns_json_map(): void

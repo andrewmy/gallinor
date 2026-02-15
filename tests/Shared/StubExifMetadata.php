@@ -23,6 +23,10 @@ final readonly class StubExifMetadata implements ExifMetadata
     {
     }
 
+    public function restoreCriticalCaptureMetadata(string $from, string $to): void
+    {
+    }
+
     public function forceOrientationTo1(string $path): void
     {
     }

@@ -19,6 +19,11 @@ interface ExifMetadata
     /** Copy metadata from one file to another (overwrites destination metadata). */
     public function copyAllMetadata(string $from, string $to): void;
 
+    /**
+     * Re-apply critical capture metadata tags that some container rewrites may drop.
+     */
+    public function restoreCriticalCaptureMetadata(string $from, string $to): void;
+
     public function forceOrientationTo1(string $path): void;
 
     /**
