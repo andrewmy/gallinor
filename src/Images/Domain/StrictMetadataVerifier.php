@@ -38,20 +38,29 @@ final readonly class StrictMetadataVerifier
         'Samsung' => true,
     ];
 
-    private const string SHUTTER_SPEED_TAG                        = 'ExifIFD:ShutterSpeedValue';
-    private const string EXPOSURE_TIME_TAG                        = 'ExifIFD:ExposureTime';
-    private const string COLOR_SPACE_TAG                          = 'ExifIFD:ColorSpace';
-    private const string GPS_ALTITUDE_TAG                         = 'GPS:GPSAltitude';
-    private const string GPS_LATITUDE_TAG                         = 'GPS:GPSLatitude';
-    private const string GPS_LATITUDE_REF_TAG                     = 'GPS:GPSLatitudeRef';
-    private const string GPS_LONGITUDE_TAG                        = 'GPS:GPSLongitude';
-    private const string GPS_LONGITUDE_REF_TAG                    = 'GPS:GPSLongitudeRef';
-    private const string GPS_H_POSITIONING_ERROR_TAG              = 'GPS:GPSHPositioningError';
-    private const string ACR_LOCAL_CORR_PREFIX                    = 'XMP-crs:MaskGroupBasedCorr';
-    private const string ACR_RETOUCH_AREA_PREFIX                  = 'XMP-crs:RetouchArea';
-    private const string ACR_LOOK_PARAMETERS_PREFIX               = 'XMP-crs:LookParameters';
-    private const string PHOTOSHOP_CAMERA_PROFILE_VIGNETTE_PREFIX = 'XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel';
-    private const string ALIEN_EXPOSURE_XMP_PREFIX                = 'XMP-alienexposure:';
+    private const string SHUTTER_SPEED_TAG           = 'ExifIFD:ShutterSpeedValue';
+    private const string EXPOSURE_TIME_TAG           = 'ExifIFD:ExposureTime';
+    private const string COLOR_SPACE_TAG             = 'ExifIFD:ColorSpace';
+    private const string GPS_ALTITUDE_TAG            = 'GPS:GPSAltitude';
+    private const string GPS_LATITUDE_TAG            = 'GPS:GPSLatitude';
+    private const string GPS_LATITUDE_REF_TAG        = 'GPS:GPSLatitudeRef';
+    private const string GPS_LONGITUDE_TAG           = 'GPS:GPSLongitude';
+    private const string GPS_LONGITUDE_REF_TAG       = 'GPS:GPSLongitudeRef';
+    private const string GPS_H_POSITIONING_ERROR_TAG = 'GPS:GPSHPositioningError';
+    private const array IGNORED_TAG_PREFIXES         = [
+        // Unknown/private EXIF tags frequently dropped by container conversion.
+        'ExifIFD:Exif_0x',
+        // ExifTool-generated MakerNote text projections are non-portable across AVIF/HEIC rewrites.
+        'ExifIFD:MakerNoteUnknown',
+        // Adobe Camera Raw metadata payloads are non-portable across container rewrites.
+        'XMP-crs:MaskGroupBasedCorr',
+        'XMP-crs:RetouchArea',
+        'XMP-crs:LookParameters',
+        // Photoshop camera-profile vignette calibration payload is non-portable across container rewrites.
+        'XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel',
+        // Alien Exposure vendor XMP block stores editor-local state.
+        'XMP-alienexposure:',
+    ];
 
     private const array IGNORED_TAGS                    = [
         'SourceFile' => true,
@@ -152,39 +161,10 @@ final readonly class StrictMetadataVerifier
             return true;
         }
 
-        // Unknown/private EXIF tags are represented as Exif_0xNNNN and are frequently dropped by container conversion.
-        if (strpos($tag, 'ExifIFD:Exif_0x') === 0) {
-            return true;
-        }
-
-        // ExifTool-generated MakerNote text projections are non-portable across AVIF/HEIC rewrites.
-        if (strpos($tag, 'ExifIFD:MakerNoteUnknown') === 0) {
-            return true;
-        }
-
-        // Adobe Camera Raw local adjustment payload is non-portable across container rewrites.
-        if (strpos($tag, self::ACR_LOCAL_CORR_PREFIX) === 0) {
-            return true;
-        }
-
-        // Adobe Camera Raw retouch-area payload is non-portable across container rewrites.
-        if (strpos($tag, self::ACR_RETOUCH_AREA_PREFIX) === 0) {
-            return true;
-        }
-
-        // Adobe Camera Raw look-table payload is non-portable across container rewrites.
-        if (strpos($tag, self::ACR_LOOK_PARAMETERS_PREFIX) === 0) {
-            return true;
-        }
-
-        // Photoshop camera-profile vignette calibration payload is non-portable across container rewrites.
-        if (strpos($tag, self::PHOTOSHOP_CAMERA_PROFILE_VIGNETTE_PREFIX) === 0) {
-            return true;
-        }
-
-        // Alien Exposure vendor XMP block stores editor-local state and is non-portable across container rewrites.
-        if (strpos($tag, self::ALIEN_EXPOSURE_XMP_PREFIX) === 0) {
-            return true;
+        foreach (self::IGNORED_TAG_PREFIXES as $ignoredPrefix) {
+            if (strpos($tag, $ignoredPrefix) === 0) {
+                return true;
+            }
         }
 
         $pos = strpos($tag, ':');
