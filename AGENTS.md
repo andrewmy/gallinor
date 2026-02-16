@@ -280,8 +280,8 @@ Smoke tests are intentionally excluded from the default `just ci` suite.
 
 ### Current Status
 
-**Unit suite (`just ci` / `just test`)**: 181 tests — passing, with 6
-incomplete tests and 1 warning (as of 2026-02-15)
+**Unit suite (`just ci` / `just test`)**: 185 tests — passing, 0 incomplete,
+0 warnings (as of 2026-02-16)
 
 **Smoke suite (`just smoke`)**: 5 tests with real CLI invocations; environment
 dependent and may skip when toolchain/localhost IPC is unavailable.
@@ -303,13 +303,15 @@ dependent and may skip when toolchain/localhost IPC is unavailable.
 - `ParallelWorkerPayloadHandler` — worker message parsing and batch mutation
 - `ParallelTempDirectoryManager` — temp dir creation/pruning/removal
 - `ParallelConsoleTelemetry` — panel redraw behavior and trace coalescing
+- `ArchiveVerifier` — ARW/archive verification with real temp-dir coverage for
+  `glob()` paths
+- `RawArchiver` — Windows tar/xz flow including xz failure path
 - `RemoveAvifs` CLI — race-safe AVIF removal + missing-file skip reporting
 
 ### Not Yet Testable (blocked by `final` classes)
 
 - `ImageOptimizer` — depends on concrete `HeicCodec`/external tools; needs
   ports to stub encode/decode/QC
-- `ArchiveVerifier` — depends on `Platform` (final)
 - Many CLI commands — construct tool wrappers inside `__invoke`, so unit tests
   often require real binaries on PATH
 
@@ -441,11 +443,6 @@ filesystem isolation, making tests slower and less reliable.
 - `InMemoryProcessExecutor` misnamed — writes real files via
   `file_put_contents()` instead of being truly in-memory
 - `VideoFile` domain objects use real paths, coupling domain logic to filesystem
-- `ArchiveVerifierTest` has 5 incomplete tests due to `glob()` not working on
-  vfsStream paths
-- `RawArchiverTest` has 1 incomplete test (needs better tar/xz simulation)
-- `RawArchiver` (Windows flow) uses `rename()` from temp dir → target dir; can
-  fail across filesystems/volumes
 
 **Recommended Approach**:
 
@@ -454,7 +451,5 @@ filesystem isolation, making tests slower and less reliable.
    refactor)
 2. Make `InMemoryProcessExecutor` truly in-memory — track file sizes in arrays
    without writing
-3. Refactor `ArchiveVerifier` to avoid `glob()` (inject archive discovery /
-   filesystem abstraction) so vfsStream works
-4. Make `RawArchiver` robust to cross-filesystem moves (fallback to copy+unlink
-   when `rename()` fails), then test it
+3. Keep `ArchiveVerifier` on real temp-dir tests for `glob()` paths unless
+   archive discovery is abstracted behind an injectable filesystem port

@@ -11,6 +11,7 @@ use RuntimeException;
 
 use function array_map;
 use function basename;
+use function copy;
 use function count;
 use function escapeshellarg;
 use function file_exists;
@@ -115,7 +116,7 @@ final readonly class RawArchiver
         }
 
         $compressedTar = $tarPath . '.xz';
-        rename($compressedTar, $archivePath);
+        $this->moveFileOrFail($compressedTar, $archivePath);
 
         return (int) filesize($archivePath);
     }
@@ -155,5 +156,25 @@ final readonly class RawArchiver
 
             unlink($file);
         }
+    }
+
+    /** @throws RuntimeException */
+    private function moveFileOrFail(string $sourcePath, string $targetPath): void
+    {
+        if (@rename($sourcePath, $targetPath)) {
+            return;
+        }
+
+        if (@copy($sourcePath, $targetPath)) {
+            $this->cleanup($sourcePath);
+
+            return;
+        }
+
+        throw new RuntimeException(sprintf(
+            'Failed to move archive from %s to %s.',
+            $sourcePath,
+            $targetPath,
+        ));
     }
 }

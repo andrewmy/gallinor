@@ -164,8 +164,6 @@ final class RawArchiverTest extends FsTestCase
 
     public function test_windows_xz_failure_throws_exception(): void
     {
-        self::markTestIncomplete('InMemoryProcessExecutor needs enhancement to properly simulate tar file creation');
-
         vfsStream::newFile('photo.arw')->at(vfsStream::setup('root'));
         $directory = vfsStream::url('root');
         $arwFile   = $directory . DIRECTORY_SEPARATOR . 'photo.arw';
@@ -174,12 +172,13 @@ final class RawArchiverTest extends FsTestCase
         $this->processExecutor     = new InMemoryProcessExecutor(
             commandResults: [
                 'tar' => new ProcessResult(0, []),
-                'xz' => new ProcessResult(1, ['xz error']),
+                '/usr/bin/xz' => new ProcessResult(1, ['xz error']),
             ],
         );
         $archiver                  = new RawArchiver($this->platform, $this->logger, $this->processExecutor);
 
         $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('xz failed');
 
         $archiver->archive($directory, [$arwFile]);
     }

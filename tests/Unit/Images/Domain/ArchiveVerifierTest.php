@@ -15,13 +15,24 @@ use SplFileInfo;
 
 use function count;
 use function explode;
+use function file_put_contents;
 use function implode;
+use function is_dir;
+use function mkdir;
+use function rmdir;
+use function scandir;
+use function str_repeat;
+use function sys_get_temp_dir;
+use function uniqid;
+use function unlink;
 
 final class ArchiveVerifierTest extends FsTestCase
 {
     private StubPlatform $platform;
     private InMemoryProcessExecutor $processExecutor;
     private ArchiveVerifier $verifier;
+    /** @var list<string> */
+    private array $realTempDirs = [];
 
     protected function setUp(): void
     {
@@ -31,6 +42,15 @@ final class ArchiveVerifierTest extends FsTestCase
         $this->platform        = new StubPlatform();
         $this->platform->setTool('tar', '/usr/bin/tar');
         $this->verifier = new ArchiveVerifier($this->platform, $this->processExecutor);
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ($this->realTempDirs as $realTempDir) {
+            self::removeDirRecursively($realTempDir);
+        }
+
+        parent::tearDown();
     }
 
     public function test_get_unarchived_arws_by_dir_empty_input(): void
@@ -62,17 +82,15 @@ final class ArchiveVerifierTest extends FsTestCase
 
     public function test_get_unarchived_arws_by_dir_all_archived(): void
     {
-        self::markTestIncomplete('Requires proper vfsStream glob() support');
-
-        $root = vfsStream::setup('root');
-        vfsStream::newFile('photo1.arw')->at($root);
-        vfsStream::newFile('photo2.arw')->at($root);
-        vfsStream::newFile('raws-2.tar.xz')->withContent('archive')->at($root);
+        $realDir = $this->createRealTempDir();
+        file_put_contents($realDir . '/photo1.arw', 'arw1');
+        file_put_contents($realDir . '/photo2.arw', 'arw2');
+        file_put_contents($realDir . '/raws-2.tar.xz', 'archive');
 
         $this->setupTarCommandToReturn(['photo1.arw', 'photo2.arw']);
 
-        $arw1File = new SplFileInfo(vfsStream::url('root/photo1.arw'));
-        $arw2File = new SplFileInfo(vfsStream::url('root/photo2.arw'));
+        $arw1File = new SplFileInfo($realDir . '/photo1.arw');
+        $arw2File = new SplFileInfo($realDir . '/photo2.arw');
         $files    = $this->createFileIterator([$arw1File, $arw2File]);
 
         $result = $this->verifier->getUnarchivedArwsByDir($files);
@@ -82,27 +100,25 @@ final class ArchiveVerifierTest extends FsTestCase
 
     public function test_get_unarchived_arws_by_dir_partially_archived(): void
     {
-        self::markTestIncomplete('Requires proper vfsStream glob() support');
-
-        $root = vfsStream::setup('root');
-        vfsStream::newFile('photo1.arw')->at($root);
-        vfsStream::newFile('photo2.arw')->at($root);
-        vfsStream::newFile('photo3.arw')->at($root);
-        vfsStream::newFile('raws-2.tar.xz')->withContent('archive')->at($root);
+        $realDir = $this->createRealTempDir();
+        file_put_contents($realDir . '/photo1.arw', 'arw1');
+        file_put_contents($realDir . '/photo2.arw', 'arw2');
+        file_put_contents($realDir . '/photo3.arw', 'arw3');
+        file_put_contents($realDir . '/raws-2.tar.xz', 'archive');
 
         $this->setupTarCommandToReturn(['photo1.arw', 'photo3.arw']);
 
-        $arw1File = new SplFileInfo(vfsStream::url('root/photo1.arw'));
-        $arw2File = new SplFileInfo(vfsStream::url('root/photo2.arw'));
-        $arw3File = new SplFileInfo(vfsStream::url('root/photo3.arw'));
+        $arw1File = new SplFileInfo($realDir . '/photo1.arw');
+        $arw2File = new SplFileInfo($realDir . '/photo2.arw');
+        $arw3File = new SplFileInfo($realDir . '/photo3.arw');
         $files    = $this->createFileIterator([$arw1File, $arw2File, $arw3File]);
 
         $result = $this->verifier->getUnarchivedArwsByDir($files);
 
         self::assertCount(1, $result);
-        self::assertArrayHasKey(vfsStream::url('root'), $result);
-        self::assertCount(1, $result[vfsStream::url('root')]);
-        self::assertContains(vfsStream::url('root/photo2.arw'), $result[vfsStream::url('root')]);
+        self::assertArrayHasKey($realDir, $result);
+        self::assertCount(1, $result[$realDir]);
+        self::assertContains($realDir . '/photo2.arw', $result[$realDir]);
     }
 
     public function test_get_unarchived_arws_by_dir_no_archives(): void
@@ -166,21 +182,20 @@ final class ArchiveVerifierTest extends FsTestCase
 
     public function test_verify_all_archived(): void
     {
-        self::markTestIncomplete('Requires proper vfsStream glob() support');
-
-        $root = vfsStream::setup('root');
-        vfsStream::newFile('photo1.arw')->at($root);
-        vfsStream::newFile('photo2.arw')->at($root);
-        vfsStream::newFile('raws-2.tar.xz')->withContent('archive')->at($root);
+        $realDir      = $this->createRealTempDir();
+        $archivePath  = $realDir . '/raws-2.tar.xz';
+        $archiveBytes = 100;
+        file_put_contents($realDir . '/photo1.arw', 'arw1');
+        file_put_contents($realDir . '/photo2.arw', 'arw2');
+        file_put_contents($archivePath, str_repeat('a', $archiveBytes));
 
         $this->processExecutor = new InMemoryProcessExecutor(
-            commandResults: [ProcessResult::class => new ProcessResult(0, ['photo1.arw', 'photo2.arw'])],
-            fileSizes: [$root->url() => 100],
+            commandResults: ['-tf' => new ProcessResult(0, ['photo1.arw', 'photo2.arw'])],
         );
         $this->verifier        = new ArchiveVerifier($this->platform, $this->processExecutor);
 
-        $arw1File = new SplFileInfo(vfsStream::url('root/photo1.arw'));
-        $arw2File = new SplFileInfo(vfsStream::url('root/photo2.arw'));
+        $arw1File = new SplFileInfo($realDir . '/photo1.arw');
+        $arw2File = new SplFileInfo($realDir . '/photo2.arw');
         $files    = $this->createFileIterator([$arw1File, $arw2File]);
 
         $result = $this->verifier->verify($files);
@@ -189,61 +204,60 @@ final class ArchiveVerifierTest extends FsTestCase
         self::assertCount(2, $result->arwsToRemove);
         self::assertSame([], $result->unarchivedArws);
         self::assertSame([], $result->warnings);
-        self::assertGreaterThan(0, $result->archiveReplacementSize);
+        self::assertSame($archiveBytes, $result->archiveReplacementSize);
     }
 
     public function test_verify_partially_archived(): void
     {
-        self::markTestIncomplete('Requires proper vfsStream glob() support');
-
-        $root = vfsStream::setup('root');
-        vfsStream::newFile('photo1.arw')->at($root);
-        vfsStream::newFile('photo2.arw')->at($root);
-        vfsStream::newFile('photo3.arw')->at($root);
-        vfsStream::newFile('raws-2.tar.xz')->withContent('archive')->at($root);
+        $realDir      = $this->createRealTempDir();
+        $archivePath  = $realDir . '/raws-2.tar.xz';
+        $archiveBytes = 100;
+        file_put_contents($realDir . '/photo1.arw', 'arw1');
+        file_put_contents($realDir . '/photo2.arw', 'arw2');
+        file_put_contents($realDir . '/photo3.arw', 'arw3');
+        file_put_contents($archivePath, str_repeat('a', $archiveBytes));
 
         $this->processExecutor = new InMemoryProcessExecutor(
-            commandResults: [ProcessResult::class => new ProcessResult(0, ['photo1.arw', 'photo3.arw'])],
-            fileSizes: [$root->url() => 100],
+            commandResults: ['-tf' => new ProcessResult(0, ['photo1.arw', 'photo3.arw'])],
         );
         $this->verifier        = new ArchiveVerifier($this->platform, $this->processExecutor);
 
-        $arw1File = new SplFileInfo(vfsStream::url('root/photo1.arw'));
-        $arw2File = new SplFileInfo(vfsStream::url('root/photo2.arw'));
-        $arw3File = new SplFileInfo(vfsStream::url('root/photo3.arw'));
+        $arw1File = new SplFileInfo($realDir . '/photo1.arw');
+        $arw2File = new SplFileInfo($realDir . '/photo2.arw');
+        $arw3File = new SplFileInfo($realDir . '/photo3.arw');
         $files    = $this->createFileIterator([$arw1File, $arw2File, $arw3File]);
 
         $result = $this->verifier->verify($files);
 
         self::assertSame(3, $result->arwsFound);
         self::assertCount(2, $result->arwsToRemove);
-        self::assertArrayHasKey(vfsStream::url('root'), $result->unarchivedArws);
-        self::assertCount(1, $result->unarchivedArws[vfsStream::url('root')]);
-        self::assertContains(vfsStream::url('root/photo2.arw'), $result->unarchivedArws[vfsStream::url('root')]);
+        self::assertArrayHasKey($realDir, $result->unarchivedArws);
+        self::assertCount(1, $result->unarchivedArws[$realDir]);
+        self::assertContains($realDir . '/photo2.arw', $result->unarchivedArws[$realDir]);
         self::assertCount(1, $result->warnings);
         self::assertStringContainsString('1 ARWs in', $result->warnings[0]);
         self::assertSame(2, count($result->arwsToRemove));
+        self::assertSame($archiveBytes, $result->archiveReplacementSize);
     }
 
     public function test_verify_multiple_directories(): void
     {
-        self::markTestIncomplete('Requires proper vfsStream glob() support');
-
-        $root1 = vfsStream::setup('root1');
-        $root2 = vfsStream::setup('root2');
-
-        vfsStream::newFile('photo1.arw')->at($root1);
-        vfsStream::newFile('photo2.arw')->at($root2);
-
-        vfsStream::newFile('raws-1.tar.xz')->withContent('archive1')->at($root1);
-        vfsStream::newFile('raws-1.tar.xz')->withContent('archive2')->at($root2);
-
-        $dir1 = vfsStream::url('root1');
-        $dir2 = vfsStream::url('root2');
+        $dir1          = $this->createRealTempDir();
+        $dir2          = $this->createRealTempDir();
+        $archive1Path  = $dir1 . '/raws-1.tar.xz';
+        $archive2Path  = $dir2 . '/raws-1.tar.xz';
+        $archive1Bytes = 90;
+        $archive2Bytes = 110;
+        file_put_contents($dir1 . '/photo1.arw', 'arw1');
+        file_put_contents($dir2 . '/photo2.arw', 'arw2');
+        file_put_contents($archive1Path, str_repeat('a', $archive1Bytes));
+        file_put_contents($archive2Path, str_repeat('b', $archive2Bytes));
 
         $this->processExecutor = new InMemoryProcessExecutor(
-            commandResults: ['tar' => new ProcessResult(0, ['photo1.arw'])],
-            fileSizes: [$dir1 => 100, $dir2 => 100],
+            commandResults: [
+                $archive1Path => new ProcessResult(0, ['photo1.arw']),
+                $archive2Path => new ProcessResult(0, ['photo2.arw']),
+            ],
         );
         $this->verifier        = new ArchiveVerifier($this->platform, $this->processExecutor);
 
@@ -257,6 +271,7 @@ final class ArchiveVerifierTest extends FsTestCase
         self::assertCount(2, $result->arwsToRemove);
         self::assertSame([], $result->unarchivedArws);
         self::assertSame([], $result->warnings);
+        self::assertSame($archive1Bytes + $archive2Bytes, $result->archiveReplacementSize);
     }
 
     /** @param array<string> $filenames */
@@ -265,10 +280,49 @@ final class ArchiveVerifierTest extends FsTestCase
         $output = explode("\n", implode("\n", $filenames));
 
         $this->processExecutor = new InMemoryProcessExecutor(
-            commandResults: [ProcessResult::class => new ProcessResult(0, $output)],
-            fileSizes: [vfsStream::url('root') => 100],
+            commandResults: ['-tf' => new ProcessResult(0, $output)],
         );
         $this->verifier        = new ArchiveVerifier($this->platform, $this->processExecutor);
+    }
+
+    private function createRealTempDir(): string
+    {
+        $path = sys_get_temp_dir() . '/gallinor-archive-verifier-' . uniqid('', true);
+        if (! mkdir($path, 0o755, true) && ! is_dir($path)) {
+            self::fail('Failed to create temporary directory for ArchiveVerifierTest.');
+        }
+
+        $this->realTempDirs[] = $path;
+
+        return $path;
+    }
+
+    private static function removeDirRecursively(string $path): void
+    {
+        if (! is_dir($path)) {
+            return;
+        }
+
+        $entries = scandir($path);
+        if ($entries === false) {
+            return;
+        }
+
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $candidate = $path . '/' . $entry;
+            if (is_dir($candidate)) {
+                self::removeDirRecursively($candidate);
+                continue;
+            }
+
+            @unlink($candidate);
+        }
+
+        @rmdir($path);
     }
 
     /** @param array<SplFileInfo> $files */

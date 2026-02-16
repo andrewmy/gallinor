@@ -61,9 +61,15 @@ final class RemoveOriginals extends Command
             return self::FAILURE;
         }
 
-        $exiftool        = new Exiftool($this->platform);
-        $collector       = new ImageFileCollector($this->scanner, $exiftool);
-        $archiveVerifier = new ArchiveVerifier($this->platform, new RealProcessExecutor());
+        try {
+            $exiftool        = new Exiftool($this->platform);
+            $collector       = new ImageFileCollector($this->scanner, $exiftool);
+            $archiveVerifier = new ArchiveVerifier($this->platform, new RealProcessExecutor());
+        } catch (Throwable $exception) {
+            $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
+
+            return self::FAILURE;
+        }
 
         $jpegCollection = $collector->collectFromDirectories(
             $directories,

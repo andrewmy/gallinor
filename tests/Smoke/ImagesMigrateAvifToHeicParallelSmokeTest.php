@@ -54,7 +54,10 @@ final class ImagesMigrateAvifToHeicParallelSmokeTest extends TestCase
             self::assertSuccessfulOrSkipForEnvironment($process);
 
             $output = $process->getOutput() . $process->getErrorOutput();
-            self::assertStringContainsString('Parallel AVIF migration mode: enabled (workers=2, worker-max-jobs=2, job-timeout=5s)', $output);
+            self::assertMatchesRegularExpression(
+                '/Parallel AVIF migration mode: enabled \((?:fixed(?: safe)? workers=2|adaptive start-workers=\d+, max-workers=2), worker-max-jobs=2, job-timeout=5s\)/',
+                $output,
+            );
             self::assertStringContainsString('Found 0 AVIFs (0 already have .heic, 0 to migrate)', $output);
         } finally {
             self::removeDir($tempDir);

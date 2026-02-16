@@ -39,7 +39,7 @@ use function sprintf;
 use const DIRECTORY_SEPARATOR;
 use const PATHINFO_FILENAME;
 
-#[AsCommand(name: 'images:migrate-avif-to-heic', description: 'Convert existing AVIFs to HEIC for OneDrive compatibility (SSIMULACRA2 ≥ 90)')]
+#[AsCommand(name: 'images:migrate-avif-to-heic', description: 'Convert existing AVIFs to HEIC for OneDrive compatibility (SSIMULACRA2 ≥ 85)')]
 final class MigrateAvifToHeic extends Command
 {
     public function __construct(

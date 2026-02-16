@@ -57,7 +57,10 @@ final class ImagesSqueezeParallelSmokeTest extends TestCase
             self::assertSuccessfulOrSkipForEnvironment($process);
 
             $output = $process->getOutput() . $process->getErrorOutput();
-            self::assertStringContainsString('Parallel JPEG mode: enabled (workers=2, worker-max-jobs=2, job-timeout=5s)', $output);
+            self::assertMatchesRegularExpression(
+                '/Parallel JPEG mode: enabled \((?:fixed(?: safe)? workers=2|adaptive start-workers=\d+, max-workers=2), worker-max-jobs=2, job-timeout=5s\)/',
+                $output,
+            );
             self::assertStringContainsString('Dry run complete. Found 0 JPEGs to process, 0 ARW directories to archive.', $output);
         } finally {
             self::removeDir($tempDir);
@@ -115,7 +118,10 @@ final class ImagesSqueezeParallelSmokeTest extends TestCase
 
             $output = $process->getOutput() . $process->getErrorOutput();
 
-            self::assertStringContainsString('Parallel JPEG mode: enabled (workers=1, worker-max-jobs=1, job-timeout=60s)', $output);
+            self::assertMatchesRegularExpression(
+                '/Parallel JPEG mode: enabled \((?:fixed(?: safe)? workers=1|adaptive start-workers=\d+, max-workers=1), worker-max-jobs=1, job-timeout=60s\)/',
+                $output,
+            );
             self::assertStringContainsString('JPEG Summary:', $output);
             self::assertStringContainsString('  Found: 1', $output);
             self::assertStringContainsString('  Errored: 0', $output);

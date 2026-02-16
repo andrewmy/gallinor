@@ -149,4 +149,32 @@ final class ParallelExecutionPlanResolverTest extends TestCase
             $plan->enabledMessage('JPEG', 50, 3600),
         );
     }
+
+    public function test_enabled_message_formats_fixed_mode(): void
+    {
+        $plan = new ParallelExecutionPlan(
+            workers: 2,
+            adaptiveStartWorkers: null,
+            strategy: ParallelExecutionPlan::STRATEGY_FIXED,
+        );
+
+        self::assertSame(
+            'Parallel JPEG mode: enabled (fixed workers=2, worker-max-jobs=50, job-timeout=3600s)',
+            $plan->enabledMessage('JPEG', 50, 3600),
+        );
+    }
+
+    public function test_enabled_message_formats_fixed_safe_mode(): void
+    {
+        $plan = new ParallelExecutionPlan(
+            workers: 4,
+            adaptiveStartWorkers: null,
+            strategy: ParallelExecutionPlan::STRATEGY_FIXED_SAFE,
+        );
+
+        self::assertSame(
+            'Parallel JPEG mode: enabled (fixed safe workers=4, worker-max-jobs=50, job-timeout=3600s)',
+            $plan->enabledMessage('JPEG', 50, 3600),
+        );
+    }
 }

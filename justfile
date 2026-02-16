@@ -8,6 +8,10 @@ composer-validate:
 cbf:
     php vendor/bin/phpcbf
 
+# Check code style
+lint:
+    php vendor/bin/phpcs
+
 # Run static analysis
 stan:
     php vendor/bin/phpstan --memory-limit=-1
@@ -34,7 +38,7 @@ smoke:
 
 # Check code coverage
 coverage-check: test
-    php vendor/bin/coverage-check var/coverage.xml 16
+    php vendor/bin/coverage-check var/coverage.xml 26
 
 # Full CI flow
-ci: composer-validate markdown cbf require-check coverage-check stan security-check
+ci: composer-validate markdown lint require-check coverage-check stan security-check

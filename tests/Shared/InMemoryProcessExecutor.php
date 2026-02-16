@@ -13,7 +13,9 @@ use function preg_match;
 use function str_contains;
 use function str_repeat;
 use function str_starts_with;
+use function strlen;
 use function sys_get_temp_dir;
+use function trim;
 
 final class InMemoryProcessExecutor implements ProcessExecutor
 {
@@ -53,6 +55,8 @@ final class InMemoryProcessExecutor implements ProcessExecutor
 
     private function createFilesFromCommand(string $command): void
     {
+        $this->createTarArtifactsFromCommand($command);
+
         $filePath = null;
 
         if (preg_match('/>\s*([^\s]+)/', $command, $matches) === 1) {
@@ -81,6 +85,48 @@ final class InMemoryProcessExecutor implements ProcessExecutor
 
         file_put_contents($filePath, str_repeat('x', $size));
         $this->actualSizes[$filePath] = $size;
+    }
+
+    private function createTarArtifactsFromCommand(string $command): void
+    {
+        if (preg_match('/\btar\s+-cf\s+([^\s]+)\s+-C\s+/', $command, $matches) === 1) {
+            $tarPath = trim($matches[1], '\'"');
+            $size    = $this->getFileSize($tarPath);
+            if ($size <= 0) {
+                $size = 5;
+            }
+
+            $this->writeSizedFile($tarPath, $size);
+
+            return;
+        }
+
+        if (preg_match('/\bxz\b/', $command) !== 1) {
+            return;
+        }
+
+        if (preg_match('/\s([^\s]+)\s+2>&1$/', $command, $matches) !== 1) {
+            return;
+        }
+
+        $tarPath       = trim($matches[1], '\'"');
+        $compressedTar = $tarPath . '.xz';
+        $size          = $this->getFileSize($compressedTar);
+        if ($size <= 0) {
+            $size = max(1, $this->getFileSize($tarPath));
+        }
+
+        $this->writeSizedFile($compressedTar, $size);
+    }
+
+    private function writeSizedFile(string $path, int $size): void
+    {
+        if ($size <= 0) {
+            return;
+        }
+
+        file_put_contents($path, str_repeat('x', $size));
+        $this->actualSizes[$path] = $size;
     }
 
     private function getFileSize(string $filePath): int
@@ -112,10 +158,25 @@ final class InMemoryProcessExecutor implements ProcessExecutor
             return $this->commandResults[$command];
         }
 
+        $bestMatchKey = null;
+        $bestMatchLen = -1;
+
         foreach ($this->commandResults as $key => $result) {
-            if (str_contains($command, $key)) {
-                return $result;
+            if (! str_contains($command, $key)) {
+                continue;
             }
+
+            $candidateLen = strlen($key);
+            if ($candidateLen < $bestMatchLen) {
+                continue;
+            }
+
+            $bestMatchKey = $key;
+            $bestMatchLen = $candidateLen;
+        }
+
+        if ($bestMatchKey !== null) {
+            return $this->commandResults[$bestMatchKey];
         }
 
         return new ProcessResult(0, []);

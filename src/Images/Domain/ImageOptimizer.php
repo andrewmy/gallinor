@@ -7,6 +7,7 @@ namespace App\Images\Domain;
 use RuntimeException;
 
 use function array_slice;
+use function copy;
 use function file_exists;
 use function filesize;
 use function implode;
@@ -100,7 +101,7 @@ final readonly class ImageOptimizer
 
                     $this->emitStatusEvent($statusEventCallback, 'decision', $cq, $score, $saved, 'pass');
                     $this->emitStatusEvent($statusEventCallback, 'finalize', $cq, $score, $saved);
-                    rename($tmpOptimized, $finalPath);
+                    $this->moveFileOrFail($tmpOptimized, $finalPath);
                     $this->emitStatusEvent($statusEventCallback, 'metadata', $cq, $score, $saved);
                     $this->copyAndVerifyMetadataStrict($file->path, $finalPath);
 
@@ -162,7 +163,7 @@ final readonly class ImageOptimizer
                 $found['score'],
                 $file->size - $found['size'],
             );
-            rename($tmpOptimized, $finalPath);
+            $this->moveFileOrFail($tmpOptimized, $finalPath);
             $this->emitStatusEvent(
                 $statusEventCallback,
                 'metadata',
@@ -215,7 +216,7 @@ final readonly class ImageOptimizer
 
             $orientation = $this->exiftool->orientation($avifPath);
             if ($orientation === 1) {
-                rename($rawPng, $refPng);
+                $this->moveFileOrFail($rawPng, $refPng);
             } else {
                 $this->normalizer->imageToUprightPngWithOrientation($rawPng, $refPng, $orientation);
                 $this->cleanup($rawPng);
@@ -249,7 +250,7 @@ final readonly class ImageOptimizer
                 $found['score'],
                 $avifSize - $found['size'],
             );
-            rename($tmpHeic, $targetHeicPath);
+            $this->moveFileOrFail($tmpHeic, $targetHeicPath);
             $this->emitStatusEvent(
                 $statusEventCallback,
                 'metadata',
@@ -443,6 +444,25 @@ final readonly class ImageOptimizer
 
             throw new RuntimeException('Failed to force Orientation=1 after baking rotation.');
         }
+    }
+
+    private function moveFileOrFail(string $sourcePath, string $targetPath): void
+    {
+        if (@rename($sourcePath, $targetPath)) {
+            return;
+        }
+
+        if (@copy($sourcePath, $targetPath)) {
+            $this->cleanup($sourcePath);
+
+            return;
+        }
+
+        throw new RuntimeException(sprintf(
+            'Failed to move file from %s to %s.',
+            $sourcePath,
+            $targetPath,
+        ));
     }
 
     private function cleanup(string ...$files): void
