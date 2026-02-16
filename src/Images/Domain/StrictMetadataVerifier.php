@@ -49,6 +49,7 @@ final readonly class StrictMetadataVerifier
     private const string GPS_H_POSITIONING_ERROR_TAG              = 'GPS:GPSHPositioningError';
     private const string ACR_LOCAL_CORR_PREFIX                    = 'XMP-crs:MaskGroupBasedCorr';
     private const string ACR_RETOUCH_AREA_PREFIX                  = 'XMP-crs:RetouchArea';
+    private const string ACR_LOOK_PARAMETERS_PREFIX               = 'XMP-crs:LookParameters';
     private const string PHOTOSHOP_CAMERA_PROFILE_VIGNETTE_PREFIX = 'XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel';
     private const string ALIEN_EXPOSURE_XMP_PREFIX                = 'XMP-alienexposure:';
 
@@ -168,6 +169,11 @@ final readonly class StrictMetadataVerifier
 
         // Adobe Camera Raw retouch-area payload is non-portable across container rewrites.
         if (strpos($tag, self::ACR_RETOUCH_AREA_PREFIX) === 0) {
+            return true;
+        }
+
+        // Adobe Camera Raw look-table payload is non-portable across container rewrites.
+        if (strpos($tag, self::ACR_LOOK_PARAMETERS_PREFIX) === 0) {
             return true;
         }
 

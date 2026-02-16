@@ -192,6 +192,8 @@ recycling, completion) does not branch on phase names.
 **Timing accounting**: `images:squeeze` reports archiving time using direct
 wall-clock measurement around ARW archival, not derived residual math from
 other timing buckets.
+`images:remove-avifs` is tolerant to plan/delete races: if an AVIF disappears
+before deletion, it is reported as `Skipped missing` (not as a PHP warning).
 
 ### Important Constraints
 
@@ -232,6 +234,7 @@ other timing buckets.
     tags such as `System:*`, `QuickTime:*`, `JSON:*`, `MakerUnknown:*`,
     `ExifIFD:MakerNoteUnknown*`, `XMP-crs:MaskGroupBasedCorr*`,
     `XMP-crs:RetouchArea*`,
+    `XMP-crs:LookParameters*`,
     `XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel*`,
     `XMP-alienexposure:*`,
     `XMP-xmpNote:*`,
@@ -277,8 +280,8 @@ Smoke tests are intentionally excluded from the default `just ci` suite.
 
 ### Current Status
 
-**Unit suite (`just ci` / `just test`)**: 138 tests — passing, with 6
-incomplete tests and 1 warning (as of 2026-02-12)
+**Unit suite (`just ci` / `just test`)**: 181 tests — passing, with 6
+incomplete tests and 1 warning (as of 2026-02-15)
 
 **Smoke suite (`just smoke`)**: 5 tests with real CLI invocations; environment
 dependent and may skip when toolchain/localhost IPC is unavailable.
@@ -300,14 +303,15 @@ dependent and may skip when toolchain/localhost IPC is unavailable.
 - `ParallelWorkerPayloadHandler` — worker message parsing and batch mutation
 - `ParallelTempDirectoryManager` — temp dir creation/pruning/removal
 - `ParallelConsoleTelemetry` — panel redraw behavior and trace coalescing
+- `RemoveAvifs` CLI — race-safe AVIF removal + missing-file skip reporting
 
 ### Not Yet Testable (blocked by `final` classes)
 
 - `ImageOptimizer` — depends on concrete `HeicCodec`/external tools; needs
   ports to stub encode/decode/QC
 - `ArchiveVerifier` — depends on `Platform` (final)
-- Most CLI commands — construct tool wrappers inside `__invoke`, so unit tests
-  require real binaries on PATH
+- Many CLI commands — construct tool wrappers inside `__invoke`, so unit tests
+  often require real binaries on PATH
 
 **Refactoring Options**: Extract ports (e.g. `ExifMetadata`, `PlatformApi`,
 `ImageCodec`) and inject factories so unit tests can avoid real binaries.

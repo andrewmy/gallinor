@@ -143,6 +143,9 @@ php app.php images:remove-avifs /path/to/photos [/path2 /path3 ...] [--dry-run]
 Parallel mode for AVIF→HEIC migration is optional and uses the same worker
 pool controls as `images:squeeze`, including `-v`/`-vv`/`-vvv` tracing and the
 live per-worker status panel at `-vv+`.
+`images:remove-avifs` is race-safe: if an AVIF disappears between planning and
+deletion (for example cloud-sync churn), Gallinor skips it and reports it under
+`Skipped missing` instead of emitting PHP warnings.
 
 ### Metadata verification failures
 
@@ -155,7 +158,8 @@ Gallinor verifies metadata after image conversion. If you see
   maker-note projection tags
   (`MakerUnknown:Unknown_0xNNNN`, `ExifIFD:MakerNoteUnknown*`), Adobe Camera
   Raw local-correction/retouch tags (`XMP-crs:MaskGroupBasedCorr*`,
-  `XMP-crs:RetouchArea*`), Photoshop camera-profile vignette tags
+  `XMP-crs:RetouchArea*`, `XMP-crs:LookParameters*`), Photoshop
+  camera-profile vignette tags
   (`XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel*`), XMP EXIF
   projection tag (`XMP-exif:ExposureCompensation`), and private EXIF tags like
   `ExifIFD:Exif_0xNNNN`. Dimension projection tags

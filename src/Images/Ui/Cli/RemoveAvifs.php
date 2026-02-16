@@ -8,6 +8,7 @@ use App\Images\Domain\AvifMigrationPlanner;
 use App\Shared\Domain\FilesystemScanner;
 use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
+use RuntimeException;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -20,6 +21,7 @@ use function count;
 use function dirname;
 use function file_exists;
 use function filesize;
+use function is_file;
 use function microtime;
 use function number_format;
 use function pathinfo;
@@ -65,20 +67,45 @@ final class RemoveAvifs extends Command
 
         $removed    = 0;
         $errored    = 0;
+        $missing    = 0;
         $freedBytes = 0;
         $heicBytes  = 0;
 
         foreach ($candidates as $path) {
+            if (! is_file($path)) {
+                $missing++;
+                $this->reportMissingAvif($output, $path);
+
+                continue;
+            }
+
             try {
-                $avifSize = (int) filesize($path);
+                $avifSize = @filesize($path);
+                if ($avifSize === false) {
+                    throw new RuntimeException(sprintf('Cannot read AVIF size: %s', $path));
+                }
 
                 $heicPath = dirname($path) . DIRECTORY_SEPARATOR . pathinfo($path, PATHINFO_FILENAME) . '.heic';
-                $heicSize = file_exists($heicPath) ? (int) filesize($heicPath) : 0;
+                $heicSize = 0;
+                if (file_exists($heicPath)) {
+                    $heicSize = @filesize($heicPath);
+                    $heicSize = $heicSize === false ? 0 : $heicSize;
+                }
 
-                unlink($path);
+                if (! @unlink($path)) {
+                    if (! file_exists($path)) {
+                        $missing++;
+                        $this->reportMissingAvif($output, $path);
+
+                        continue;
+                    }
+
+                    throw new RuntimeException(sprintf('Cannot remove AVIF: %s', $path));
+                }
+
                 $removed++;
 
-                $freedBytes += $avifSize;
+                $freedBytes += (int) $avifSize;
                 $heicBytes  += $heicSize;
             } catch (Throwable $exception) {
                 $errored++;
@@ -93,8 +120,9 @@ final class RemoveAvifs extends Command
         $deltaAbs   = $deltaBytes >= 0 ? $deltaBytes : -$deltaBytes;
 
         $output->writeln(sprintf(
-            "\nSummary:\n  Removed: %d\n  Errored: %d\n  Freed: %s (%s bytes)\n  Δ vs HEIC: %s%s (%s bytes)\n  Time: %.1fs",
+            "\nSummary:\n  Removed: %d\n  Skipped missing: %d\n  Errored: %d\n  Freed: %s (%s bytes)\n  Δ vs HEIC: %s%s (%s bytes)\n  Time: %.1fs",
             $removed,
+            $missing,
             $errored,
             $this->cliHelper->formatBytes($freedBytes),
             number_format($freedBytes),
@@ -105,5 +133,10 @@ final class RemoveAvifs extends Command
         ));
 
         return self::SUCCESS;
+    }
+
+    private function reportMissingAvif(OutputInterface $output, string $path): void
+    {
+        $output->writeln(sprintf('<comment>Skipped missing AVIF: %s</comment>', basename($path)));
     }
 }

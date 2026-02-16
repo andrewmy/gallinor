@@ -227,6 +227,8 @@ final class StrictMetadataVerifierTest extends TestCase
         yield 'Adobe Camera Raw mask error reason missing' => ['XMP-crs:MaskGroupBasedCorrMaskErrorReason', false];
         yield 'Adobe Camera Raw retouch heal version missing' => ['XMP-crs:RetouchAreaHealVersion', false];
         yield 'Adobe Camera Raw retouch blend mode missing' => ['XMP-crs:RetouchAreaBlendMode', false];
+        yield 'Adobe Camera Raw look RGB table missing' => ['XMP-crs:LookParametersRGBTable', false];
+        yield 'Adobe Camera Raw look RGB amount missing' => ['XMP-crs:LookParametersRGBTableAmount', false];
         yield 'Photoshop camera profile vignette x center missing' => ['XMP-photoshop:CameraProfilesPerspectiveModelVignetteModelImageXCenter', false];
         yield 'Photoshop camera profile vignette piecewise missing' => ['XMP-photoshop:CameraProfilesPerspectiveModelVignetteModelVignetteModelPiecewiseParam', false];
         yield 'Alien Exposure virtual paths missing' => ['XMP-alienexposure:Virtualpaths', false];
