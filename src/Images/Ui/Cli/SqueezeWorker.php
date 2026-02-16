@@ -4,16 +4,12 @@ declare(strict_types=1);
 
 namespace App\Images\Ui\Cli;
 
-use App\Images\Domain\AvifCodec;
 use App\Images\Domain\CalculationSkipReason;
 use App\Images\Domain\Exiftool;
 use App\Images\Domain\FfmpegImageNormalizer;
 use App\Images\Domain\HeicCodec;
-use App\Images\Domain\ImageCodec;
 use App\Images\Domain\ImageFile;
-use App\Images\Domain\ImageFormat;
 use App\Images\Domain\ImageOptimizer;
-use App\Images\Domain\LibAvifTools;
 use App\Images\Domain\Ssimulacra2;
 use App\Images\Domain\StrictMetadataVerifier;
 use App\Images\Ui\Cli\Parallel\ParallelJsonEncoder;
@@ -64,8 +60,6 @@ final class SqueezeWorker extends Command
         int $port = 0,
         #[Option]
         string $identifier = '',
-        #[Option(description: 'Output format: heic (default) or avif')]
-        string $format = 'heic',
         #[Option(description: 'Recycle worker after N JPEG jobs')]
         int $workerMaxJobs = 50,
     ): int {
@@ -74,9 +68,8 @@ final class SqueezeWorker extends Command
         }
 
         try {
-            $imageFormat = ImageFormat::fromCli($format);
-            $codec       = $this->createCodec($imageFormat);
-            $optimizer   = $this->createOptimizer();
+            $codec     = $this->createCodec();
+            $optimizer = $this->createOptimizer();
         } catch (Throwable) {
             return self::FAILURE;
         }
@@ -272,12 +265,9 @@ final class SqueezeWorker extends Command
         return self::SUCCESS;
     }
 
-    private function createCodec(ImageFormat $format): ImageCodec
+    private function createCodec(): HeicCodec
     {
-        return match ($format) {
-            ImageFormat::Heic => new HeicCodec($this->platform),
-            ImageFormat::Avif => new AvifCodec(LibAvifTools::fromPlatform($this->platform)),
-        };
+        return new HeicCodec($this->platform);
     }
 
     private function createOptimizer(): ImageOptimizer

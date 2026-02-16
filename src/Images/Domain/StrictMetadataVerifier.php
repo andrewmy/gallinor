@@ -28,7 +28,7 @@ final readonly class StrictMetadataVerifier
         'InteropIFD' => true,
         // Vendor JSON payload extracted by ExifTool is not preserved across container re-encode.
         'JSON' => true,
-        // Xiaomi vendor XMP block is not portable across AVIF/HEIC rewrite.
+        // Xiaomi vendor XMP block is not portable across container rewrites.
         'XMP-MiCamera' => true,
         // XMP packet bookkeeping block (extended payload references) is rewritten/dropped on metadata rewrite.
         'XMP-xmpNote' => true,
@@ -50,7 +50,7 @@ final readonly class StrictMetadataVerifier
     private const array IGNORED_TAG_PREFIXES         = [
         // Unknown/private EXIF tags frequently dropped by container conversion.
         'ExifIFD:Exif_0x',
-        // ExifTool-generated MakerNote text projections are non-portable across AVIF/HEIC rewrites.
+        // ExifTool-generated MakerNote text projections are non-portable across container rewrites.
         'ExifIFD:MakerNoteUnknown',
         // Adobe Camera Raw metadata payloads are non-portable across container rewrites.
         'XMP-crs:MaskGroupBasedCorr',
@@ -64,7 +64,7 @@ final readonly class StrictMetadataVerifier
 
     private const array IGNORED_TAGS                    = [
         'SourceFile' => true,
-        // File format/container details: must differ across AVIF→HEIC / JPEG→HEIC.
+        // File format/container details differ across container rewrites.
         'IFD0:Compression' => true,
         'EXIF:Orientation' => true, // we force this to 1 after baking rotation
         'IFD0:Orientation' => true,
@@ -97,7 +97,7 @@ final readonly class StrictMetadataVerifier
         'IFD0:ThumbnailImage' => true,
         // YCbCr positioning is encoding-layout metadata, not capture metadata.
         'IFD0:YCbCrPositioning' => true,
-        // Vendor preview blob is not preserved in AVIF/HEIC rewrite path.
+        // Vendor preview blob is not preserved in container rewrite paths.
         'Sony:PreviewImage' => true,
         // ExifTool/XMP writer signature: expected to change when rewriting metadata.
         'XMP-x:XMPToolkit' => true,

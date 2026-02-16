@@ -10,7 +10,6 @@ use function strtolower;
 
 enum ImageFormat: string
 {
-    case Avif = 'avif';
     case Heic = 'heic';
 
     public function extension(): string
@@ -26,9 +25,8 @@ enum ImageFormat: string
     public static function fromCli(string $value): self
     {
         return match (strtolower($value)) {
-            'avif' => self::Avif,
             'heic' => self::Heic,
-            default => throw new InvalidArgumentException('Invalid format. Allowed: heic, avif.'),
+            default => throw new InvalidArgumentException('Invalid format. Allowed: heic.'),
         };
     }
 }

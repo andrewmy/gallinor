@@ -33,8 +33,8 @@ final readonly class FfmpegImageNormalizer
     /**
      * Render an image to an upright PNG using the specified EXIF orientation value (1..8).
      *
-     * Useful when the orientation metadata exists on a different source file
-     * (e.g. AVIF container) than the decoded pixels (e.g. PNG).
+     * Useful when orientation metadata exists on a different source file
+     * than the decoded pixels (for example HEIC metadata vs decoded PNG).
      *
      * @throws RuntimeException
      */

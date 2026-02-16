@@ -6,7 +6,6 @@ namespace App\Images\Ui\Cli\Parallel;
 
 use App\Images\Domain\CalculationSkipReason;
 use App\Images\Domain\ImageFile;
-use App\Images\Domain\ImageFormat;
 use App\Images\Ui\Cli\ImageBatchResult;
 use App\Shared\Ui\Cli\CliHelper;
 use Psr\Log\LoggerInterface;
@@ -45,7 +44,6 @@ final readonly class ParallelJpegProcessor
     public function process(
         OutputInterface $output,
         array $jpegs,
-        ImageFormat $format,
         int $concurrency,
         int $workerMaxJobs,
         int $jobTimeout,
@@ -87,14 +85,13 @@ final readonly class ParallelJpegProcessor
         $totalSavingsBytes = 0;
         $telemetry         = new ParallelConsoleTelemetry($output, $progressBar);
 
-        $buildWorkerCommand = function (string $workerId, int $port) use ($format, $workerMaxJobs): string {
+        $buildWorkerCommand = function (string $workerId, int $port) use ($workerMaxJobs): string {
             $commandParts = [
                 PHP_BINARY,
                 $this->appPath,
                 'images:squeeze:worker',
                 sprintf('--port=%d', $port),
                 sprintf('--identifier=%s', $workerId),
-                sprintf('--format=%s', $format->value),
                 sprintf('--worker-max-jobs=%d', max(1, $workerMaxJobs)),
             ];
 
@@ -102,7 +99,7 @@ final readonly class ParallelJpegProcessor
         };
 
         /** @param array{id: string, image: ImageFile, attempt: int} $job */
-        $buildRequestPayload = static function (array $job) use ($format): array {
+        $buildRequestPayload = static function (array $job): array {
             $jobId = $job['id'] ?? null;
             $image = $job['image'] ?? null;
             if (! is_string($jobId) || ! $image instanceof ImageFile) {
@@ -115,7 +112,6 @@ final readonly class ParallelJpegProcessor
                     [
                         'jobId'  => $jobId,
                         'path'   => $image->path,
-                        'format' => $format->value,
                     ],
                 ],
             ];
@@ -123,7 +119,6 @@ final readonly class ParallelJpegProcessor
 
         $handlePayload = function (array $payload) use (
             $payloadHandler,
-            $format,
             &$result,
             &$totalSavingsBytes,
             $output,
@@ -142,13 +137,12 @@ final readonly class ParallelJpegProcessor
                     && is_int($handlingResult->savedBytes)
                     && is_float($handlingResult->score)
                 ) {
-                    $qualityLabel = $this->qualityLabelFromFormat($format);
                     $runningTotal = $totalSavingsBytes + $handlingResult->savedBytes;
 
                     $progressBar->setMessage(sprintf(
                         '%s | %s=%d, score=%.1f, saved %s (total: %s)',
                         basename($handlingResult->path),
-                        $qualityLabel,
+                        'q',
                         $handlingResult->quality,
                         $handlingResult->score,
                         $this->cliHelper->formatBytes($handlingResult->savedBytes),
@@ -232,10 +226,5 @@ final readonly class ParallelJpegProcessor
         $output->writeln('');
 
         return $result;
-    }
-
-    private function qualityLabelFromFormat(ImageFormat $format): string
-    {
-        return $format === ImageFormat::Avif ? 'cq' : 'q';
     }
 }

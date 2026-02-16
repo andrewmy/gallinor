@@ -4,18 +4,15 @@ declare(strict_types=1);
 
 namespace App\Images\Ui\Cli;
 
-use App\Images\Domain\AvifCodec;
 use App\Images\Domain\CalculationSkipReason;
 use App\Images\Domain\Exiftool;
 use App\Images\Domain\FfmpegImageNormalizer;
 use App\Images\Domain\HeicCodec;
-use App\Images\Domain\ImageCodec;
 use App\Images\Domain\ImageCollection;
 use App\Images\Domain\ImageFile;
 use App\Images\Domain\ImageFileCollector;
 use App\Images\Domain\ImageFormat;
 use App\Images\Domain\ImageOptimizer;
-use App\Images\Domain\LibAvifTools;
 use App\Images\Domain\OptimizedFilter;
 use App\Images\Domain\RawArchiver;
 use App\Images\Domain\Ssimulacra2;
@@ -44,7 +41,7 @@ use function sprintf;
 
 use const DIRECTORY_SEPARATOR;
 
-#[AsCommand(name: 'images:squeeze', description: 'Re-encode JPEGs to optimal HEICs (or AVIFs), XZ the ARWs')]
+#[AsCommand(name: 'images:squeeze', description: 'Re-encode JPEGs to optimal HEICs, XZ the ARWs')]
 final class Squeeze extends Command
 {
     public function __construct(
@@ -62,8 +59,6 @@ final class Squeeze extends Command
         OutputInterface $output,
         #[Option]
         bool $dryRun = false,
-        #[Option(description: 'Output format: heic (default) or avif')]
-        string $format = 'heic',
         #[Option(description: 'Enable worker pool for JPEG processing')]
         bool $parallel = false,
         #[Option(description: 'Fixed parallel worker count override')]
@@ -92,14 +87,6 @@ final class Squeeze extends Command
         }
 
         try {
-            $imageFormat = ImageFormat::fromCli($format);
-        } catch (Throwable $exception) {
-            $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
-
-            return self::FAILURE;
-        }
-
-        try {
             $exiftool    = new Exiftool($this->platform);
             $collector   = new ImageFileCollector($this->scanner, $exiftool);
             $ssim        = Ssimulacra2::fromPlatform($this->platform);
@@ -108,18 +95,14 @@ final class Squeeze extends Command
             $optimizer   = new ImageOptimizer($ssim, $normalizer, $exiftool, $verifier);
             $processExec = new RealProcessExecutor();
             $rawArchiver = new RawArchiver($this->platform, $this->logger, $processExec);
-
-            $codec = match ($imageFormat) {
-                ImageFormat::Heic => new HeicCodec($this->platform),
-                ImageFormat::Avif => new AvifCodec(LibAvifTools::fromPlatform($this->platform)),
-            };
+            $codec       = new HeicCodec($this->platform);
         } catch (Throwable $exception) {
             $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
 
             return self::FAILURE;
         }
 
-        $output->writeln(sprintf('<info>Found: exiftool, ffmpeg, ssimulacra2, xz, tar, %s</info>', $imageFormat->label()));
+        $output->writeln('<info>Found: exiftool, ffmpeg, ssimulacra2, xz, tar, heic</info>');
         $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores()));
 
         $effectiveConcurrency = 1;
@@ -146,7 +129,7 @@ final class Squeeze extends Command
         $collection = $collector->collectFromDirectories(
             $directories,
             $output,
-            $imageFormat,
+            ImageFormat::Heic,
             OptimizedFilter::OnlyWithout,
         );
 
@@ -167,7 +150,6 @@ final class Squeeze extends Command
             ? $this->processJpegsParallel(
                 $output,
                 $collection->jpegs,
-                $imageFormat,
                 $effectiveConcurrency,
                 $workerMaxJobs,
                 $jobTimeout,
@@ -196,7 +178,7 @@ final class Squeeze extends Command
     }
 
     /** @param array<ImageFile> $jpegs */
-    private function processJpegs(OutputInterface $output, array $jpegs, ImageOptimizer $optimizer, ImageCodec $codec): ImageBatchResult
+    private function processJpegs(OutputInterface $output, array $jpegs, ImageOptimizer $optimizer, HeicCodec $codec): ImageBatchResult
     {
         $progressBar = $this->cliHelper->createProgressBar($output, count($jpegs), 'JPEGs');
         $progressBar->start();
@@ -265,7 +247,6 @@ final class Squeeze extends Command
     private function processJpegsParallel(
         OutputInterface $output,
         array $jpegs,
-        ImageFormat $format,
         int $concurrency,
         int $workerMaxJobs,
         int $jobTimeout,
@@ -282,7 +263,6 @@ final class Squeeze extends Command
         return $processor->process(
             $output,
             $jpegs,
-            $format,
             $concurrency,
             $workerMaxJobs,
             $jobTimeout,

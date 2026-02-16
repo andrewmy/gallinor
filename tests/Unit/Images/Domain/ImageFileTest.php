@@ -14,32 +14,25 @@ final class ImageFileTest extends FsTestCase
 {
     use PathNormalizer;
 
-    public function test_optimized_path_replaces_extension_with_avif(): void
-    {
-        $image = new ImageFile('/path/to/photo.jpg', 1_000_000);
-
-        self::assertSame('/path/to/photo.avif', $this->normalizePath($image->optimizedPathFor(ImageFormat::Avif)));
-    }
-
     public function test_optimized_path_handles_nested_directories(): void
     {
         $image = new ImageFile('/deep/nested/path/to/image.jpg', 500_000);
 
-        self::assertSame('/deep/nested/path/to/image.avif', $this->normalizePath($image->optimizedPathFor(ImageFormat::Avif)));
+        self::assertSame('/deep/nested/path/to/image.heic', $this->normalizePath($image->optimizedPathFor(ImageFormat::Heic)));
     }
 
     public function test_optimized_path_handles_jpeg_extension(): void
     {
         $image = new ImageFile('/path/to/photo.jpeg', 2_000_000);
 
-        self::assertSame('/path/to/photo.avif', $this->normalizePath($image->optimizedPathFor(ImageFormat::Avif)));
+        self::assertSame('/path/to/photo.heic', $this->normalizePath($image->optimizedPathFor(ImageFormat::Heic)));
     }
 
     public function test_optimized_path_handles_files_with_dots_in_name(): void
     {
         $image = new ImageFile('/path/to/photo.2024.edit.jpg', 1_500_000);
 
-        self::assertSame('/path/to/photo.2024.edit.avif', $this->normalizePath($image->optimizedPathFor(ImageFormat::Avif)));
+        self::assertSame('/path/to/photo.2024.edit.heic', $this->normalizePath($image->optimizedPathFor(ImageFormat::Heic)));
     }
 
     public function test_optimized_path_replaces_extension_with_heic(): void
@@ -86,22 +79,22 @@ final class ImageFileTest extends FsTestCase
         self::assertFalse($image->isPortraitOrLivePhoto);
     }
 
-    public function test_has_optimized_returns_false_when_avif_does_not_exist(): void
+    public function test_has_optimized_returns_false_when_heic_does_not_exist(): void
     {
         vfsStream::newFile('photo.jpg')->at($this->root);
 
         $image = new ImageFile($this->vfsUrl('photo.jpg'), 1_000_000);
 
-        self::assertFalse($image->hasOptimized(ImageFormat::Avif));
+        self::assertFalse($image->hasOptimized(ImageFormat::Heic));
     }
 
-    public function test_has_optimized_returns_true_when_avif_exists(): void
+    public function test_has_optimized_returns_true_when_heic_exists(): void
     {
         vfsStream::newFile('photo.jpg')->at($this->root);
-        vfsStream::newFile('photo.avif')->at($this->root);
+        vfsStream::newFile('photo.heic')->at($this->root);
 
         $image = new ImageFile($this->vfsUrl('photo.jpg'), 1_000_000);
 
-        self::assertTrue($image->hasOptimized(ImageFormat::Avif));
+        self::assertTrue($image->hasOptimized(ImageFormat::Heic));
     }
 }

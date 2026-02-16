@@ -73,19 +73,19 @@ final class ImageFileCollectorTest extends FsTestCase
 
         $dir  = $this->vfsUrl('photos');
         $jpeg = $this->vfsUrl('photos/photo.jpg');
-        $avif = $this->vfsUrl('photos/photo.avif');
+        $heic = $this->vfsUrl('photos/photo.heic');
 
         vfsStream::newFile('photo.jpg')->withContent('jpeg')->at($photosDir);
-        vfsStream::newFile('photo.avif')->withContent('avif')->at($photosDir);
+        vfsStream::newFile('photo.heic')->withContent('heic')->at($photosDir);
 
         $exif = new StubExifMetadata();
 
-        $scanner   = new FixedFilesystemScanner([$jpeg, $avif]);
+        $scanner   = new FixedFilesystemScanner([$jpeg, $heic]);
         $collector = new ImageFileCollector($scanner, $exif);
         $result    = $collector->collectFromDirectories(
             directories: [$dir],
             output: new NullOutput(),
-            format: ImageFormat::Avif,
+            format: ImageFormat::Heic,
             filter: OptimizedFilter::OnlyWith,
         );
 

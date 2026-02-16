@@ -10,7 +10,7 @@ gallery sizes while maintaining quality. It supports:
 
 - **Videos**: Re-encode to HEVC (H.265) with adaptive bitrate, hardware
   acceleration (VideoToolbox/NVENC)
-- **Images**: Convert JPEGs to HEIC (default; AVIF optional) with quality-based
+- **Images**: Convert JPEGs to HEIC with quality-based
   encoding, optional parallel JPEG worker-pool mode, archive ARW files with xz
   compression
 
@@ -52,13 +52,6 @@ php app.php images:squeeze <path> [--parallel] [--concurrency=N | --adaptive-con
 php app.php images:remove-originals <path>   # Remove originals after conversion
 ```
 
-**AVIF→HEIC migration** (OneDrive compatibility):
-
-```bash
-php app.php images:migrate-avif-to-heic <path> [--parallel] [--concurrency=N | --adaptive-concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]  # Convert existing AVIFs to HEIC (SSIMULACRA2 ≥ 85)
-php app.php images:remove-avifs <path>          # Remove AVIFs when sibling HEIC exists
-```
-
 ## Architecture
 
 This is a PHP 8.5 CLI application for optimizing media files while maintaining
@@ -67,7 +60,7 @@ quality. The project follows clean architecture with strict domain separation.
 ### Bounded Contexts
 
 - **Video/** - Video processing (MP4→HEVC with VMAF quality check)
-- **Images/** - Image processing (JPEG→HEIC by default; AVIF optional, ARW archival)
+- **Images/** - Image processing (JPEG→HEIC and ARW archival)
 - **Shared/** - Cross-cutting concerns (filesystem, platform, CLI helpers)
 
 Each context follows DDD layering:
@@ -91,15 +84,11 @@ construction.
 - Images:
   - JPEG→HEIC: coarse+fine quality search with early stop when score is in
     `[threshold, threshold + 1]` (threshold 85)
-  - JPEG→AVIF: linear CQ sweep (20→2, step 2), stop at first passing CQ
-    (threshold 85)
-  - AVIF→HEIC migration: coarse+fine quality search with the same early-stop
-    window (threshold 85)
 
 **Platform Abstraction**: `Platform` class handles OS differences
 (macOS/Windows) for tool detection and core counting.
 
-**External Tool Integration**: All external tools (FFmpeg, libheif, libavif,
+**External Tool Integration**: All external tools (FFmpeg, libheif,
 ssimulacra2, exiftool, xz) invoked via `ProcessExecutor` and located through
 `Platform::findTool()`.
 
@@ -136,13 +125,7 @@ messages using `symplify/easy-parallel` primitives for worker lifecycle and
 transport. `--job-timeout` is inactivity-based (no worker message), `--dry-run`
 stays single-process, and ARW archival remains sequential.
 
-**Parallel AVIF migration mode**: `images:migrate-avif-to-heic` can run AVIF
-migration through an internal master/worker pool
-(`images:migrate-avif-to-heic:worker`) over localhost NDJSON messages using
-`symplify/easy-parallel` primitives for worker lifecycle and transport.
-`--job-timeout` is inactivity-based (no worker message), and `--dry-run` stays
-single-process.
-Both parallel flows reuse a shared worker-pool orchestrator in
+Parallel execution uses a shared worker-pool orchestrator in
 `src/Images/Ui/Cli/Parallel/ParallelWorkerPoolOrchestrator.php`.
 Console tracing/panel rendering is shared via
 `src/Images/Ui/Cli/Parallel/ParallelConsoleTelemetry.php`.
@@ -168,8 +151,8 @@ Worker/master NDJSON payload serialization is centralized in
 Windows (preventing worker crash at message encode).
 Use Symfony verbosity flags for worker-pool tracing:
 `-v` (lifecycle), `-vv` (dispatch/requeue details), `-vvv` (status-frame level).
-At `-vv` and above, both parallel commands also render a live per-worker status
-panel below the progress bar when the terminal supports console sections.
+At `-vv` and above, the parallel command renders a live per-worker status panel
+below the progress bar when the terminal supports console sections.
 In panel mode, trace updates are coalesced with worker-state refreshes to avoid
 trace-only redraw spam (for example repeated `Workers` headers at `-vvv`).
 Parallel worker policy:
@@ -192,8 +175,6 @@ recycling, completion) does not branch on phase names.
 **Timing accounting**: `images:squeeze` reports archiving time using direct
 wall-clock measurement around ARW archival, not derived residual math from
 other timing buckets.
-`images:remove-avifs` is tolerant to plan/delete races: if an AVIF disappears
-before deletion, it is reported as `Skipped missing` (not as a PHP warning).
 
 ### Important Constraints
 
@@ -280,24 +261,23 @@ Smoke tests are intentionally excluded from the default `just ci` suite.
 
 ### Current Status
 
-**Unit suite (`just ci` / `just test`)**: 185 tests — passing, 0 incomplete,
+**Unit suite (`just ci` / `just test`)**: 180 tests — passing, 0 incomplete,
 0 warnings (as of 2026-02-16)
 
-**Smoke suite (`just smoke`)**: 5 tests with real CLI invocations; environment
+**Smoke suite (`just smoke`)**: 3 tests with real CLI invocations; environment
 dependent and may skip when toolchain/localhost IPC is unavailable.
 
 **Tested**:
 
 - `VideoFile` — bitrate, resolution
 - `VideoProcessor` — skip/dry-run/encode/retry
-- `ImageFile` — paths, AVIF detection
+- `ImageFile` — paths and optimized-path detection
 - `ImageFormat` — CLI parsing
 - `ImageCollectionStats` — immutability, totals
 - `ImageFileCollector` — filtering/skip-set behavior (via `ExifMetadata` stub)
 - `ImageProcessorResult` — aggregation, savings
 - `Ssimulacra2` — `fileSizeKb()` rounding
 - `StrictMetadataVerifier` — diff rules
-- `AvifMigrationBatchResult` — aggregation/counting for migration outcomes
 - `ParallelConcurrency` — default worker count formula
 - `JobRetryPolicy` — one-time requeue behavior
 - `ParallelWorkerPayloadHandler` — worker message parsing and batch mutation
@@ -306,7 +286,6 @@ dependent and may skip when toolchain/localhost IPC is unavailable.
 - `ArchiveVerifier` — ARW/archive verification with real temp-dir coverage for
   `glob()` paths
 - `RawArchiver` — Windows tar/xz flow including xz failure path
-- `RemoveAvifs` CLI — race-safe AVIF removal + missing-file skip reporting
 
 ### Not Yet Testable (blocked by `final` classes)
 
@@ -425,8 +404,7 @@ terminal/TTY behaviour and is currently covered mostly by manual checks.
 **Recommended Approach**:
 
 1. Add targeted integration coverage for console rendering paths (TTY vs
-   non-TTY) for `images:squeeze --parallel` and
-   `images:migrate-avif-to-heic --parallel`
+   non-TTY) for `images:squeeze --parallel`
 2. Keep worker-panel redraws rate-limited and deduplicated; treat regressions as
    behaviour bugs, not cosmetic only
 3. Consider adding a dedicated flag to disable worker panel while keeping

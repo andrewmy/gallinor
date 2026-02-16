@@ -22,14 +22,10 @@ use const DIRECTORY_SEPARATOR;
 
 final readonly class ImageOptimizer
 {
-    private const float JPEG_MIN_SSIM_SCORE      = 85.0;
-    private const float MIGRATION_MIN_SSIM_SCORE = 85.0;
-    private const float SSIM_EARLY_STOP_WINDOW   = 1.0;
+    private const float JPEG_MIN_SSIM_SCORE    = 85.0;
+    private const float SSIM_EARLY_STOP_WINDOW = 1.0;
 
-    private const int AVIF_CQ_START = 20;
-    private const int AVIF_CQ_END   = 2;
-    private const int AVIF_CQ_STEP  = 2;
-    private const int HEIC_Q_STEP   = 2;
+    private const int HEIC_Q_STEP = 2;
 
     public function __construct(
         private Ssimulacra2 $ssimulacra2,
@@ -48,14 +44,13 @@ final readonly class ImageOptimizer
      */
     public function optimizeJpeg(
         ImageFile $file,
-        ImageCodec $codec,
+        HeicCodec $codec,
         callable $statusCallback,
         callable $statusEventCallback,
     ): ImageProcessingResult|CalculationSkipReason {
         $runId  = uniqid('gallinor-', true);
         $tmpDir = sys_get_temp_dir();
 
-        $rawPng  = $tmpDir . DIRECTORY_SEPARATOR . $runId . '-raw.png';
         $refPng  = $tmpDir . DIRECTORY_SEPARATOR . $runId . '-ref.png';
         $candPng = $tmpDir . DIRECTORY_SEPARATOR . $runId . '-cand.png';
 
@@ -67,62 +62,6 @@ final readonly class ImageOptimizer
             $this->emitStatusEvent($statusEventCallback, 'prepare');
             $this->normalizer->jpegToUprightPng($file->path, $refPng);
 
-            $totalQcTime = 0.0;
-
-            if ($codec->format() === ImageFormat::Avif) {
-                for ($cq = self::AVIF_CQ_START; $cq >= self::AVIF_CQ_END; $cq -= self::AVIF_CQ_STEP) {
-                    $this->emitStatusEvent($statusEventCallback, 'encode', $cq);
-                    $codec->encodeFromPng($refPng, $tmpOptimized, $cq);
-                    $this->emitStatusEvent($statusEventCallback, 'decode', $cq);
-                    $codec->decodeToPng($tmpOptimized, $candPng);
-
-                    $this->emitStatusEvent($statusEventCallback, 'score', $cq);
-                    $qcStart      = microtime(true);
-                    $score        = $this->ssimulacra2->score($refPng, $candPng);
-                    $totalQcTime += microtime(true) - $qcStart;
-
-                    $size  = (int) filesize($tmpOptimized);
-                    $saved = $file->size - $size;
-
-                    $statusCallback($cq, $score, $saved);
-
-                    // Size only gets worse as quality increases from here.
-                    if ($size >= $file->size) {
-                        $this->emitStatusEvent($statusEventCallback, 'decision', $cq, $score, $saved, 'too_big');
-
-                        return CalculationSkipReason::ReplacementNotSmaller;
-                    }
-
-                    if ($score < self::JPEG_MIN_SSIM_SCORE) {
-                        $this->emitStatusEvent($statusEventCallback, 'decision', $cq, $score, $saved, 'score_low');
-                        $this->cleanup($tmpOptimized);
-                        continue;
-                    }
-
-                    $this->emitStatusEvent($statusEventCallback, 'decision', $cq, $score, $saved, 'pass');
-                    $this->emitStatusEvent($statusEventCallback, 'finalize', $cq, $score, $saved);
-                    $this->moveFileOrFail($tmpOptimized, $finalPath);
-                    $this->emitStatusEvent($statusEventCallback, 'metadata', $cq, $score, $saved);
-                    $this->copyAndVerifyMetadataStrict($file->path, $finalPath);
-
-                    return new ImageProcessingResult(
-                        format: $codec->format(),
-                        optimizedSize: $size,
-                        originalSize: $file->size,
-                        qualityValue: $cq,
-                        qualityLabel: $codec->qualityLabel(),
-                        qualityScore: $score,
-                        qcTime: $totalQcTime,
-                    );
-                }
-
-                return CalculationSkipReason::QualityNotAchieved;
-            }
-
-            if (! $codec instanceof HeicCodec) {
-                throw new RuntimeException('Invalid codec: expected HEIC codec.');
-            }
-
             // HEIC quality search: increase q until threshold met, then refine to minimum passing q.
             $found = $this->findMinimumHeicQuality(
                 refPng: $refPng,
@@ -131,7 +70,7 @@ final readonly class ImageOptimizer
                 minScore: self::JPEG_MIN_SSIM_SCORE,
                 statusCallback: $statusCallback,
                 statusEventCallback: $statusEventCallback,
-                totalQcTime: $totalQcTime,
+                totalQcTime: 0.0,
                 originalSize: $file->size,
                 requireSmallerThanOriginal: true,
                 heicCodec: $codec,
@@ -184,93 +123,6 @@ final readonly class ImageOptimizer
             );
         } finally {
             $this->cleanup($refPng, $candPng, $tmpOptimized);
-        }
-    }
-
-    /**
-     * Migrate an existing AVIF into HEIC with minimal additional loss.
-     *
-     * @param callable(int, float, int): void                                     $statusCallback      Called with (q, score, savedBytesVsAvif)
-     * @param callable(string, int|null, float|null, int|null, string|null): void $statusEventCallback
-     */
-    public function migrateAvifToHeic(
-        string $avifPath,
-        string $targetHeicPath,
-        AvifCodec $avifCodec,
-        HeicCodec $heicCodec,
-        callable $statusCallback,
-        callable $statusEventCallback,
-    ): ImageProcessingResult|CalculationSkipReason {
-        $runId  = uniqid('gallinor-', true);
-        $tmpDir = sys_get_temp_dir();
-
-        $rawPng  = $tmpDir . DIRECTORY_SEPARATOR . $runId . '-raw.png';
-        $refPng  = $tmpDir . DIRECTORY_SEPARATOR . $runId . '-ref.png';
-        $candPng = $tmpDir . DIRECTORY_SEPARATOR . $runId . '-cand.png';
-
-        $tmpHeic = $tmpDir . DIRECTORY_SEPARATOR . $runId . '.heic';
-
-        try {
-            $this->emitStatusEvent($statusEventCallback, 'prepare');
-            $avifCodec->decodeToPng($avifPath, $rawPng);
-
-            $orientation = $this->exiftool->orientation($avifPath);
-            if ($orientation === 1) {
-                $this->moveFileOrFail($rawPng, $refPng);
-            } else {
-                $this->normalizer->imageToUprightPngWithOrientation($rawPng, $refPng, $orientation);
-                $this->cleanup($rawPng);
-            }
-
-            $avifSize = (int) filesize($avifPath);
-
-            $found = $this->findMinimumHeicQuality(
-                refPng: $refPng,
-                candPng: $candPng,
-                tmpOptimized: $tmpHeic,
-                minScore: self::MIGRATION_MIN_SSIM_SCORE,
-                statusCallback: $statusCallback,
-                statusEventCallback: $statusEventCallback,
-                totalQcTime: 0.0,
-                originalSize: $avifSize,
-                requireSmallerThanOriginal: false,
-                heicCodec: $heicCodec,
-            );
-
-            if ($found === null) {
-                $this->emitStatusEvent($statusEventCallback, 'decision', decision: 'quality_not_achieved');
-
-                return CalculationSkipReason::QualityNotAchieved;
-            }
-
-            $this->emitStatusEvent(
-                $statusEventCallback,
-                'finalize',
-                $found['quality'],
-                $found['score'],
-                $avifSize - $found['size'],
-            );
-            $this->moveFileOrFail($tmpHeic, $targetHeicPath);
-            $this->emitStatusEvent(
-                $statusEventCallback,
-                'metadata',
-                $found['quality'],
-                $found['score'],
-                $avifSize - $found['size'],
-            );
-            $this->copyAndVerifyMetadataStrict($avifPath, $targetHeicPath);
-
-            return new ImageProcessingResult(
-                format: ImageFormat::Heic,
-                optimizedSize: $found['size'],
-                originalSize: $avifSize,
-                qualityValue: $found['quality'],
-                qualityLabel: $heicCodec->qualityLabel(),
-                qualityScore: $found['score'],
-                qcTime: $found['qcTime'],
-            );
-        } finally {
-            $this->cleanup($rawPng, $refPng, $candPng, $tmpHeic);
         }
     }
 

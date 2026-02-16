@@ -2,8 +2,8 @@
 
 ## Summary
 
-Standardize Gallinor’s external toolchain (FFmpeg, libheif tools, libavif
-tools, ExifTool, SSIMULACRA2, xz/tar) by running the CLI inside a Docker image.
+Standardize Gallinor’s external toolchain (FFmpeg, libheif tools, ExifTool,
+SSIMULACRA2, xz/tar) by running the CLI inside a Docker image.
 
 This is primarily about **shipping binaries reliably**. Parallelism remains an
 **in-app worker pool** (`images:squeeze --parallel`) where the master spawns
@@ -46,7 +46,6 @@ Images:
 - `exiftool` (metadata copy + portrait/live photo detection)
 - `ssimulacra2` (quality metric)
 - `heif-enc` (HEIC encode; via libheif tools)
-- `avifenc` / `avifdec` (if AVIF output remains supported; via libavif tools)
 
 ARW archiving:
 
@@ -94,7 +93,6 @@ Suggested base:
 Suggested packages (names vary by distro):
 
 - HEIC: `libheif-examples` (for `heif-enc` / `heif-convert`)
-- Optional AVIF: `libavif-bin`
 - Quality + metadata: `ffmpeg`, `libimage-exiftool-perl`
 - Archiving: `xz-utils`, `tar`
 - Build helpers (if needed): `git`, `unzip`, build toolchain
@@ -143,7 +141,6 @@ FROM php:8.5-cli
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
   libheif-examples \
-  libavif-bin \
   ffmpeg libimage-exiftool-perl xz-utils tar \
   && rm -rf /var/lib/apt/lists/*
 

@@ -25,8 +25,8 @@ final class ImageBatchResultTest extends TestCase
     {
         $result = new ImageBatchResult(
             processed: [
-                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Avif, 500_000, 1_000_000, 18, 'cq', 88.5, 2.3),
-                '/path/image2.jpg' => new ImageProcessingResult(ImageFormat::Avif, 400_000, 800_000, 16, 'cq', 90.0, 1.8),
+                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Heic, 500_000, 1_000_000, 18, 'q', 88.5, 2.3),
+                '/path/image2.jpg' => new ImageProcessingResult(ImageFormat::Heic, 400_000, 800_000, 16, 'q', 90.0, 1.8),
             ],
         );
 
@@ -57,13 +57,13 @@ final class ImageBatchResultTest extends TestCase
         self::assertSame(2, $result->erroredCount());
     }
 
-    public function test_total_bytes_after_sums_avif_sizes(): void
+    public function test_total_bytes_after_sums_heic_sizes(): void
     {
         $result = new ImageBatchResult(
             processed: [
-                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Avif, 500_000, 1_000_000, 18, 'cq', 88.5, 2.3),
-                '/path/image2.jpg' => new ImageProcessingResult(ImageFormat::Avif, 400_000, 800_000, 16, 'cq', 90.0, 1.8),
-                '/path/image3.jpg' => new ImageProcessingResult(ImageFormat::Avif, 100_000, 500_000, 20, 'cq', 92.0, 0.5),
+                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Heic, 500_000, 1_000_000, 18, 'q', 88.5, 2.3),
+                '/path/image2.jpg' => new ImageProcessingResult(ImageFormat::Heic, 400_000, 800_000, 16, 'q', 90.0, 1.8),
+                '/path/image3.jpg' => new ImageProcessingResult(ImageFormat::Heic, 100_000, 500_000, 20, 'q', 92.0, 0.5),
             ],
         );
 
@@ -74,9 +74,9 @@ final class ImageBatchResultTest extends TestCase
     {
         $result = new ImageBatchResult(
             processed: [
-                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Avif, 500_000, 1_000_000, 18, 'cq', 88.5, 2.3),
-                '/path/image2.jpg' => new ImageProcessingResult(ImageFormat::Avif, 800_000, 2_000_000, 16, 'cq', 90.0, 1.8),
-                '/path/image3.jpg' => new ImageProcessingResult(ImageFormat::Avif, 200_000, 500_000, 20, 'cq', 92.0, 0.5),
+                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Heic, 500_000, 1_000_000, 18, 'q', 88.5, 2.3),
+                '/path/image2.jpg' => new ImageProcessingResult(ImageFormat::Heic, 800_000, 2_000_000, 16, 'q', 90.0, 1.8),
+                '/path/image3.jpg' => new ImageProcessingResult(ImageFormat::Heic, 200_000, 500_000, 20, 'q', 92.0, 0.5),
             ],
         );
 
@@ -87,8 +87,8 @@ final class ImageBatchResultTest extends TestCase
     {
         $result = new ImageBatchResult(
             processed: [
-                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Avif, 500_000, 1_000_000, 18, 'cq', 88.5, 2.3),
-                '/path/image2.jpg' => new ImageProcessingResult(ImageFormat::Avif, 800_000, 2_000_000, 16, 'cq', 90.0, 1.8),
+                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Heic, 500_000, 1_000_000, 18, 'q', 88.5, 2.3),
+                '/path/image2.jpg' => new ImageProcessingResult(ImageFormat::Heic, 800_000, 2_000_000, 16, 'q', 90.0, 1.8),
             ],
         );
 
@@ -100,9 +100,9 @@ final class ImageBatchResultTest extends TestCase
     {
         $result = new ImageBatchResult(
             processed: [
-                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Avif, 500_000, 1_000_000, 18, 'cq', 88.5, 2.3),
-                '/path/image2.jpg' => new ImageProcessingResult(ImageFormat::Avif, 400_000, 800_000, 16, 'cq', 90.0, 1.8),
-                '/path/image3.jpg' => new ImageProcessingResult(ImageFormat::Avif, 100_000, 500_000, 20, 'cq', 92.0, 0.5),
+                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Heic, 500_000, 1_000_000, 18, 'q', 88.5, 2.3),
+                '/path/image2.jpg' => new ImageProcessingResult(ImageFormat::Heic, 400_000, 800_000, 16, 'q', 90.0, 1.8),
+                '/path/image3.jpg' => new ImageProcessingResult(ImageFormat::Heic, 100_000, 500_000, 20, 'q', 92.0, 0.5),
             ],
         );
 
@@ -113,7 +113,7 @@ final class ImageBatchResultTest extends TestCase
     {
         $result = new ImageBatchResult(
             processed: [
-                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Avif, 500_000, 1_000_000, 18, 'cq', 88.5, 2.3),
+                '/path/image1.jpg' => new ImageProcessingResult(ImageFormat::Heic, 500_000, 1_000_000, 18, 'q', 88.5, 2.3),
             ],
             skipped: [
                 '/path/image2.jpg' => CalculationSkipReason::ReplacementNotSmaller,

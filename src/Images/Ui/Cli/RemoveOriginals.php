@@ -46,20 +46,11 @@ final class RemoveOriginals extends Command
         OutputInterface $output,
         #[Option]
         bool $dryRun = false,
-        #[Option(description: 'Replacement format: heic (default) or avif')]
-        string $format = 'heic',
         #[Argument]
         array $directories = [],
     ): int {
-        $startTime = $this->cliHelper->startCommand($output, $dryRun, $this->timing);
-
-        try {
-            $imageFormat = ImageFormat::fromCli($format);
-        } catch (Throwable $exception) {
-            $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
-
-            return self::FAILURE;
-        }
+        $startTime   = $this->cliHelper->startCommand($output, $dryRun, $this->timing);
+        $imageFormat = ImageFormat::Heic;
 
         try {
             $exiftool        = new Exiftool($this->platform);
@@ -98,10 +89,10 @@ final class RemoveOriginals extends Command
         $arwStats     = $verificationResult->toStatsArray();
 
         $jpegSpaceToFree     = 0;
-        $avifReplacementSize = 0;
+        $heicReplacementSize = 0;
         foreach ($jpegCollection->jpegs as $imageFile) {
             $jpegSpaceToFree     += $imageFile->size;
-            $avifReplacementSize += (int) filesize($imageFile->optimizedPathFor($imageFormat));
+            $heicReplacementSize += (int) filesize($imageFile->optimizedPathFor($imageFormat));
         }
 
         $arwSpaceToFree = 0;
@@ -115,7 +106,7 @@ final class RemoveOriginals extends Command
                 found: $jpegCollection->stats->jpegsFound,
                 skipped: $jpegCollection->stats->jpegsSkipped,
                 willFreeSize: $jpegSpaceToFree,
-                replacementSize: $avifReplacementSize,
+                replacementSize: $heicReplacementSize,
             );
 
             $this->printArwSummary(
@@ -175,9 +166,9 @@ final class RemoveOriginals extends Command
         $endTime = microtime(true);
 
         // actual removal summary
-        $avifReplacementSize = 0;
+        $heicReplacementSize = 0;
         foreach ($jpegCollection->jpegs as $imageFile) {
-            $avifReplacementSize += (int) filesize($imageFile->optimizedPathFor($imageFormat));
+            $heicReplacementSize += (int) filesize($imageFile->optimizedPathFor($imageFormat));
         }
 
         $this->printJpegSummary(
@@ -187,7 +178,7 @@ final class RemoveOriginals extends Command
             removed: $jpegsRemoved,
             errored: $jpegsErrored,
             freedSize: $jpegSpaceFreed,
-            replacementSize: $avifReplacementSize,
+            replacementSize: $heicReplacementSize,
         );
 
         $this->printArwSummary(

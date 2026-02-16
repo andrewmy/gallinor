@@ -5,7 +5,7 @@
 Unify the *search mechanics* used to find a minimum acceptable quality/bitrate
 across:
 
-- Images: HEIC quality (`q`) probing (JPEG→HEIC and AVIF→HEIC migration)
+- Images: HEIC quality (`q`) probing (JPEG→HEIC)
 - Video: bitrate probing (MP4→HEVC with VMAF quality checks)
 
 Without over-unifying the *probes themselves* (encode/decode/QC are domain
@@ -15,7 +15,6 @@ specific).
 
 - Do not change external tools or codecs.
 - Do not introduce new CLI options.
-- Do not change the AVIF CQ value set used for JPEG→AVIF (`20,18,…,2`).
 
 ## Related plans
 
@@ -23,19 +22,14 @@ specific).
 - [DOCKERIZATION_PLAN.md](DOCKERIZATION_PLAN.md) (toolchain standardisation;
   impacts how probes run)
 
-## Current behavior (as of 2026-02-08)
+## Current behavior (as of 2026-02-16)
 
 ### Images
 
-- **JPEG→AVIF**: linear sweep over a fixed CQ grid:
-  - `cq = 20 down to 2 (step 2)`
-  - stop on first `SSIMULACRA2 >= 85` *and* output is smaller than the JPEG
-  - early exit if output becomes `>=` JPEG (higher quality won’t improve size)
-- **HEIC (JPEG→HEIC and AVIF→HEIC migration)**:
+- **JPEG→HEIC**:
   - coarse sweep: `q = 40..100 (step 10)` to find first passing bound
   - fine sweep: `q += 2` from last failing bound to first passing bound
-  - JPEG→HEIC additionally requires output smaller than the JPEG
-  - AVIF→HEIC migration does **not** require smaller output (compatibility)
+  - requires output smaller than the source JPEG
 
 ### Video
 
@@ -52,7 +46,7 @@ specific).
 
 Many flows have the same shape:
 
-1. Probe a value (`q`, `cq`, bitrate)
+1. Probe a value (`q`, bitrate)
 2. Evaluate a threshold (`SSIMULACRA2`, `VMAF`)
 3. Optionally apply a size constraint (must be smaller than original)
 4. Once we have a **fail/pass bracket**, refine to “close enough”
@@ -102,12 +96,9 @@ Keep the existing coarse sweep to find the fail/pass bracket. Replace the fine
 `q += 2` scan with `MonotoneThresholdRefiner`.
 
 - `granularity = 2`
-- For JPEG→HEIC:
-  - “passes” means `SSIMULACRA2 >= 85` *and* `size < originalSize`
-  - `maxOvershootRatio` should be ~`1.0` to keep “minimum passing q” semantics
-- For AVIF→HEIC migration:
-  - “passes” means `SSIMULACRA2 >= 85`
-  - size is *observed* but not a hard constraint
+- JPEG→HEIC pass condition:
+  - `SSIMULACRA2 >= 85` *and* `size < originalSize`
+- `maxOvershootRatio` should be ~`1.0` to keep “minimum passing q” semantics
 
 This unifies the refinement mechanics without changing probe semantics.
 
@@ -133,22 +124,6 @@ Refinement goal:
 - Avoid large overshoot after a big adaptive step, without making “smallest
   possible bitrate” the default.
 
-### JPEG→AVIF (CQ grid)
-
-Keep the current behavior for now:
-
-- The grid is small (10 values) and the current linear sweep is robust even if
-  SSIM is not perfectly monotone vs CQ.
-
-If we later want unification and fewer probes, we can still use the shared
-refiner, **but must keep the same CQ grid**:
-
-- CQ grid is fixed: `20,18,16,14,12,10,8,6,4,2`
-- Any “coarse+refine” must only probe values from this set (e.g. via index
-  bracketing then refining indices), never arbitrary CQ integers.
-- If monotonicity looks violated during bracketing (rare but possible), fall
-  back to the full linear sweep to preserve robustness.
-
 ## Tests
 
 Add unit tests for the shared refiner:
@@ -162,10 +137,3 @@ Update video tests:
 - Add a test asserting bitrate refinement reduces the final bitrate compared to
   the first passing bitrate (when there is a fail/pass bracket).
 - Add a test asserting the upward loop terminates after the max attempt budget.
-
-## Docs/code alignment note (AVIF→HEIC migration)
-
-The code currently uses `SSIMULACRA2 >= 85` for AVIF→HEIC migration, but the
-CLI description and [AGENTS.md](../AGENTS.md) claim `>= 90`.
-
-Decision: keep the code threshold (85.0) and update docs/descriptions to match.

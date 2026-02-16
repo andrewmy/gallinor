@@ -7,9 +7,8 @@ are intentionally “decision heavy” and not necessarily implemented yet.
 
 - [QUALITY_SEARCH_UNIFICATION_PLAN.md](QUALITY_SEARCH_UNIFICATION_PLAN.md)
   - Unify the “probe → threshold → refine” mechanics across:
-    - image HEIC quality search (JPEG→HEIC and AVIF→HEIC migration)
+    - image HEIC quality search (JPEG→HEIC)
     - video bitrate search (VMAF-based retries + bounded refinement)
-  - Explicitly keeps the JPEG→AVIF CQ grid (`20,18,…,2`) unchanged.
 - [DOCKERIZATION_PLAN.md](DOCKERIZATION_PLAN.md)
   - Ship a pinned external toolchain by running Gallinor in a Linux container.
   - Makes setup more reliable and enables consistent tool versions (and future

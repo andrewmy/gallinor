@@ -13,7 +13,6 @@ final class ImageFormatTest extends TestCase
     public function test_from_cli_accepts_case_insensitive_values(): void
     {
         self::assertSame(ImageFormat::Heic, ImageFormat::fromCli('HEIC'));
-        self::assertSame(ImageFormat::Avif, ImageFormat::fromCli('avif'));
     }
 
     public function test_from_cli_throws_on_invalid_value(): void

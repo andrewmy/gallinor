@@ -166,7 +166,7 @@ PHP,
 
         $exiftool = new Exiftool($platform);
         $exiftool->copyAllMetadata(
-            '/tmp/Laucu — avif.avif',
+            '/tmp/Laucu — source.jpg',
             '/tmp/Laucu — heic.heic',
         );
 
@@ -197,7 +197,7 @@ PHP,
 
         $exiftool = new Exiftool($platform);
         $exiftool->copyAllMetadata(
-            "/tmp/Laucu\x96avif.avif",
+            "/tmp/Laucu\x96source.jpg",
             "/tmp/Laucu\x96heic.heic",
         );
 
@@ -235,7 +235,7 @@ PHP,
 
         $exiftool = new Exiftool($platform);
         $exiftool->copyAllMetadata(
-            'C:/Users/andre/OneDrive/Pictures/source.avif',
+            'C:/Users/andre/OneDrive/Pictures/source.jpg',
             'C:/Users/andre/OneDrive/Pictures/target.heic',
         );
 

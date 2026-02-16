@@ -16,7 +16,6 @@ simplicity and ease of use.
 - Images:
   - Convert JPEGs to HEIC (default) with quality-based encoding (SSIMULACRA2
     score ≥ 85)
-    - AVIF remains available via `--format=avif`
   - Archive ARW raw files with xz compression (~30% reduction)
   - Skip photos with no size benefit from conversion
   - Skip Samsung Portrait Mode and Live Photos (not sure about iOS)
@@ -41,9 +40,6 @@ simplicity and ease of use.
   - libheif (HEIC tools)
     - macOS: `brew install libheif`
     - Win: <https://github.com/pphh77/libheif-Windowsbinary/releases>
-  - libavif (only if using `--format=avif` or AVIF→HEIC migration)
-    - macOS: `brew install libavif`
-    - Win: <https://github.com/AOMediaCodec/libavif/releases>
   - ssimulacra2
     - Rust
       - macOS: `brew install rust`
@@ -93,7 +89,7 @@ After checking the quality, finish the job here.
 ### Process images
 
 ```shell
-php app.php images:squeeze /path/to/photos [/path2 /path3 ...] [--dry-run] [--format=heic|avif] [--parallel] [--concurrency=N | --adaptive-concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]
+php app.php images:squeeze /path/to/photos [/path2 /path3 ...] [--dry-run] [--parallel] [--concurrency=N | --adaptive-concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]
 ```
 
 Converts JPEGs to HEIC by default (saving alongside originals as `.heic`) and
@@ -132,20 +128,6 @@ Worker status phase map (panel/trace view):
   `quality_not_achieved`)
 - `finalize` -> move final optimized file to target path
 - `metadata` -> copy + verify metadata on final output
-
-If you previously converted JPEGs to AVIF and need OneDrive compatibility:
-
-```shell
-php app.php images:migrate-avif-to-heic /path/to/photos [/path2 /path3 ...] [--dry-run] [--parallel] [--concurrency=N | --adaptive-concurrency=N] [--worker-max-jobs=N] [--job-timeout=SECONDS]
-php app.php images:remove-avifs /path/to/photos [/path2 /path3 ...] [--dry-run]
-```
-
-Parallel mode for AVIF→HEIC migration is optional and uses the same worker
-pool controls as `images:squeeze`, including `-v`/`-vv`/`-vvv` tracing and the
-live per-worker status panel at `-vv+`.
-`images:remove-avifs` is race-safe: if an AVIF disappears between planning and
-deletion (for example cloud-sync churn), Gallinor skips it and reports it under
-`Skipped missing` instead of emitting PHP warnings.
 
 ### Metadata verification failures
 

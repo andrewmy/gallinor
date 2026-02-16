@@ -38,7 +38,7 @@ smoke:
 
 # Check code coverage
 coverage-check: test
-    php vendor/bin/coverage-check var/coverage.xml 26
+    php vendor/bin/coverage-check var/coverage.xml 29
 
 # Full CI flow
 ci: composer-validate markdown lint require-check coverage-check stan security-check
