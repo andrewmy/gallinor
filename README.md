@@ -135,7 +135,7 @@ Gallinor verifies metadata after image conversion. If you see
 `Metadata verification failed`, check the listed tags:
 
 - Usually non-portable across container rewrite (often safe to ignore in future
-  releases): `System:*`, `QuickTime:*`, `JSON:*`, vendor XMP blocks (for
+  releases): `System:*`, `QuickTime:*`, `JFIF:*`, `JSON:*`, vendor XMP blocks (for
   example `XMP-MiCamera:*`, `XMP-alienexposure:*`, `XMP-xmpNote:*`),
   maker-note projection tags
   (`MakerUnknown:Unknown_0xNNNN`, `ExifIFD:MakerNoteUnknown*`), Adobe Camera
@@ -144,7 +144,8 @@ Gallinor verifies metadata after image conversion. If you see
   camera-profile vignette tags
   (`XMP-photoshop:CameraProfilesPerspectiveModelVignetteModel*`), XMP EXIF
   projection tag (`XMP-exif:ExposureCompensation`), and private EXIF tags like
-  `ExifIFD:Exif_0xNNNN`. Dimension projection tags
+  `ExifIFD:Exif_0xNNNN`. JPEG other-image pointer tags (`IFD0:OtherImage*`)
+  are also treated as non-portable. Dimension projection tags
   (`ExifIFD:ImageWidth`, `ExifIFD:ImageHeight`, `XMP-tiff:ImageWidth`,
   `XMP-tiff:ImageHeight`) and derived brightness metric (`ExifIFD:BrightnessValue`)
   are also treated as non-portable. Samsung trailer/vendor tags (`Samsung:*`)

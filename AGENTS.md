@@ -212,7 +212,8 @@ other timing buckets.
   then adjust `src/Images/Domain/StrictMetadataVerifier.php` with a short
   rationale comment.
   - Ignore only non-portable metadata families (container/runtime/vendor/private
-    tags such as `System:*`, `QuickTime:*`, `JSON:*`, `MakerUnknown:*`,
+    tags such as `System:*`, `QuickTime:*`, `JFIF:*`, `JSON:*`,
+    `MakerUnknown:*`,
     `ExifIFD:MakerNoteUnknown*`, `XMP-crs:MaskGroupBasedCorr*`,
     `XMP-crs:RetouchArea*`,
     `XMP-crs:LookParameters*`,
@@ -222,6 +223,7 @@ other timing buckets.
     `XMP-exif:ExposureCompensation`,
     `Samsung:*`,
     vendor XMP blocks, `ExifIFD:Exif_0xNNNN`,
+    JPEG other-image pointer tags (`IFD0:OtherImage*`),
     dimension projection tags (`ExifIFD:ImageWidth`, `ExifIFD:ImageHeight`,
     `XMP-tiff:ImageWidth`, `XMP-tiff:ImageHeight`),
     and derived brightness metric (`ExifIFD:BrightnessValue`).

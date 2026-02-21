@@ -217,6 +217,13 @@ final class StrictMetadataVerifierTest extends TestCase
         yield 'IFD0 thumbnail offset differs' => ['IFD0:ThumbnailOffset', true];
         yield 'IFD0 thumbnail length differs' => ['IFD0:ThumbnailLength', true];
         yield 'IFD0 thumbnail image differs' => ['IFD0:ThumbnailImage', true];
+        yield 'IFD0 other image start missing' => ['IFD0:OtherImageStart', false];
+        yield 'IFD0 other image length missing' => ['IFD0:OtherImageLength', false];
+        yield 'IFD0 other image missing' => ['IFD0:OtherImage', false];
+        yield 'JFIF version missing' => ['JFIF:JFIFVersion', false];
+        yield 'JFIF resolution unit missing' => ['JFIF:ResolutionUnit', false];
+        yield 'JFIF X resolution missing' => ['JFIF:XResolution', false];
+        yield 'JFIF Y resolution missing' => ['JFIF:YResolution', false];
         yield 'Components configuration differs' => ['ExifIFD:ComponentsConfiguration', true];
         yield 'Adobe Camera Raw mask dabs missing' => ['XMP-crs:MaskGroupBasedCorrMaskMasksDabs', false];
         yield 'Adobe Camera Raw mask what missing' => ['XMP-crs:MaskGroupBasedCorrMaskMasksWhat', false];

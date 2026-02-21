@@ -24,6 +24,7 @@ final readonly class StrictMetadataVerifier
         'Composite' => true,
         'System' => true,
         'QuickTime' => true,
+        'JFIF' => true,
         'IFD1' => true,
         'InteropIFD' => true,
         // Vendor JSON payload extracted by ExifTool is not preserved across container re-encode.
@@ -52,6 +53,8 @@ final readonly class StrictMetadataVerifier
         'ExifIFD:Exif_0x',
         // ExifTool-generated MakerNote text projections are non-portable across container rewrites.
         'ExifIFD:MakerNoteUnknown',
+        // IFD0 other-image pointer tags are JPEG-structure metadata and non-portable.
+        'IFD0:OtherImage',
         // Adobe Camera Raw metadata payloads are non-portable across container rewrites.
         'XMP-crs:MaskGroupBasedCorr',
         'XMP-crs:RetouchArea',
