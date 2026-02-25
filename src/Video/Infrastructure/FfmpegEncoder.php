@@ -265,6 +265,9 @@ final class FfmpegEncoder implements Encoder
             ]);
         }
 
+        // Preserve source timing/frame cadence (important for VFR clips).
+        $params[] = '-fps_mode passthrough';
+
         $params[] = escapeshellarg($tempFilePath);
 
         return implode(' ', $params);

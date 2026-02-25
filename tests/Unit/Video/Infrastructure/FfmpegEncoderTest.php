@@ -174,6 +174,27 @@ TXT,
         self::assertStringContainsString('-c:v hevc_videotoolbox', $command);
     }
 
+    public function test_command_preserves_fps_mode_passthrough(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\n",
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: true,
+            platform: self::platformWithTools($ffmpegPath),
+        );
+
+        $command = $encoder->commandForFile(
+            file: self::videoFile(hasRotation: false),
+            baseBitrate: 8000,
+            maxBitrateSpike: 1.25,
+            tempFilePath: '/tmp/out.mp4',
+        );
+
+        self::assertStringContainsString('-fps_mode passthrough', $command);
+    }
+
     private static function platformWithTools(string $ffmpegPath): StubPlatform
     {
         $platform = new StubPlatform();

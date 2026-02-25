@@ -124,6 +124,8 @@ For rotated/VFR sources, VMAF invocation keeps the original source as the
 first FFmpeg input (autorotation preserved), aligns both streams by decode
 order via `settb=AVTB,setpts=N/(FRAME_RATE*TB)`, and then compares as
 `[distorted][reference]libvmaf` to avoid timestamp-based frame-pairing drift.
+Video encoding uses FFmpeg `-fps_mode passthrough` to preserve source frame
+cadence/timestamps and avoid frame-drop drift on VFR clips.
 
 **Parallel JPEG mode**: `images:squeeze` can run JPEG optimization through an
 internal master/worker pool (`images:squeeze:worker`) over localhost NDJSON
