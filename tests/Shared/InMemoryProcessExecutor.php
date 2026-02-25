@@ -21,6 +21,9 @@ final class InMemoryProcessExecutor implements ProcessExecutor
 {
     /** @var array<string, int> Map of file path patterns to sizes */
     private array $fileSizes;
+    /** @var list<int> Optional per-output file size sequence, consumed in order */
+    private array $sizeSequence;
+    private int $sizeSequenceIndex = 0;
 
     /** @var array<string, int> Actual file sizes written (for tracking vfs files) */
     private array $actualSizes = [];
@@ -28,10 +31,15 @@ final class InMemoryProcessExecutor implements ProcessExecutor
     /**
      * @param array<string, ProcessResult> $commandResults Map of command patterns to results
      * @param array<string, int>           $fileSizes      Map of file path patterns to sizes (in bytes)
+     * @param list<int>                    $sizeSequence   Optional size sequence consumed per created output file
      */
-    public function __construct(private array $commandResults = [], array $fileSizes = [])
-    {
-        $this->fileSizes = $fileSizes;
+    public function __construct(
+        private array $commandResults = [],
+        array $fileSizes = [],
+        array $sizeSequence = [],
+    ) {
+        $this->fileSizes    = $fileSizes;
+        $this->sizeSequence = $sizeSequence;
     }
 
     public function execute(string $command, callable|null $lineCallback = null): ProcessResult
@@ -91,7 +99,11 @@ final class InMemoryProcessExecutor implements ProcessExecutor
     {
         if (preg_match('/\btar\s+-cf\s+([^\s]+)\s+-C\s+/', $command, $matches) === 1) {
             $tarPath = trim($matches[1], '\'"');
-            $size    = $this->getFileSize($tarPath);
+            if ($tarPath === '-') {
+                return;
+            }
+
+            $size = $this->getFileSize($tarPath, allowSizeSequence: false);
             if ($size <= 0) {
                 $size = 5;
             }
@@ -111,9 +123,9 @@ final class InMemoryProcessExecutor implements ProcessExecutor
 
         $tarPath       = trim($matches[1], '\'"');
         $compressedTar = $tarPath . '.xz';
-        $size          = $this->getFileSize($compressedTar);
+        $size          = $this->getFileSize($compressedTar, allowSizeSequence: false);
         if ($size <= 0) {
-            $size = max(1, $this->getFileSize($tarPath));
+            $size = max(1, $this->getFileSize($tarPath, allowSizeSequence: false));
         }
 
         $this->writeSizedFile($compressedTar, $size);
@@ -129,8 +141,12 @@ final class InMemoryProcessExecutor implements ProcessExecutor
         $this->actualSizes[$path] = $size;
     }
 
-    private function getFileSize(string $filePath): int
+    private function getFileSize(string $filePath, bool $allowSizeSequence = true): int
     {
+        if ($allowSizeSequence && isset($this->sizeSequence[$this->sizeSequenceIndex])) {
+            return $this->sizeSequence[$this->sizeSequenceIndex++];
+        }
+
         if (isset($this->fileSizes[$filePath])) {
             return $this->fileSizes[$filePath];
         }

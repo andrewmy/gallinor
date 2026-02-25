@@ -73,10 +73,18 @@ php app.php help images:squeeze
 ### Crush some vids
 
 ```shell
- php app.php videos:squeeze /path/to/videos [/path2 /path3 ...] [--dry-run]
+ php app.php videos:squeeze /path/to/videos [/path2 /path3 ...] [--dry-run] [--recheck-existing-optimal]
 ```
 
 The result files are saved along the originals with the `.optimal.mp4` suffix.
+When a first-pass encode lands with high quality headroom (VMAF >= 96), Gallinor
+also probes lower bitrates in resolution-sized steps and keeps the smallest
+variant that still passes VMAF >= 90.
+By default, files with existing `.optimal.mp4` variants are skipped. Use
+`--recheck-existing-optimal` to re-run those files and replace the existing
+`.optimal.mp4` only when the new candidate is smaller; otherwise the existing
+`.optimal.mp4` is kept. Re-check runs start from the existing optimal's known
+bitrate.
 
 ### Rename optimal videos to replace originals
 

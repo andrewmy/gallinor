@@ -11,6 +11,7 @@ use RuntimeException;
 use function copy;
 use function filesize;
 use function implode;
+use function is_file;
 use function max;
 use function microtime;
 use function min;
@@ -24,9 +25,10 @@ use const DIRECTORY_SEPARATOR;
 
 final readonly class VideoProcessor
 {
-    private const float MIN_VMAF_SCORE       = 90.0;
-    private const float MAX_BITRATE_SPIKE    = 1.25;
-    private const float MAX_BITRATE_OVERHEAD = 1.1;
+    private const float MIN_VMAF_SCORE                 = 90.0;
+    private const float DOWNWARD_SEARCH_MIN_VMAF_SCORE = 96.0;
+    private const float MAX_BITRATE_SPIKE              = 1.25;
+    private const float MAX_BITRATE_OVERHEAD           = 1.1;
 
     public function __construct(
         private Encoder $encoder,
@@ -43,10 +45,15 @@ final readonly class VideoProcessor
         bool $dryRun = false,
         callable|null $statusCallback = null,
         callable|null $lineCallback = null,
+        bool $keepExistingOptimalIfBetter = false,
+        int $startingBitrateKbps = 0,
     ): VideoProcessResult {
-        $baseBitrate = $file->baseBitrate();
+        $defaultBaseBitrate = $file->baseBitrate();
+        $baseBitrate        = $startingBitrateKbps > 0
+            ? $startingBitrateKbps
+            : $defaultBaseBitrate;
 
-        if (self::isBitrateAcceptable($file, $baseBitrate)) {
+        if (self::isBitrateAcceptable($file, $defaultBaseBitrate)) {
             return new VideoProcessResult(
                 success: true,
                 skipped: true,
@@ -54,7 +61,7 @@ final readonly class VideoProcessor
                 originalSize: $file->currentSize,
                 newSize: $file->currentSize,
                 qcTime: 0.0,
-                finalBitrate: $baseBitrate,
+                finalBitrate: $defaultBaseBitrate,
                 retryCount: 0,
                 outputPath: $file->path,
             );
@@ -79,11 +86,21 @@ final readonly class VideoProcessor
         $retryCount = 0;
         $qcTime     = 0.0;
 
-        do {
-            [$tempFilePath, $processedSize] = $this->encode($file, $baseBitrate, $lineCallback);
+        $bitrateStep = $file->bitrateStep();
+
+        while (true) {
+            $candidate     = $this->evaluateBitrateCandidate(
+                file: $file,
+                bitrateKbps: $baseBitrate,
+                lineCallback: $lineCallback,
+                statusCallback: $statusCallback,
+            );
+            $tempFilePath  = $candidate['tempFilePath'];
+            $processedSize = $candidate['processedSize'];
+            $qcTime       += $candidate['qcTime'];
 
             // Check if encoded file is larger than original - skip if so
-            if ($processedSize >= $file->currentSize) {
+            if ($candidate['isLargerThanOriginal']) {
                 @unlink($tempFilePath);
                 $this->logger->warning('Encoded file is larger than original, skipping', [
                     'file' => $file->path,
@@ -104,27 +121,15 @@ final readonly class VideoProcessor
                 );
             }
 
-            $startTime = microtime(true);
-            $vmafScore = $this->encoder->qualityScore(
-                originalFilePath: $file->path,
-                processedFilePath: $tempFilePath,
-            );
-            $qcTime   += microtime(true) - $startTime;
+            $vmafScore = $candidate['vmafScore'];
 
-            if ($statusCallback !== null) {
-                $statusCallback($baseBitrate, $vmafScore, $file->currentSize - $processedSize);
-            }
-
-            $resultAccepted = $vmafScore >= self::MIN_VMAF_SCORE;
-
-            if ($resultAccepted) {
-                continue;
+            if ($vmafScore >= self::MIN_VMAF_SCORE) {
+                break;
             }
 
             @unlink($tempFilePath);
             $retryCount++;
 
-            $bitrateStep = $file->bitrateStep();
             if ($bitrateStep === null) {
                 // No bitrate step defined, cannot retry
                 $this->logger->warning('Cannot retry encoding: no bitrate step defined for resolution', [
@@ -156,33 +161,117 @@ final readonly class VideoProcessor
                 'retry_count' => $retryCount,
             ]);
             $baseBitrate += $adaptiveStep;
-        } while (! $resultAccepted);
+        }
+
+        $bestTempFilePath  = $tempFilePath;
+        $bestProcessedSize = $processedSize;
+        $bestVmafScore     = $vmafScore;
+        $bestBitrate       = $baseBitrate;
+
+        // If first-pass quality has large headroom, probe lower bitrates and keep the smallest passing file.
+        if (
+            $bitrateStep !== null
+            && $retryCount === 0
+            && $bestVmafScore >= self::DOWNWARD_SEARCH_MIN_VMAF_SCORE
+        ) {
+            $searchBitrate  = $bestBitrate;
+            $minimumBitrate = $bitrateStep;
+
+            while (true) {
+                $candidateBitrate = $searchBitrate - $bitrateStep;
+                if ($candidateBitrate < $minimumBitrate) {
+                    break;
+                }
+
+                $candidateResult        = $this->evaluateBitrateCandidate(
+                    file: $file,
+                    bitrateKbps: $candidateBitrate,
+                    lineCallback: $lineCallback,
+                    statusCallback: $statusCallback,
+                );
+                $candidateTempFilePath  = $candidateResult['tempFilePath'];
+                $candidateProcessedSize = $candidateResult['processedSize'];
+                $qcTime                += $candidateResult['qcTime'];
+
+                if ($candidateResult['isLargerThanOriginal']) {
+                    @unlink($candidateTempFilePath);
+                    break;
+                }
+
+                $candidateVmafScore = $candidateResult['vmafScore'];
+
+                if ($candidateVmafScore < self::MIN_VMAF_SCORE) {
+                    @unlink($candidateTempFilePath);
+                    break;
+                }
+
+                $searchBitrate = $candidateBitrate;
+                if ($candidateProcessedSize < $bestProcessedSize) {
+                    @unlink($bestTempFilePath);
+                    $bestTempFilePath  = $candidateTempFilePath;
+                    $bestProcessedSize = $candidateProcessedSize;
+                    $bestVmafScore     = $candidateVmafScore;
+                    $bestBitrate       = $candidateBitrate;
+                    continue;
+                }
+
+                @unlink($candidateTempFilePath);
+            }
+        }
 
         $newFilePath = $file->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
+        if ($keepExistingOptimalIfBetter && is_file($newFilePath)) {
+            $existingOptimalSize = (int) filesize($newFilePath);
+            if ($existingOptimalSize <= $bestProcessedSize) {
+                @unlink($bestTempFilePath);
+                $this->logger->info('Keeping existing optimal file', [
+                    'original_file' => $file->path,
+                    'existing_optimal_file' => $newFilePath,
+                    'existing_optimal_size' => $existingOptimalSize,
+                    'new_candidate_size' => $bestProcessedSize,
+                    'candidate_vmaf_score' => $bestVmafScore,
+                    'candidate_bitrate_kbps' => $bestBitrate,
+                ]);
+
+                return new VideoProcessResult(
+                    success: true,
+                    skipped: false,
+                    vmafScore: $bestVmafScore,
+                    originalSize: $file->currentSize,
+                    newSize: $existingOptimalSize,
+                    qcTime: $qcTime,
+                    finalBitrate: $bestBitrate,
+                    retryCount: $retryCount,
+                    outputPath: $newFilePath,
+                    keptExistingOptimal: true,
+                );
+            }
+        }
+
         // rename() fails across filesystems (temp vs target), fall back to copy+delete
-        if (! @rename($tempFilePath, $newFilePath)) {
-            copy($tempFilePath, $newFilePath);
-            @unlink($tempFilePath);
+        if (! @rename($bestTempFilePath, $newFilePath)) {
+            copy($bestTempFilePath, $newFilePath);
+            @unlink($bestTempFilePath);
         }
 
         $this->logger->info('Processed file', [
             'original_file' => $file->path,
             'original_size' => $file->currentSize,
             'processed_file' => $newFilePath,
-            'processed_size' => $processedSize,
-            'base_bitrate_kbps' => $baseBitrate,
-            'vmaf_score' => $vmafScore,
+            'processed_size' => $bestProcessedSize,
+            'base_bitrate_kbps' => $bestBitrate,
+            'vmaf_score' => $bestVmafScore,
             'retry_count' => $retryCount,
         ]);
 
         return new VideoProcessResult(
             success: true,
             skipped: false,
-            vmafScore: $vmafScore,
+            vmafScore: $bestVmafScore,
             originalSize: $file->currentSize,
-            newSize: $processedSize,
+            newSize: $bestProcessedSize,
             qcTime: $qcTime,
-            finalBitrate: $baseBitrate,
+            finalBitrate: $bestBitrate,
             retryCount: $retryCount,
             outputPath: $newFilePath,
         );
@@ -200,6 +289,54 @@ final readonly class VideoProcessor
         $multiplier = max(1.0, min(4.0, $multiplier));
 
         return (int) ($baseStep * $multiplier);
+    }
+
+    /**
+     * @param callable(int, float, int): void|null $statusCallback
+     *
+     * @return array{
+     *   tempFilePath: string,
+     *   processedSize: int,
+     *   vmafScore: float,
+     *   qcTime: float,
+     *   isLargerThanOriginal: bool
+     * }
+     */
+    private function evaluateBitrateCandidate(
+        VideoFile $file,
+        int $bitrateKbps,
+        callable|null $lineCallback = null,
+        callable|null $statusCallback = null,
+    ): array {
+        [$tempFilePath, $processedSize] = $this->encode($file, $bitrateKbps, $lineCallback);
+        if ($processedSize >= $file->currentSize) {
+            return [
+                'tempFilePath' => $tempFilePath,
+                'processedSize' => $processedSize,
+                'vmafScore' => 0.0,
+                'qcTime' => 0.0,
+                'isLargerThanOriginal' => true,
+            ];
+        }
+
+        $startTime = microtime(true);
+        $vmafScore = $this->encoder->qualityScore(
+            originalFilePath: $file->path,
+            processedFilePath: $tempFilePath,
+        );
+        $qcTime    = microtime(true) - $startTime;
+
+        if ($statusCallback !== null) {
+            $statusCallback($bitrateKbps, $vmafScore, $file->currentSize - $processedSize);
+        }
+
+        return [
+            'tempFilePath' => $tempFilePath,
+            'processedSize' => $processedSize,
+            'vmafScore' => $vmafScore,
+            'qcTime' => $qcTime,
+            'isLargerThanOriginal' => false,
+        ];
     }
 
     /** @return array{string, int} [tempFilePath, processedSize] */

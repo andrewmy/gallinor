@@ -16,6 +16,7 @@ final readonly class VideoProcessResult
         public int $finalBitrate,
         public int $retryCount,
         public string $outputPath,
+        public bool $keptExistingOptimal = false,
     ) {
     }
 
