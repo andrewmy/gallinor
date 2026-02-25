@@ -41,7 +41,7 @@ php app.php help                    # Show all available commands
 **Video workflow** (2-step process):
 
 ```bash
-php app.php videos:squeeze <path> [--recheck-existing-optimal]  # Encode videos to HEVC (creates .optimal.mp4 files)
+php app.php videos:squeeze <path>  # Encode videos to HEVC (creates .optimal.mp4 files)
 php app.php videos:rename <path>    # Replace originals with optimized files
 ```
 
@@ -132,11 +132,7 @@ Video bitrate search defaults to the per-resolution base bitrate and raises it
 adaptively only when VMAF is below threshold; when the first passing run has
 high headroom (VMAF ≥ 96), it also probes lower bitrates (resolution step size)
 and keeps the smallest passing output.
-`videos:squeeze` skips files that already have `.optimal.mp4` by default; use
-`--recheck-existing-optimal` to re-run and overwrite only when the new candidate
-is smaller than the existing `.optimal.mp4`. Re-check starts from the existing
-optimal file bitrate (when probe succeeds), then continues normal VMAF-based
-adjustment.
+`videos:squeeze` skips files that already have `.optimal.mp4` by default.
 
 **Parallel JPEG mode**: `images:squeeze` can run JPEG optimization through an
 internal master/worker pool (`images:squeeze:worker`) over localhost NDJSON

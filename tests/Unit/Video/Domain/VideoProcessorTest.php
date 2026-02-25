@@ -16,14 +16,10 @@ use Mockery\MockInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
-use function file_put_contents;
-use function filesize;
 use function max;
 use function min;
 use function sprintf;
-use function str_repeat;
 use function sys_get_temp_dir;
-use function uniqid;
 
 final class VideoProcessorTest extends TestCase
 {
@@ -184,44 +180,6 @@ final class VideoProcessorTest extends TestCase
         $this->assertAdaptiveBitrateStep(20.0, (int) (2000 * 4.0));
     }
 
-    public function test_uses_provided_starting_bitrate_for_first_attempt(): void
-    {
-        $file        = self::create1080pVideo(needsEncoding: true);
-        $encodedSize = 4 * 1024 * 1024;
-
-        $this->processExecutor = new InMemoryProcessExecutor(
-            commandResults: [],
-            fileSizes: [sys_get_temp_dir() => $encodedSize],
-        );
-        $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
-
-        $this->encoder->allows()
-            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
-            ->andReturnUsing(static function ($unusedFile, $unusedBaseBitrate, $unusedMaxSpike, $path) {
-                return 'ffmpeg > ' . $path;
-            });
-
-        $this->encoder->allows()
-            ->qualityScore(Mockery::any(), Mockery::any())
-            ->andReturn(95.0);
-
-        $this->logger->allows()->info(Mockery::any(), Mockery::any());
-
-        $attemptBitrates = [];
-        $result          = $this->processor->processVideo(
-            file: $file,
-            dryRun: false,
-            statusCallback: static function (int $bitrate, float $vmafScore, int $saved) use (&$attemptBitrates): void {
-                $attemptBitrates[] = $bitrate;
-            },
-            startingBitrateKbps: 6000,
-        );
-
-        self::assertSame([6000], $attemptBitrates);
-        self::assertTrue($result->success);
-        self::assertSame(6000, $result->finalBitrate);
-    }
-
     public function test_steps_down_when_initial_vmaf_has_large_headroom(): void
     {
         $file = self::create1080pVideo(needsEncoding: true);
@@ -260,64 +218,6 @@ final class VideoProcessorTest extends TestCase
         self::assertSame(6000, $result->finalBitrate);
         self::assertSame(93.0, $result->vmafScore);
         self::assertSame(3_400_000, $result->newSize);
-    }
-
-    public function test_keeps_existing_optimal_when_candidate_is_not_smaller(): void
-    {
-        $basePath = sys_get_temp_dir() . '/gallinor_test_video_' . uniqid('', true) . '.mp4';
-        $file     = new VideoFile(
-            path: $basePath,
-            width: 1920,
-            height: 1080,
-            bitRate: 15_000_000,
-            pixFmt: 'yuv420p',
-            codecName: 'h264',
-            duration: 60.0,
-            currentSize: 5_000_000,
-        );
-
-        $optimalPath = $file->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
-        file_put_contents($optimalPath, str_repeat('x', 3_000_000));
-
-        $this->processExecutor = new InMemoryProcessExecutor(
-            commandResults: [],
-            fileSizes: [],
-            sizeSequence: [
-                4_500_000, // 8000k
-                3_600_000, // 6000k
-                3_700_000, // 4000k (fails quality, stop)
-            ],
-        );
-        $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
-
-        $this->encoder->allows()
-            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
-            ->andReturnUsing(static function ($unusedFile, $baseBitrate, $unusedMaxSpike, $path) {
-                return sprintf('ffmpeg bitrate=%d > %s', $baseBitrate, $path);
-            });
-
-        $callCount  = 0;
-        $vmafScores = [97.0, 93.0, 89.0];
-        $this->encoder->allows()
-            ->qualityScore(Mockery::any(), Mockery::any())
-            ->andReturnUsing(static function () use (&$callCount, $vmafScores) {
-                return $vmafScores[$callCount++];
-            });
-
-        $this->logger->allows()->info(Mockery::any(), Mockery::any());
-
-        $result = $this->processor->processVideo(
-            file: $file,
-            dryRun: false,
-            keepExistingOptimalIfBetter: true,
-        );
-
-        self::assertTrue($result->success);
-        self::assertFalse($result->skipped);
-        self::assertTrue($result->keptExistingOptimal);
-        self::assertSame($optimalPath, $result->outputPath);
-        self::assertSame(3_000_000, $result->newSize);
-        self::assertSame(3_000_000, filesize($optimalPath));
     }
 
     private function assertAdaptiveBitrateStep(float $initialVmaf, int $expectedAdaptiveStep): void

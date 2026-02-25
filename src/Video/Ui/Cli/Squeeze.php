@@ -9,7 +9,6 @@ use App\Shared\Domain\Platform;
 use App\Shared\Infrastructure\RealProcessExecutor;
 use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
-use App\Video\Domain\Encoder;
 use App\Video\Domain\EncoderFactory;
 use App\Video\Domain\Exceptions\UnsupportedResolution;
 use App\Video\Domain\VideoFile;
@@ -28,7 +27,6 @@ use function basename;
 use function count;
 use function explode;
 use function file_exists;
-use function max;
 use function microtime;
 use function number_format;
 use function sprintf;
@@ -50,7 +48,6 @@ final class Squeeze extends Command
 
     private VideoFinder $videoFinder;
     private VideoProcessor $processor;
-    private Encoder $encoder;
 
     /** @param list<string> $directories */
     public function __invoke(
@@ -59,15 +56,12 @@ final class Squeeze extends Command
         bool $dryRun = false,
         #[Option(description: 'Force using the CPU encoder, slow')]
         bool $useCpu = false,
-        #[Option(description: 'Re-process videos even if .optimal.mp4 exists; keep the existing file when it is smaller or equal')]
-        bool $recheckExistingOptimal = false,
         #[Argument]
         array $directories = [],
     ): int {
         $startTime = $this->cliHelper->startCommand($output, $dryRun, $this->timing);
         try {
             $encoder           = $this->encoderFactory->create($useCpu);
-            $this->encoder     = $encoder;
             $this->videoFinder = new VideoFinder($encoder);
             $this->processor   = new VideoProcessor($encoder, $this->logger, new RealProcessExecutor());
         } catch (Throwable $exception) {
@@ -99,7 +93,6 @@ final class Squeeze extends Command
         [$fileList, $totalSkippedFiles, $totalSkippedSize] = $this->gatherFileList(
             directories: $directories,
             output: $output,
-            recheckExistingOptimal: $recheckExistingOptimal,
         );
 
         $totalCurrentSize   = $totalSkippedSize + array_reduce(
@@ -189,8 +182,6 @@ final class Squeeze extends Command
                     dryRun: false,
                     statusCallback: $statusCallback,
                     lineCallback: $lineCallback,
-                    keepExistingOptimalIfBetter: $recheckExistingOptimal,
-                    startingBitrateKbps: $this->startingBitrateForFile($file, $recheckExistingOptimal),
                 );
 
                 if ($result->skipped) {
@@ -212,16 +203,6 @@ final class Squeeze extends Command
                     $totalErroredFiles++;
                     $progressBar->advance();
                     continue;
-                }
-
-                if ($result->keptExistingOptimal) {
-                    $progressBar->clear();
-                    $output->writeln(sprintf(
-                        '<comment>%s: Existing optimal is already better, keeping %s</comment>',
-                        $fileName,
-                        $this->cliHelper->link($result->outputPath),
-                    ));
-                    $progressBar->display();
                 }
 
                 $totalProcessedSize += $result->newSize;
@@ -278,7 +259,6 @@ final class Squeeze extends Command
     private function gatherFileList(
         array $directories,
         OutputInterface $output,
-        bool $recheckExistingOptimal = false,
     ): array {
         $fileList          = [];
         $totalSkippedFiles = 0;
@@ -312,7 +292,7 @@ final class Squeeze extends Command
             }
 
             $optimalFilePath = $videoFile->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
-            if (file_exists($optimalFilePath) && ! $recheckExistingOptimal) {
+            if (file_exists($optimalFilePath)) {
                 $output->writeln(sprintf(
                     'Optimal version already exists (%s), skipping.',
                     $this->cliHelper->link($optimalFilePath),
@@ -320,13 +300,6 @@ final class Squeeze extends Command
                 $totalSkippedFiles++;
                 $totalSkippedSize += $videoFile->currentSize;
                 continue;
-            }
-
-            if (file_exists($optimalFilePath) && $recheckExistingOptimal) {
-                $output->writeln(sprintf(
-                    'Optimal version already exists (%s), re-checking and keeping the smaller result.',
-                    $this->cliHelper->link($optimalFilePath),
-                ));
             }
 
             $fileList[] = $videoFile;
@@ -351,25 +324,5 @@ final class Squeeze extends Command
         }
 
         return [$fileList, $totalSkippedFiles, $totalSkippedSize];
-    }
-
-    private function startingBitrateForFile(VideoFile $file, bool $recheckExistingOptimal): int
-    {
-        if (! $recheckExistingOptimal) {
-            return 0;
-        }
-
-        $optimalFilePath = $file->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
-        if (! file_exists($optimalFilePath)) {
-            return 0;
-        }
-
-        try {
-            $optimalVideoFile = $this->encoder->videoFileFromPath($optimalFilePath);
-
-            return max(1, (int) ($optimalVideoFile->bitRate / 1024));
-        } catch (Throwable) {
-            return 0;
-        }
     }
 }

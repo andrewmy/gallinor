@@ -11,7 +11,6 @@ use RuntimeException;
 use function copy;
 use function filesize;
 use function implode;
-use function is_file;
 use function max;
 use function microtime;
 use function min;
@@ -45,13 +44,9 @@ final readonly class VideoProcessor
         bool $dryRun = false,
         callable|null $statusCallback = null,
         callable|null $lineCallback = null,
-        bool $keepExistingOptimalIfBetter = false,
-        int $startingBitrateKbps = 0,
     ): VideoProcessResult {
         $defaultBaseBitrate = $file->baseBitrate();
-        $baseBitrate        = $startingBitrateKbps > 0
-            ? $startingBitrateKbps
-            : $defaultBaseBitrate;
+        $baseBitrate        = $defaultBaseBitrate;
 
         if (self::isBitrateAcceptable($file, $defaultBaseBitrate)) {
             return new VideoProcessResult(
@@ -220,33 +215,6 @@ final readonly class VideoProcessor
         }
 
         $newFilePath = $file->suffixedFilePath(VideoFile::OPTIMAL_SUFFIX);
-        if ($keepExistingOptimalIfBetter && is_file($newFilePath)) {
-            $existingOptimalSize = (int) filesize($newFilePath);
-            if ($existingOptimalSize <= $bestProcessedSize) {
-                @unlink($bestTempFilePath);
-                $this->logger->info('Keeping existing optimal file', [
-                    'original_file' => $file->path,
-                    'existing_optimal_file' => $newFilePath,
-                    'existing_optimal_size' => $existingOptimalSize,
-                    'new_candidate_size' => $bestProcessedSize,
-                    'candidate_vmaf_score' => $bestVmafScore,
-                    'candidate_bitrate_kbps' => $bestBitrate,
-                ]);
-
-                return new VideoProcessResult(
-                    success: true,
-                    skipped: false,
-                    vmafScore: $bestVmafScore,
-                    originalSize: $file->currentSize,
-                    newSize: $existingOptimalSize,
-                    qcTime: $qcTime,
-                    finalBitrate: $bestBitrate,
-                    retryCount: $retryCount,
-                    outputPath: $newFilePath,
-                    keptExistingOptimal: true,
-                );
-            }
-        }
 
         // rename() fails across filesystems (temp vs target), fall back to copy+delete
         if (! @rename($bestTempFilePath, $newFilePath)) {
