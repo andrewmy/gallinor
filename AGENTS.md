@@ -121,7 +121,9 @@ separators and resolved through `realpath()` when possible before invocation.
 `aq-strength` (0.0–3.0). Image HEIC encoding uses libheif + x265 params via
 `heif-enc -p x265:...` (pinned defaults: `aq-mode=2`, `aq-strength=1.0`).
 HEIC encode/decode subprocesses run without Symfony's default 60s timeout to
-avoid false timeouts on large images. HEIC decode uses `heif-dec`.
+avoid false timeouts on large images. HEIC decode uses `heif-dec`. Video
+metadata probing via ffprobe also runs without Symfony's default 60s timeout so
+cloud on-demand files (for example OneDrive placeholders) can finish hydration.
 For rotated/VFR sources, VMAF invocation keeps the original source as the
 first FFmpeg input (autorotation preserved), aligns both streams by decode
 order via `settb=AVTB,setpts=N/(FRAME_RATE*TB)`, and then compares as

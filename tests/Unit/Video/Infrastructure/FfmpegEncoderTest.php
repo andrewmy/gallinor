@@ -13,6 +13,7 @@ use function chmod;
 use function count;
 use function file_get_contents;
 use function file_put_contents;
+use function filesize;
 use function is_array;
 use function json_decode;
 use function mkdir;
@@ -195,6 +196,38 @@ TXT,
         self::assertStringContainsString('-fps_mode passthrough', $command);
     }
 
+    public function test_video_file_from_path_reads_probe_stream_and_rotation_metadata(): void
+    {
+        $sourcePath = $this->tmpDir . '/source.mp4';
+        file_put_contents($sourcePath, 'video-bytes');
+
+        $ffmpegPath = $this->createFakeFfmpegWithVideoProbe(
+            <<<'JSON'
+{"streams":[{"width":3840,"height":2160,"bit_rate":12000000,"pix_fmt":"yuv420p","codec_name":"h264","duration":9.5,"color_space":"bt709","color_primaries":"bt709","color_transfer":"bt709","side_data_list":[{"side_data_type":"Display Matrix"}]}]}
+JSON,
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: true,
+            platform: self::platformWithTools($ffmpegPath),
+        );
+
+        $videoFile = $encoder->videoFileFromPath($sourcePath);
+
+        self::assertSame($sourcePath, $videoFile->path);
+        self::assertSame(3840, $videoFile->width);
+        self::assertSame(2160, $videoFile->height);
+        self::assertSame(12_000_000, $videoFile->bitRate);
+        self::assertSame('yuv420p', $videoFile->pixFmt);
+        self::assertSame('h264', $videoFile->codecName);
+        self::assertSame(9.5, $videoFile->duration);
+        self::assertSame((int) filesize($sourcePath), $videoFile->currentSize);
+        self::assertSame('bt709', $videoFile->colorSpace);
+        self::assertSame('bt709', $videoFile->colorPrimaries);
+        self::assertSame('bt709', $videoFile->colorTransfer);
+        self::assertTrue($videoFile->hasRotation);
+    }
+
     private static function platformWithTools(string $ffmpegPath): StubPlatform
     {
         $platform = new StubPlatform();
@@ -309,6 +342,47 @@ if (in_array('-filters', $argv, true)) {
 exit(0);
 PHP,
                 var_export($encodersOutput, true),
+            ),
+        );
+        chmod($path, 0o755);
+
+        return $path;
+    }
+
+    private function createFakeFfmpegWithVideoProbe(string $probeOutput): string
+    {
+        $path = $this->tmpDir . '/fake-ffmpeg-probe.php';
+        file_put_contents(
+            $path,
+            sprintf(
+                <<<'PHP'
+#!/usr/bin/env php
+<?php
+$probeOutput = %s;
+
+if (in_array('-encoders', $argv, true)) {
+    echo "Encoders:\n";
+    exit(0);
+}
+
+if (in_array('-h', $argv, true)) {
+    echo "encoder options\n";
+    exit(0);
+}
+
+if (in_array('-filters', $argv, true)) {
+    echo " .. libvmaf VV->V Calculate the VMAF score.\n";
+    exit(0);
+}
+
+if (in_array('-show_streams', $argv, true)) {
+    echo $probeOutput;
+    exit(0);
+}
+
+exit(0);
+PHP,
+                var_export($probeOutput, true),
             ),
         );
         chmod($path, 0o755);

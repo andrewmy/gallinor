@@ -133,6 +133,8 @@ final class FfmpegEncoder implements Encoder
             'json',
             $filePath,
         ]);
+        // Cloud-backed files (for example OneDrive on-demand) can block probe reads for a while.
+        $process->setTimeout(null);
         $process->mustRun();
 
         $mediaInfoStr = $process->getOutput();
