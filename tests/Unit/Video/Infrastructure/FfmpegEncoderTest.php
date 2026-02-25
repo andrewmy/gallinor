@@ -5,11 +5,16 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Video\Infrastructure;
 
 use App\Tests\Shared\StubPlatform;
+use App\Video\Domain\VideoFile;
 use App\Video\Infrastructure\FfmpegEncoder;
 use PHPUnit\Framework\TestCase;
 
 use function chmod;
+use function count;
+use function file_get_contents;
 use function file_put_contents;
+use function is_array;
+use function json_decode;
 use function mkdir;
 use function rmdir;
 use function scandir;
@@ -87,6 +92,88 @@ TXT,
         self::assertTrue($encoder->hasVmaf);
     }
 
+    public function test_quality_score_normalizes_streams_before_libvmaf(): void
+    {
+        $argvLogPath = $this->tmpDir . '/quality-score-argv.json';
+        $ffmpegPath  = $this->createFakeFfmpegWithQualityScore($argvLogPath);
+
+        $encoder = new FfmpegEncoder(
+            useCpu: true,
+            platform: self::platformWithTools($ffmpegPath),
+        );
+
+        $score = $encoder->qualityScore(
+            originalFilePath: '/tmp/original.mp4',
+            processedFilePath: '/tmp/processed.mp4',
+        );
+
+        self::assertSame(91.25, $score);
+
+        $argv = self::readLoggedArgv($argvLogPath);
+        self::assertSame($ffmpegPath, $argv[0]);
+
+        $firstInput = self::indexOf($argv, '-i');
+        self::assertNotNull($firstInput);
+        self::assertArrayHasKey($firstInput + 1, $argv);
+        self::assertSame('/tmp/original.mp4', $argv[$firstInput + 1]);
+
+        $secondInput = self::indexOf($argv, '-i', $firstInput + 1);
+        self::assertNotNull($secondInput);
+        self::assertArrayHasKey($secondInput + 1, $argv);
+        self::assertSame('/tmp/processed.mp4', $argv[$secondInput + 1]);
+
+        $filterComplexIndex = self::indexOf($argv, '-filter_complex');
+        self::assertNotNull($filterComplexIndex);
+        self::assertArrayHasKey($filterComplexIndex + 1, $argv);
+
+        $filter = $argv[$filterComplexIndex + 1];
+        self::assertStringContainsString('[0:v]settb=AVTB,setpts=N/(FRAME_RATE*TB)[reference]', $filter);
+        self::assertStringContainsString('[1:v]settb=AVTB,setpts=N/(FRAME_RATE*TB)[distorted]', $filter);
+        self::assertStringContainsString('[distorted][reference]libvmaf=', $filter);
+    }
+
+    public function test_rotated_video_uses_cpu_when_active_encoder_is_apple(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\nV..... hevc_videotoolbox Apple VideoToolbox encoder\n",
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: false,
+            platform: self::platformWithTools($ffmpegPath),
+        );
+
+        $command = $encoder->commandForFile(
+            file: self::videoFile(hasRotation: true),
+            baseBitrate: 8000,
+            maxBitrateSpike: 1.25,
+            tempFilePath: '/tmp/out.mp4',
+        );
+
+        self::assertStringContainsString('-c:v libx265', $command);
+    }
+
+    public function test_non_rotated_video_keeps_apple_encoder(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\nV..... hevc_videotoolbox Apple VideoToolbox encoder\n",
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: false,
+            platform: self::platformWithTools($ffmpegPath),
+        );
+
+        $command = $encoder->commandForFile(
+            file: self::videoFile(hasRotation: false),
+            baseBitrate: 8000,
+            maxBitrateSpike: 1.25,
+            tempFilePath: '/tmp/out.mp4',
+        );
+
+        self::assertStringContainsString('-c:v hevc_videotoolbox', $command);
+    }
+
     private static function platformWithTools(string $ffmpegPath): StubPlatform
     {
         $platform = new StubPlatform();
@@ -125,5 +212,129 @@ PHP,
         chmod($path, 0o755);
 
         return $path;
+    }
+
+    private function createFakeFfmpegWithQualityScore(string $argvLogPath): string
+    {
+        $path = $this->tmpDir . '/fake-ffmpeg-quality.php';
+        file_put_contents(
+            $path,
+            sprintf(
+                <<<'PHP'
+#!/usr/bin/env php
+<?php
+$argvLogPath = %s;
+
+if (in_array('-encoders', $argv, true)) {
+    echo "Encoders:\n";
+    exit(0);
+}
+
+if (in_array('-filters', $argv, true)) {
+    echo " .. libvmaf VV->V Calculate the VMAF score.\n";
+    exit(0);
+}
+
+$filterIndex = array_search('-filter_complex', $argv, true);
+if (! is_int($filterIndex) || ! isset($argv[$filterIndex + 1])) {
+    exit(0);
+}
+
+file_put_contents($argvLogPath, json_encode($argv));
+
+if (preg_match('/log_path=([^:]+)/', $argv[$filterIndex + 1], $match) !== 1) {
+    fwrite(STDERR, "missing log_path in filter\n");
+    exit(1);
+}
+
+$vmafPath = getcwd() . DIRECTORY_SEPARATOR . $match[1];
+file_put_contents($vmafPath, '{"pooled_metrics":{"vmaf":{"harmonic_mean":91.25}}}');
+exit(0);
+PHP,
+                var_export($argvLogPath, true),
+            ),
+        );
+        chmod($path, 0o755);
+
+        return $path;
+    }
+
+    private function createFakeFfmpegWithEncoders(string $encodersOutput): string
+    {
+        $path = $this->tmpDir . '/fake-ffmpeg-encoders.php';
+        file_put_contents(
+            $path,
+            sprintf(
+                <<<'PHP'
+#!/usr/bin/env php
+<?php
+$encodersOutput = %s;
+
+if (in_array('-encoders', $argv, true)) {
+    echo $encodersOutput;
+    exit(0);
+}
+
+if (in_array('-h', $argv, true)) {
+    echo "encoder options\n";
+    exit(0);
+}
+
+if (in_array('-filters', $argv, true)) {
+    echo " .. libvmaf VV->V Calculate the VMAF score.\n";
+    exit(0);
+}
+
+exit(0);
+PHP,
+                var_export($encodersOutput, true),
+            ),
+        );
+        chmod($path, 0o755);
+
+        return $path;
+    }
+
+    /** @return list<string> */
+    private static function readLoggedArgv(string $argvLogPath): array
+    {
+        $decoded = json_decode((string) file_get_contents($argvLogPath), true);
+
+        self::assertTrue(is_array($decoded));
+
+        /** @var list<string> $decodedStrings */
+        $decodedStrings = $decoded;
+
+        return $decodedStrings;
+    }
+
+    /** @param list<string> $values */
+    private static function indexOf(array $values, string $needle, int $offset = 0): int|null
+    {
+        for ($i = $offset, $count = count($values); $i < $count; $i++) {
+            if ($values[$i] === $needle) {
+                return $i;
+            }
+        }
+
+        return null;
+    }
+
+    private static function videoFile(bool $hasRotation): VideoFile
+    {
+        return new VideoFile(
+            path: '/tmp/source.mp4',
+            width: 1920,
+            height: 1080,
+            bitRate: 16_000_000,
+            pixFmt: 'yuv420p',
+            codecName: 'h264',
+            duration: 12.0,
+            currentSize: 24_000_000,
+            colorSpace: 'bt709',
+            colorPrimaries: 'bt709',
+            colorTransfer: 'bt709',
+            hasRotation: $hasRotation,
+        );
     }
 }

@@ -120,6 +120,10 @@ separators and resolved through `realpath()` when possible before invocation.
 `heif-enc -p x265:...` (pinned defaults: `aq-mode=2`, `aq-strength=1.0`).
 HEIC encode/decode subprocesses run without Symfony's default 60s timeout to
 avoid false timeouts on large images. HEIC decode uses `heif-dec`.
+For rotated/VFR sources, VMAF invocation keeps the original source as the
+first FFmpeg input (autorotation preserved), aligns both streams by decode
+order via `settb=AVTB,setpts=N/(FRAME_RATE*TB)`, and then compares as
+`[distorted][reference]libvmaf` to avoid timestamp-based frame-pairing drift.
 
 **Parallel JPEG mode**: `images:squeeze` can run JPEG optimization through an
 internal master/worker pool (`images:squeeze:worker`) over localhost NDJSON
@@ -187,11 +191,12 @@ other timing buckets.
 - **Static analysis at max level** - PHPStan is configured to max level with
   strict analysis
 - **Video rotation handling**: Videos with Display Matrix rotation metadata
-  (e.g., -90°) are detected via `side_data_list` in `show_streams`. NVENC cannot
-  properly handle rotation, so `encoderForFile()` switches to CPU encoder
-  (`libx265`) for rotated videos. CPU encoder bakes rotation into pixels
-  (1920x1080→1080x1920), ensuring correct playback orientation and direct VMAF
-  comparison without scaling needed.
+  (e.g., -90°) are detected via `side_data_list` in `show_streams`. Hardware
+  encoders can produce unreliable quality checks on rotated sources, so
+  `encoderForFile()` switches to CPU encoder (`libx265`) for rotated videos.
+  CPU encoder bakes rotation into pixels (1920x1080→1080x1920), ensuring
+  correct playback orientation and direct VMAF comparison without scaling
+  needed.
 
 ## Agent Guidelines (General)
 

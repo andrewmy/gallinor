@@ -68,7 +68,7 @@ final class FfmpegEncoder implements Encoder
 
     private function encoderForFile(VideoFile $file): EncoderName
     {
-        if ($file->hasRotation && $this->activeEncoder === EncoderName::Nvidia) {
+        if ($file->hasRotation && $this->activeEncoder !== EncoderName::Cpu) {
             return EncoderName::Cpu;
         }
 
@@ -287,11 +287,17 @@ final class FfmpegEncoder implements Encoder
             '-loglevel',
             'error',
             '-i',
-            $processedFilePath,
-            '-i',
             $originalFilePath,
+            '-i',
+            $processedFilePath,
             '-filter_complex',
-            sprintf('[0:v][1:v]libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10', $vmafLogFileName, $this->platform->nCores()),
+            // Keep original as first input so ffmpeg applies source autorotation.
+            // Align by decode order, not source timestamps, to avoid VFR/frame-time drift.
+            sprintf(
+                '[0:v]settb=AVTB,setpts=N/(FRAME_RATE*TB)[reference];[1:v]settb=AVTB,setpts=N/(FRAME_RATE*TB)[distorted];[distorted][reference]libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10',
+                $vmafLogFileName,
+                $this->platform->nCores(),
+            ),
         ];
 
         $params[] = '-f';
