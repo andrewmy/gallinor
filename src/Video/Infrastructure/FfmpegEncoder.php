@@ -23,6 +23,8 @@ use function is_array;
 use function is_file;
 use function json_decode;
 use function json_encode;
+use function preg_match;
+use function preg_quote;
 use function sprintf;
 use function str_contains;
 use function sys_get_temp_dir;
@@ -61,7 +63,7 @@ final class FfmpegEncoder implements Encoder
 
         $this->hasTemporalAq = $hasNvEncoder && $this->ffmpegHasOption('encoder=hevc_nvenc', 'temporal');
 
-        $this->hasVmaf = $this->ffmpegHasFilter('vmaf');
+        $this->hasVmaf = $this->ffmpegHasFilter('libvmaf');
     }
 
     private function encoderForFile(VideoFile $file): EncoderName
@@ -107,7 +109,14 @@ final class FfmpegEncoder implements Encoder
         ]);
         $process->run();
 
-        return $process->isSuccessful() && str_contains($process->getOutput(), $filter);
+        if (! $process->isSuccessful()) {
+            return false;
+        }
+
+        return preg_match(
+            '/^\s*[\.A-Z\| ]+\s+' . preg_quote($filter, '/') . '\s+/m',
+            $process->getOutput(),
+        ) === 1;
     }
 
     /** @throws RuntimeException */

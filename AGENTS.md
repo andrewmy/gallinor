@@ -91,6 +91,8 @@ construction.
 **External Tool Integration**: All external tools (FFmpeg, libheif,
 ssimulacra2, exiftool, xz) invoked via `ProcessExecutor` and located through
 `Platform::findTool()`.
+Video quality checks require FFmpeg `libvmaf` filter availability (not
+`vmafmotion` alone).
 
 **Images rotation**: JPEGs with EXIF orientation are normalized via FFmpeg
 before QC. FFmpeg normalization runs with `-noautorotate` so Gallinor applies
