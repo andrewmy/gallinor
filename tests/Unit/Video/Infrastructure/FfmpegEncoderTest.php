@@ -141,7 +141,7 @@ TXT,
 
         $encoder = new FfmpegEncoder(
             useCpu: false,
-            platform: self::platformWithTools($ffmpegPath),
+            platform: self::darwinPlatformWithTools($ffmpegPath),
         );
 
         $command = $encoder->commandForFile(
@@ -162,7 +162,7 @@ TXT,
 
         $encoder = new FfmpegEncoder(
             useCpu: false,
-            platform: self::platformWithTools($ffmpegPath),
+            platform: self::darwinPlatformWithTools($ffmpegPath),
         );
 
         $command = $encoder->commandForFile(
@@ -305,6 +305,14 @@ JSON,
         $platform = new StubPlatform();
         $platform->setTool('ffmpeg', $ffmpegPath);
         $platform->setTool('ffprobe', $ffmpegPath);
+
+        return $platform;
+    }
+
+    private static function darwinPlatformWithTools(string $ffmpegPath): StubPlatform
+    {
+        $platform           = self::platformWithTools($ffmpegPath);
+        $platform->isDarwin = true;
 
         return $platform;
     }

@@ -54,7 +54,7 @@ final class FfmpegEncoder implements Encoder
         $this->ffprobePath = $this->platform->findTool('ffprobe');
         $this->ffmpegPath  = $this->platform->findTool('ffmpeg');
 
-        $hasAppleToolbox = ! $this->platform->isWindows() && $this->ffmpegHasEncoder('hevc_videotoolbox');
+        $hasAppleToolbox = $this->platform->isDarwin() && $this->ffmpegHasEncoder('hevc_videotoolbox');
         $hasNvEncoder    = $this->ffmpegHasEncoder('hevc_nvenc');
 
         if ($useCpu) {

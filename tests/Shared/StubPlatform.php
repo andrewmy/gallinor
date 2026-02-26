@@ -11,6 +11,10 @@ final class StubPlatform implements Platform
 {
     public bool $isWindows = false;
 
+    public bool $isLinux = false;
+
+    public bool $isDarwin = false;
+
     public int $cores = 4;
 
     /** @var array<string, string> name: path */
@@ -29,6 +33,16 @@ final class StubPlatform implements Platform
     public function isWindows(): bool
     {
         return $this->isWindows;
+    }
+
+    public function isLinux(): bool
+    {
+        return $this->isLinux;
+    }
+
+    public function isDarwin(): bool
+    {
+        return $this->isDarwin;
     }
 
     public function nCores(): int

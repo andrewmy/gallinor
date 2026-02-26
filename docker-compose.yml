@@ -1,0 +1,7 @@
+services:
+  gallinor:
+    build: .
+    volumes:
+      - ${GALLINOR_GALLERY_PATH:-./gallery}:/data/gallery
+    tmpfs:
+      - /tmp:size=4G,exec

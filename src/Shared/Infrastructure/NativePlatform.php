@@ -20,6 +20,7 @@ use const PHP_OS_FAMILY;
 final readonly class NativePlatform implements Platform
 {
     private const string OS_DARWIN  = 'Darwin';
+    private const string OS_LINUX   = 'Linux';
     private const string OS_WINDOWS = 'Windows';
 
     public string $os;
@@ -28,8 +29,8 @@ final readonly class NativePlatform implements Platform
     public function __construct()
     {
         $this->os = PHP_OS_FAMILY;
-        if (! in_array($this->os, [self::OS_DARWIN, self::OS_WINDOWS], true)) {
-            throw new RuntimeException('This script only supports macOS and Windows systems.');
+        if (! in_array($this->os, [self::OS_DARWIN, self::OS_LINUX, self::OS_WINDOWS], true)) {
+            throw new RuntimeException('Unsupported OS: ' . $this->os);
         }
 
         $this->nCores = $this->detectNCores();
@@ -37,9 +38,11 @@ final readonly class NativePlatform implements Platform
 
     private function detectNCores(): int
     {
-        $process = $this->os === self::OS_DARWIN
-            ? new Process(['sysctl', '-n', 'hw.ncpu'])
-            : new Process(['powershell', '-Command', '(Get-CimInstance -ClassName Win32_Processor).NumberOfCores']);
+        $process = match ($this->os) {
+            self::OS_DARWIN => new Process(['sysctl', '-n', 'hw.ncpu']),
+            self::OS_LINUX => new Process(['nproc']),
+            self::OS_WINDOWS => new Process(['powershell', '-Command', '(Get-CimInstance -ClassName Win32_Processor).NumberOfCores']),
+        };
 
         try {
             $process->mustRun();
@@ -53,6 +56,16 @@ final readonly class NativePlatform implements Platform
     public function isWindows(): bool
     {
         return $this->os === self::OS_WINDOWS;
+    }
+
+    public function isLinux(): bool
+    {
+        return $this->os === self::OS_LINUX;
+    }
+
+    public function isDarwin(): bool
+    {
+        return $this->os === self::OS_DARWIN;
     }
 
     public function nCores(): int

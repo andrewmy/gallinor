@@ -1,0 +1,8 @@
+.git/
+vendor/
+var/
+gallery/
+node_modules/
+*.md
+docs/
+.phpunit*

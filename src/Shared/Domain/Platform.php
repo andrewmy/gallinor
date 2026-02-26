@@ -17,5 +17,9 @@ interface Platform
 
     public function isWindows(): bool;
 
+    public function isLinux(): bool;
+
+    public function isDarwin(): bool;
+
     public function nCores(): int;
 }

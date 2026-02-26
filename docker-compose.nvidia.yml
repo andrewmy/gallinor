@@ -1,0 +1,3 @@
+services:
+  gallinor:
+    gpus: all

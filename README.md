@@ -6,7 +6,7 @@ simplicity and ease of use.
 
 ## Features
 
-- Support for macOS and Windows
+- Support for macOS, Windows, and Linux (via Docker)
 - Video:
   - Reduce mp4 video file sizes, re-encoding everything to HEVC (H.265) with
     quality-based bitrate (VMAF score ≥ 90)
@@ -20,7 +20,65 @@ simplicity and ease of use.
   - Skip photos with no size benefit from conversion
   - Skip Samsung Portrait Mode and Live Photos (not sure about iOS)
 
-## Requirements
+## Quick start (Docker)
+
+Docker bundles the entire toolchain (ffmpeg, libheif, ssimulacra2, exiftool,
+xz) so nothing else needs to be installed.
+
+```shell
+docker compose build
+./bin/docker-run.sh images:squeeze "$HOME/Photos" --dry-run
+```
+
+The wrapper script mounts each host directory into the container automatically
+and maps file ownership so outputs aren't root-owned:
+
+```shell
+./bin/docker-run.sh images:squeeze "$HOME/Photos" --parallel
+./bin/docker-run.sh videos:squeeze "$HOME/Videos" --use-cpu --dry-run
+./bin/docker-run.sh images:squeeze "$HOME/Photos/2024" "$HOME/Photos/2025"
+```
+
+PowerShell:
+
+```powershell
+.\bin\docker-run.ps1 images:squeeze "$HOME\Photos" --parallel
+```
+
+Without the wrapper, set `GALLINOR_GALLERY_PATH` and use `/data/gallery` as
+the container path:
+
+```shell
+GALLINOR_GALLERY_PATH="$HOME/Photos" docker compose run --rm gallinor \
+  images:squeeze /data/gallery --parallel
+```
+
+### NVIDIA GPU acceleration
+
+For video encoding with NVENC, pass `--nvidia` to the wrapper:
+
+```shell
+./bin/docker-run.sh --nvidia videos:squeeze "$HOME/Videos"
+```
+
+Requirements: NVIDIA GPU + drivers, NVIDIA Container Toolkit, Docker Compose
+2.30.0+. The wrapper runs preflight checks and fails with clear errors if
+anything is missing.
+
+Apple VideoToolbox is not available inside Docker (the container runs Linux).
+On macOS, Docker video runs will use CPU encoding (`--use-cpu`).
+
+### Docker Desktop CPU note
+
+The container uses all CPUs the Docker engine sees. On Docker Desktop
+(macOS/Windows), this is limited to the VM's CPU count in
+**Settings > Resources** — increase it there for better parallel performance.
+
+## Native setup
+
+For running without Docker on macOS or Windows.
+
+### Requirements
 
 - PHP 8.5 or higher
 - Composer
@@ -55,7 +113,7 @@ simplicity and ease of use.
   - For raws — xz
     - macOS: `brew install xz`
 
-## Installation
+### Installation
 
 ```shell
 composer install
@@ -186,14 +244,45 @@ non-critical parser warnings in vendor blocks.
 
 ## Development
 
+### Native (requires local PHP + toolchain)
+
 ```shell
+composer install
 just ci
 just smoke
 ```
 
-`just ci` runs the default unit/static pipeline. `just smoke` runs separate
-environment-dependent smoke tests (real CLI + toolchain + worker IPC) via
-`php vendor/bin/phpunit tests/Smoke` using the main `phpunit.xml` config.
+`just ci` runs lint, static analysis, tests, and coverage. `just smoke` runs
+environment-dependent smoke tests (real CLI + toolchain + worker IPC).
+`just markdown` lints Markdown (requires Node/npx, not included in `ci`).
+
+### Docker (no local PHP needed)
+
+One-time setup:
+
+```shell
+docker compose build
+cp docker-compose.override.yml.dist docker-compose.override.yml
+docker compose run --rm --entrypoint sh gallinor -c 'composer install'
+```
+
+The override bind-mounts the repo into the container so code changes are
+reflected immediately without rebuilding. The `composer install` populates
+`vendor/` on the host through the mount.
+
+All PHP-based Justfile targets work in Docker via `DOCKER=1`:
+
+```shell
+DOCKER=1 just test
+DOCKER=1 just stan
+DOCKER=1 just ci
+```
+
+Verify the Docker image toolchain:
+
+```shell
+just docker-smoke
+```
 
 ## Design docs
 
