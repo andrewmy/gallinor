@@ -34,6 +34,7 @@ final class RawArchiverTest extends FsTestCase
         $this->processExecutor = new InMemoryProcessExecutor();
         $this->platform        = new StubPlatform();
         $this->platform->setTool('xz', '/usr/bin/xz');
+        $this->platform->setTool('tar', '/usr/bin/tar');
         $this->logHandler = new TestHandler();
         $this->logger     = new Logger('test', [$this->logHandler]);
     }

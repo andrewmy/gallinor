@@ -33,13 +33,15 @@ use const DIRECTORY_SEPARATOR;
 final readonly class RawArchiver
 {
     public string $xzPath;
+    public string $tarPath;
 
     public function __construct(
         private Platform $platform,
         private LoggerInterface $logger,
         private ProcessExecutor $processExecutor,
     ) {
-        $this->xzPath = $this->platform->findTool('xz');
+        $this->xzPath  = $this->platform->findTool('xz');
+        $this->tarPath = $this->platform->findTool('tar');
     }
 
     /**
@@ -85,7 +87,8 @@ final readonly class RawArchiver
         $tarPath = $tmpDir . DIRECTORY_SEPARATOR . $runId . '.tar';
 
         $tarCmd = sprintf(
-            'tar -cf %s -C %s -T %s 2>&1',
+            '%s -cf %s -C %s -T %s 2>&1',
+            escapeshellarg($this->tarPath),
             escapeshellarg($tarPath),
             escapeshellarg($directory),
             escapeshellarg($listFile),
@@ -125,7 +128,8 @@ final readonly class RawArchiver
     private function archiveUnix(string $directory, string $listFile, string $archivePath): int
     {
         $cmd = sprintf(
-            'tar -cf - -C %s -T %s | %s -9 -T0 > %s 2>&1',
+            '%s -cf - -C %s -T %s | %s -9 -T0 > %s 2>&1',
+            escapeshellarg($this->tarPath),
             escapeshellarg($directory),
             escapeshellarg($listFile),
             escapeshellarg($this->xzPath),
