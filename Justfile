@@ -7,7 +7,7 @@ _q := if docker != "" { "'" } else { "" }
 
 # Validate composer.json
 composer-validate:
-    {{ _dc }} {{ _q }}composer validate{{ _q }}
+    {{ _dc }} {{ _q }}composer validate --strict{{ _q }}
 
 # Fix code style
 cbf:

@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: extractions/setup-just@v2
 
       - name: Markdown Lint
         uses: DavidAnson/markdownlint-cli2-action@v21
@@ -25,25 +26,17 @@ jobs:
 
       - uses: ramsey/composer-install@v3
 
-      - name: Composer Validate
-        run: composer validate --strict
-
-      - name: Security Audit
-        run: composer audit --no-dev
-
-      - name: Dependency Analysis
-        run: php vendor/bin/composer-dependency-analyser
-
-      - name: CS
-        run: vendor/bin/phpcs
-
-      - name: Static Analysis
-        run: vendor/bin/phpstan
+      - run: just composer-validate
+      - run: just security-check
+      - run: just require-check
+      - run: just lint
+      - run: just stan
 
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: extractions/setup-just@v2
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -52,18 +45,12 @@ jobs:
 
       - uses: ramsey/composer-install@v3
 
-      - name: Tests
-        run: vendor/bin/phpunit
-
-      - name: Coverage Check
-        run: vendor/bin/coverage-check var/coverage.xml 29
+      - run: just coverage-check
 
   docker-smoke:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
       - uses: extractions/setup-just@v2
 
-      - name: Docker Smoke Test
-        run: just docker-smoke
+      - run: just docker-smoke
