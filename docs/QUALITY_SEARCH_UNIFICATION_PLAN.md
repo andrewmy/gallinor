@@ -11,6 +11,10 @@ across:
 Without over-unifying the *probes themselves* (encode/decode/QC are domain
 specific).
 
+For concrete, video-only execution details (scout policy, stopping rules,
+defaults, and tests), see
+[VIDEO_SCOUT_SEARCH_PLAN.md](VIDEO_SCOUT_SEARCH_PLAN.md).
+
 ## Non-goals
 
 - Do not change external tools or codecs.
@@ -21,8 +25,10 @@ specific).
 - [README.md](README.md) (index)
 - [DOCKERIZATION_PLAN.md](DOCKERIZATION_PLAN.md) (toolchain standardisation;
   impacts how probes run)
+- [VIDEO_SCOUT_SEARCH_PLAN.md](VIDEO_SCOUT_SEARCH_PLAN.md) (video-only
+  decision-complete search policy)
 
-## Current behavior (as of 2026-02-16)
+## Current behavior (as of 2026-02-26)
 
 ### Images
 
@@ -36,11 +42,10 @@ specific).
 - Start at a base bitrate by resolution.
 - If VMAF is below the threshold, increase bitrate using an *adaptive step*
   based on the “distance” to the target VMAF.
-- There is no explicit “refine down” step after a large increase.
-- The retry loop is currently unbounded (in principle) if quality is never
-  achieved.
+- Current and planned video-specific search policy details are tracked in
+  [VIDEO_SCOUT_SEARCH_PLAN.md#search-algorithm](VIDEO_SCOUT_SEARCH_PLAN.md#search-algorithm).
 
-## Proposed shared abstraction: bounded “monotone threshold refiner”
+## Proposed shared abstraction: bounded monotone threshold refiner
 
 ### What we want to unify
 
@@ -104,25 +109,15 @@ This unifies the refinement mechanics without changing probe semantics.
 
 ### Video bitrate (VMAF)
 
-Keep adaptive stepping upward, but:
+Use the shared refiner for the bounded fail/pass-bracket stage, while keeping
+video scout policy and termination controls in the dedicated video plan:
 
-1. Add a hard max attempt budget for the upward loop.
-2. After achieving the first passing bitrate, refine down *only if* we have a
-   fail/pass bracket (i.e. at least one failure before a success).
-3. Stop refining once the passing bitrate is within an acceptable overshoot
-   relative to the last known failing bitrate.
-
-Recommended parameters:
-
-- `MAX_UPWARD_ATTEMPTS = 8`
-- `MAX_REFINE_ATTEMPTS = 3`
-- `BITRATE_GRANULARITY_KBPS = 100`
-- `ACCEPTABLE_OVERSHOOT_RATIO = 1.10`
-
-Refinement goal:
-
-- Avoid large overshoot after a big adaptive step, without making “smallest
-  possible bitrate” the default.
+- Algorithm and defaults:
+  [VIDEO_SCOUT_SEARCH_PLAN.md#search-algorithm](VIDEO_SCOUT_SEARCH_PLAN.md#search-algorithm)
+- Interface changes:
+  [VIDEO_SCOUT_SEARCH_PLAN.md#interface--code-changes](VIDEO_SCOUT_SEARCH_PLAN.md#interface--code-changes)
+- Acceptance expectations:
+  [VIDEO_SCOUT_SEARCH_PLAN.md#acceptance-criteria](VIDEO_SCOUT_SEARCH_PLAN.md#acceptance-criteria)
 
 ## Tests
 
@@ -132,8 +127,5 @@ Add unit tests for the shared refiner:
 - Respects granularity
 - Respects max attempt budget
 
-Update video tests:
-
-- Add a test asserting bitrate refinement reduces the final bitrate compared to
-  the first passing bitrate (when there is a fail/pass bracket).
-- Add a test asserting the upward loop terminates after the max attempt budget.
+For video-specific scenarios, keep the authoritative list in
+[VIDEO_SCOUT_SEARCH_PLAN.md#tests](VIDEO_SCOUT_SEARCH_PLAN.md#tests).
