@@ -196,6 +196,78 @@ TXT,
         self::assertStringContainsString('-fps_mode passthrough', $command);
     }
 
+    public function test_nvenc_command_enables_supported_hq_options(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\nV..... hevc_nvenc NVIDIA NVENC hevc encoder\n",
+            <<<'TXT'
+Encoder hevc_nvenc [NVIDIA NVENC hevc encoder]:
+  -rc                <int>
+     vbr_hq          2
+  -cq                <float>
+  -rc-lookahead      <int>
+  -multipass         <int>
+  -temporal-aq       <boolean>
+  -bf                <int>
+  -b_ref_mode        <int>
+TXT,
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: false,
+            platform: self::platformWithTools($ffmpegPath),
+        );
+
+        $command = $encoder->commandForFile(
+            file: self::videoFile(hasRotation: false),
+            baseBitrate: 8000,
+            maxBitrateSpike: 1.25,
+            tempFilePath: '/tmp/out.mp4',
+        );
+
+        self::assertStringContainsString('-c:v hevc_nvenc', $command);
+        self::assertStringContainsString('-rc vbr_hq', $command);
+        self::assertStringContainsString('-cq 21', $command);
+        self::assertStringContainsString('-rc-lookahead 32', $command);
+        self::assertStringContainsString('-multipass fullres', $command);
+        self::assertStringContainsString('-temporal-aq 1', $command);
+        self::assertStringContainsString('-bf 4', $command);
+        self::assertStringContainsString('-b_ref_mode middle', $command);
+    }
+
+    public function test_nvenc_command_skips_unsupported_hq_options(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\nV..... hevc_nvenc NVIDIA NVENC hevc encoder\n",
+            <<<'TXT'
+Encoder hevc_nvenc [NVIDIA NVENC hevc encoder]:
+  -rc                <int>
+TXT,
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: false,
+            platform: self::platformWithTools($ffmpegPath),
+        );
+
+        $command = $encoder->commandForFile(
+            file: self::videoFile(hasRotation: false),
+            baseBitrate: 8000,
+            maxBitrateSpike: 1.25,
+            tempFilePath: '/tmp/out.mp4',
+        );
+
+        self::assertStringContainsString('-c:v hevc_nvenc', $command);
+        self::assertStringContainsString('-rc vbr', $command);
+        self::assertStringNotContainsString('-rc vbr_hq', $command);
+        self::assertStringNotContainsString('-cq 21', $command);
+        self::assertStringNotContainsString('-rc-lookahead 32', $command);
+        self::assertStringNotContainsString('-multipass fullres', $command);
+        self::assertStringNotContainsString('-temporal-aq 1', $command);
+        self::assertStringNotContainsString('-bf 4', $command);
+        self::assertStringNotContainsString('-b_ref_mode middle', $command);
+    }
+
     public function test_video_file_from_path_reads_probe_stream_and_rotation_metadata(): void
     {
         $sourcePath = $this->tmpDir . '/source.mp4';
@@ -313,7 +385,7 @@ PHP,
         return $path;
     }
 
-    private function createFakeFfmpegWithEncoders(string $encodersOutput): string
+    private function createFakeFfmpegWithEncoders(string $encodersOutput, string $encoderHelpOutput = "encoder options\n"): string
     {
         $path = $this->tmpDir . '/fake-ffmpeg-encoders.php';
         file_put_contents(
@@ -323,6 +395,7 @@ PHP,
 #!/usr/bin/env php
 <?php
 $encodersOutput = %s;
+$encoderHelpOutput = %s;
 
 if (in_array('-encoders', $argv, true)) {
     echo $encodersOutput;
@@ -330,7 +403,7 @@ if (in_array('-encoders', $argv, true)) {
 }
 
 if (in_array('-h', $argv, true)) {
-    echo "encoder options\n";
+    echo $encoderHelpOutput;
     exit(0);
 }
 
@@ -342,6 +415,7 @@ if (in_array('-filters', $argv, true)) {
 exit(0);
 PHP,
                 var_export($encodersOutput, true),
+                var_export($encoderHelpOutput, true),
             ),
         );
         chmod($path, 0o755);

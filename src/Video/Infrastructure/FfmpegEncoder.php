@@ -39,6 +39,12 @@ final class FfmpegEncoder implements Encoder
     private readonly string $ffmpegPath;
     public EncoderName $activeEncoder;
     public readonly bool $hasTemporalAq;
+    private readonly bool $hasNvencVbrHq;
+    private readonly bool $hasNvencCq;
+    private readonly bool $hasNvencRcLookahead;
+    private readonly bool $hasNvencMultipass;
+    private readonly bool $hasNvencBRefMode;
+    private readonly bool $hasNvencBFrames;
     public readonly bool $hasVmaf;
 
     public function __construct(
@@ -61,7 +67,15 @@ final class FfmpegEncoder implements Encoder
             $this->activeEncoder = $hasAppleToolbox ? EncoderName::Apple : EncoderName::Nvidia;
         }
 
-        $this->hasTemporalAq = $hasNvEncoder && $this->ffmpegHasOption('encoder=hevc_nvenc', 'temporal');
+        $nvencHelp = $hasNvEncoder ? $this->ffmpegEncoderHelp('encoder=hevc_nvenc') : null;
+
+        $this->hasTemporalAq       = $nvencHelp !== null && self::encoderHelpHasOption($nvencHelp, 'temporal-aq');
+        $this->hasNvencVbrHq       = $nvencHelp !== null && self::encoderHelpHasValue($nvencHelp, 'vbr_hq');
+        $this->hasNvencCq          = $nvencHelp !== null && self::encoderHelpHasOption($nvencHelp, 'cq');
+        $this->hasNvencRcLookahead = $nvencHelp !== null && self::encoderHelpHasOption($nvencHelp, 'rc-lookahead');
+        $this->hasNvencMultipass   = $nvencHelp !== null && self::encoderHelpHasOption($nvencHelp, 'multipass');
+        $this->hasNvencBRefMode    = $nvencHelp !== null && self::encoderHelpHasOption($nvencHelp, 'b_ref_mode');
+        $this->hasNvencBFrames     = $nvencHelp !== null && self::encoderHelpHasOption($nvencHelp, 'bf');
 
         $this->hasVmaf = $this->ffmpegHasFilter('libvmaf');
     }
@@ -87,7 +101,7 @@ final class FfmpegEncoder implements Encoder
         return $process->isSuccessful() && str_contains($process->getOutput(), $encoder);
     }
 
-    private function ffmpegHasOption(string $target, string $option): bool
+    private function ffmpegEncoderHelp(string $target): string|null
     {
         $process = new Process([
             $this->ffmpegPath,
@@ -97,7 +111,11 @@ final class FfmpegEncoder implements Encoder
         ]);
         $process->run();
 
-        return $process->isSuccessful() && str_contains($process->getOutput(), $option);
+        if (! $process->isSuccessful()) {
+            return null;
+        }
+
+        return $process->getOutput();
     }
 
     private function ffmpegHasFilter(string $filter): bool
@@ -117,6 +135,16 @@ final class FfmpegEncoder implements Encoder
             '/^\s*[\.A-Z\| ]+\s+' . preg_quote($filter, '/') . '\s+/m',
             $process->getOutput(),
         ) === 1;
+    }
+
+    private static function encoderHelpHasOption(string $helpOutput, string $option): bool
+    {
+        return preg_match('/^\s*-' . preg_quote($option, '/') . '\b/m', $helpOutput) === 1;
+    }
+
+    private static function encoderHelpHasValue(string $helpOutput, string $value): bool
+    {
+        return preg_match('/\b' . preg_quote($value, '/') . '\b/m', $helpOutput) === 1;
     }
 
     /** @throws RuntimeException */
@@ -251,12 +279,32 @@ final class FfmpegEncoder implements Encoder
             $params = array_merge($params, [
                 sprintf('-maxrate:v %dk', $baseBitrate * $maxBitrateSpike),
                 '-preset p7',
-                '-rc vbr',
+                $this->hasNvencVbrHq ? '-rc vbr_hq' : '-rc vbr',
                 '-spatial_aq 1',
                 '-aq-strength 12',
             ]);
+            if ($this->hasNvencCq) {
+                $params[] = '-cq 21';
+            }
+
+            if ($this->hasNvencRcLookahead) {
+                $params[] = '-rc-lookahead 32';
+            }
+
+            if ($this->hasNvencMultipass) {
+                $params[] = '-multipass fullres';
+            }
+
             if ($this->hasTemporalAq) {
                 $params[] = '-temporal-aq 1';
+            }
+
+            if ($this->hasNvencBFrames) {
+                $params[] = '-bf 4';
+            }
+
+            if ($this->hasNvencBRefMode) {
+                $params[] = '-b_ref_mode middle';
             }
         } elseif ($encoder === EncoderName::Apple) {
             $params[] = '-quality quality';

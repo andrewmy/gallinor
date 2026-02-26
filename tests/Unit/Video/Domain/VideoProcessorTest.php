@@ -220,6 +220,48 @@ final class VideoProcessorTest extends TestCase
         self::assertSame(3_400_000, $result->newSize);
     }
 
+    public function test_refines_downward_after_retry_with_smaller_steps(): void
+    {
+        $file = self::create1080pVideo(needsEncoding: true);
+
+        $this->processExecutor = new InMemoryProcessExecutor(
+            commandResults: [],
+            fileSizes: [],
+            sizeSequence: [
+                4_700_000, // 8000k (fails quality)
+                4_200_000, // 10432k (passes after retry)
+                4_050_000, // 9932k (passes and smaller)
+                3_950_000, // 9432k (fails quality, stop)
+            ],
+        );
+        $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
+
+        $this->encoder->allows()
+            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
+            ->andReturnUsing(static function ($unusedFile, $baseBitrate, $unusedMaxSpike, $path) {
+                return sprintf('ffmpeg bitrate=%d > %s', $baseBitrate, $path);
+            });
+
+        $callCount  = 0;
+        $vmafScores = [85.0, 92.0, 91.0, 89.5];
+        $this->encoder->allows()
+            ->qualityScore(Mockery::any(), Mockery::any())
+            ->andReturnUsing(static function () use (&$callCount, $vmafScores) {
+                return $vmafScores[$callCount++];
+            });
+
+        $this->logger->allows()->info(Mockery::any(), Mockery::any());
+
+        $result = $this->processor->processVideo($file, dryRun: false);
+
+        self::assertTrue($result->success);
+        self::assertFalse($result->skipped);
+        self::assertSame(1, $result->retryCount);
+        self::assertSame(9_932, $result->finalBitrate);
+        self::assertSame(91.0, $result->vmafScore);
+        self::assertSame(4_050_000, $result->newSize);
+    }
+
     private function assertAdaptiveBitrateStep(float $initialVmaf, int $expectedAdaptiveStep): void
     {
         $this->processExecutor = new InMemoryProcessExecutor(
@@ -235,7 +277,7 @@ final class VideoProcessorTest extends TestCase
             });
 
         $callCount  = 0;
-        $vmafScores = [$initialVmaf, 92.0];
+        $vmafScores = [$initialVmaf, 92.0, 89.0];
         $this->encoder->allows()
             ->qualityScore(Mockery::any(), Mockery::any())
             ->andReturnUsing(static function () use (&$callCount, $vmafScores) {

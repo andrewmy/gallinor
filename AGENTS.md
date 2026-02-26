@@ -120,6 +120,10 @@ separators and resolved through `realpath()` when possible before invocation.
 **AQ note**: Video NVENC `-aq-strength` is NVENC-specific and unrelated to x265
 `aq-strength` (0.0–3.0). Image HEIC encoding uses libheif + x265 params via
 `heif-enc -p x265:...` (pinned defaults: `aq-mode=2`, `aq-strength=1.0`).
+NVENC HQ flags are capability-gated: Gallinor inspects
+`ffmpeg -h encoder=hevc_nvenc` and enables options/values (`vbr_hq`, `cq`,
+`rc-lookahead`, `multipass`, `bf`, `b_ref_mode`, `temporal-aq`) only when
+present in that build.
 HEIC encode/decode subprocesses run without Symfony's default 60s timeout to
 avoid false timeouts on large images. HEIC decode uses `heif-dec`. Video
 metadata probing via ffprobe also runs without Symfony's default 60s timeout so
@@ -133,7 +137,9 @@ cadence/timestamps and avoid frame-drop drift on VFR clips.
 Video bitrate search defaults to the per-resolution base bitrate and raises it
 adaptively only when VMAF is below threshold; when the first passing run has
 high headroom (VMAF ≥ 96), it also probes lower bitrates (resolution step size)
-and keeps the smallest passing output.
+and keeps the smallest passing output. After one or more upward retries, a
+bounded fine-grained downward refinement pass is also run to reduce bitrate
+overshoot while keeping VMAF ≥ 90.
 `videos:squeeze` skips files that already have `.optimal.mp4` by default.
 
 **Parallel JPEG mode**: `images:squeeze` can run JPEG optimization through an

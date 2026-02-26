@@ -11,6 +11,7 @@ use RuntimeException;
 use function copy;
 use function filesize;
 use function implode;
+use function intdiv;
 use function max;
 use function microtime;
 use function min;
@@ -28,6 +29,9 @@ final readonly class VideoProcessor
     private const float DOWNWARD_SEARCH_MIN_VMAF_SCORE = 96.0;
     private const float MAX_BITRATE_SPIKE              = 1.25;
     private const float MAX_BITRATE_OVERHEAD           = 1.1;
+    private const int RETRY_REFINEMENT_STEP_DIVISOR    = 4;
+    private const int RETRY_REFINEMENT_MIN_STEP_KBPS   = 250;
+    private const int RETRY_REFINEMENT_MAX_PROBES      = 4;
 
     public function __construct(
         private Encoder $encoder,
@@ -163,18 +167,28 @@ final readonly class VideoProcessor
         $bestVmafScore     = $vmafScore;
         $bestBitrate       = $baseBitrate;
 
-        // If first-pass quality has large headroom, probe lower bitrates and keep the smallest passing file.
+        // Probe lower bitrates and keep the smallest passing file:
+        // - coarse search when first pass has large headroom
+        // - bounded fine-grained refinement after upward retries
         if (
             $bitrateStep !== null
-            && $retryCount === 0
-            && $bestVmafScore >= self::DOWNWARD_SEARCH_MIN_VMAF_SCORE
+            && ($bestVmafScore >= self::DOWNWARD_SEARCH_MIN_VMAF_SCORE || $retryCount > 0)
         ) {
-            $searchBitrate  = $bestBitrate;
-            $minimumBitrate = $bitrateStep;
+            $searchBitrate = $bestBitrate;
+            $probeCount    = 0;
+
+            $downwardStep  = $retryCount > 0
+                ? max(self::RETRY_REFINEMENT_MIN_STEP_KBPS, intdiv($bitrateStep, self::RETRY_REFINEMENT_STEP_DIVISOR))
+                : $bitrateStep;
+            $maxProbeCount = $retryCount > 0 ? self::RETRY_REFINEMENT_MAX_PROBES : null;
 
             while (true) {
-                $candidateBitrate = $searchBitrate - $bitrateStep;
-                if ($candidateBitrate < $minimumBitrate) {
+                if ($maxProbeCount !== null && $probeCount >= $maxProbeCount) {
+                    break;
+                }
+
+                $candidateBitrate = $searchBitrate - $downwardStep;
+                if ($candidateBitrate < $downwardStep) {
                     break;
                 }
 
@@ -200,6 +214,7 @@ final readonly class VideoProcessor
                     break;
                 }
 
+                $probeCount++;
                 $searchBitrate = $candidateBitrate;
                 if ($candidateProcessedSize < $bestProcessedSize) {
                     @unlink($bestTempFilePath);
