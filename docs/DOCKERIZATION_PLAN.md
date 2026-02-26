@@ -67,7 +67,7 @@ Videos:
 ## Toolchain sources
 
 | Tool | Source | Notes |
-|---|---|---|
+| --- | --- | --- |
 | **PHP 8.5** | `php:8.5-cli-bookworm` base image | Stable since Nov 2025 |
 | **ffmpeg + ffprobe** | `COPY --from=mwader/static-ffmpeg:8.0.1` | Static binaries, includes libvmaf, libx265, all codecs. No build stage needed. |
 | **heif-enc + heif-dec** | `apt -t bookworm-backports libheif-examples libheif-plugin-x265` | Backports required: stable 1.15.1 lacks `heif-dec` and uses built-in x265; backports 1.19.7 has `heif-dec` but uses plugin architecture requiring separate `libheif-plugin-x265`. |
@@ -100,6 +100,8 @@ Deliverables:
 - `docker-compose.nvidia.yml` — GPU overlay (layered with `-f`).
 - `docker-compose.override.yml.dist` — development template (source mount).
 - `.dockerignore` — exclude build artifacts from context.
+- `justfile` + CI workflow update — `just docker-smoke` target for containerized
+  toolchain checks.
 
 ### Dockerfile
 
@@ -170,7 +172,7 @@ ENTRYPOINT ["php", "app.php"]
 
 ### .dockerignore
 
-```
+```text
 .git/
 vendor/
 var/
@@ -207,17 +209,22 @@ Separate overlay file for GPU support. Uses the same `gallinor` service name.
 ```yaml
 services:
   gallinor:
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    gpus: all
 ```
 
 - CPU: `docker compose run --rm gallinor ...`
-- GPU: `docker compose -f docker-compose.yml -f docker-compose.nvidia.yml run --rm gallinor ...`
+- GPU: `docker compose -f docker-compose.yml -f docker-compose.nvidia.yml \
+  run --rm gallinor ...`
+
+Compatibility note:
+
+- Compose has two GPU syntaxes:
+  - `deploy.resources.reservations.devices` (Deploy spec; rich fields like
+    `driver`, `device_ids`, `count`)
+  - `gpus` service field (short form; requires newer Compose)
+- Plan choice: use `gpus: all` for local `docker compose` UX and set minimum
+  requirement to Docker Compose `2.30.0+`.
+- Wrappers/scripts must preflight and fail fast if the requirement is not met.
 
 ### docker-compose.override.yml.dist (development)
 
@@ -246,6 +253,18 @@ Linux this is all host CPUs. On Docker Desktop (macOS/Windows), the VM has a
 fixed CPU count set in **Settings > Resources**. There is no compose-level or CLI
 way to request more CPUs than the VM has — users must increase this in Docker
 Desktop settings for best parallel performance.
+
+### Bind-mount ownership (non-root outputs)
+
+The image runs as root by default. Without user mapping, optimized files written
+to host bind mounts can become root-owned.
+
+Recommended policy:
+
+- macOS/Linux wrappers pass `--user "$(id -u):$(id -g)"` to `docker compose run`.
+- Windows wrapper keeps default container user unless there is a tested
+  alternative in WSL2 environments.
+- Keep this behavior explicit in both wrapper scripts and README usage examples.
 
 ### Running with a custom gallery path
 
@@ -285,11 +304,20 @@ docker compose run --rm gallinor images:squeeze --dry-run /data/gallery
 docker compose run --rm gallinor videos:squeeze --dry-run --use-cpu /data/gallery
 
 # Verify specific tools
-docker compose run --rm gallinor sh -c 'ffmpeg -filters 2>&1 | grep libvmaf'
-docker compose run --rm gallinor sh -c 'heif-enc --list-encoders 2>&1 | grep x265'
-docker compose run --rm gallinor heif-dec --version
-docker compose run --rm gallinor ssimulacra2
+docker compose run --rm --entrypoint sh gallinor -c \
+  'command -v ffmpeg ffprobe heif-enc heif-dec exiftool ssimulacra2 xz tar'
+docker compose run --rm --entrypoint sh gallinor -c \
+  'ffmpeg -filters 2>&1 | grep libvmaf'
+docker compose run --rm --entrypoint sh gallinor -c \
+  'heif-enc --list-encoders 2>&1 | grep x265'
 ```
+
+### Automated smoke checks
+
+- Add `just docker-smoke` target to build the image and run the Phase 1
+  acceptance checks above.
+- Add a CI job that runs `just docker-smoke` on pushes/PRs so Docker regressions
+  fail before release.
 
 ### Image size
 
@@ -348,7 +376,7 @@ the resolved path in both `archiveWindows()` and `archiveUnix()`.
 ### 2d. OS-gated code audit
 
 | Location | Current gate | Linux behavior |
-|---|---|---|
+| --- | --- | --- |
 | `NativePlatform::__construct` | Whitelist Darwin/Windows | Add Linux |
 | `NativePlatform::detectNCores` | Darwin/Windows branches | Add `nproc` branch |
 | `NativePlatform::findTool` | `isWindows()` for `where.exe` vs `which` | OK — falls to `which` |
@@ -360,7 +388,7 @@ the resolved path in both `archiveWindows()` and `archiveUnix()`.
 | `RawArchiver::archive` | `isWindows()` for two-step tar | OK — uses Unix pipe path |
 | `RawArchiver::archive` | bare `tar` command | Fixed: use `findTool('tar')` |
 
-### Acceptance criteria
+### Phase 2 acceptance criteria
 
 - The CLI prints the correct core count and finds all tools when run inside Docker.
 - `images:squeeze --dry-run` and `videos:squeeze --dry-run --use-cpu` both succeed.
@@ -377,7 +405,9 @@ without users needing to remember compose incantations.
   sets smart defaults. No need to duplicate this logic in shell.
 - **No `--build` on every run**. Users run `docker compose build` explicitly.
 - **GPU via `-f` overlay**. The `--nvidia` flag layers `docker-compose.nvidia.yml`
-  automatically. Falls back to CPU if it fails.
+  automatically.
+- **Fail fast on GPU requests**. If `--nvidia` prerequisites are missing, wrappers
+  exit with a clear error; no automatic CPU fallback.
 
 ### macOS/Linux: `scripts/docker-run.sh`
 
@@ -390,7 +420,8 @@ Behavior:
 
 - Resolve gallery path: CLI arg > `$GALLINOR_GALLERY_PATH` > `./gallery`
 - Optional `--nvidia` flag: layer `docker-compose.nvidia.yml` via `-f`
-- CPU fallback if NVIDIA compose fails
+- Preflight checks for `--nvidia` (Compose version + `nvidia-smi` container test)
+- Fail fast when `--nvidia` preflight fails
 - Pass remaining args through to the app
 
 ### Windows: `scripts/docker-run.ps1`
@@ -410,6 +441,17 @@ Host requirements:
 
 - Docker Desktop with WSL2 backend (Windows), or native Docker (Linux)
 - NVIDIA GPU + drivers with container toolkit support
+- Docker Compose `2.30.0+` (required for `gpus` service field)
+
+Preflight (wrappers must run this before any `--nvidia` Gallinor command):
+
+```bash
+docker compose version
+docker run --rm --gpus all nvidia/cuda:12.9.0-base-ubuntu22.04 nvidia-smi
+```
+
+If either check fails, wrapper exits non-zero with remediation text. Do not
+fallback to CPU mode automatically.
 
 Validation:
 
