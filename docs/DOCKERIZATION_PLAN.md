@@ -2,7 +2,7 @@
 
 ## Summary
 
-Standardize Gallinor’s external toolchain (FFmpeg, libheif tools, ExifTool,
+Standardize Gallinor's external toolchain (FFmpeg, libheif tools, ExifTool,
 SSIMULACRA2, xz/tar) by running the CLI inside a Docker image.
 
 This is primarily about **shipping binaries reliably**. Parallelism remains an
@@ -17,7 +17,7 @@ child PHP worker processes inside the same container.
 
 ## Goals
 
-- Make setup “works out of the box” by bundling required binaries.
+- Make setup "works out of the box" by bundling required binaries.
 - Pin tool versions for reproducible results and fewer platform edge cases.
 - Keep host mode supported (macOS/Windows), but enable Docker to become the
   default execution environment.
@@ -33,144 +33,231 @@ child PHP worker processes inside the same container.
 ## Current gaps to address
 
 - `NativePlatform` currently supports only macOS and Windows. Docker runs Linux
-  containers, so we need a Linux-capable platform implementation (or extend the
-  existing one) for:
-  - `Platform::nCores()` in containers
-  - `Platform::findTool()` mappings (notably `ssimulacra2` binary name)
+  containers, so Linux support must be added:
+  - `Platform::nCores()` — add `nproc` for Linux (respects cgroup limits).
+  - `Platform::findTool()` — `which` already works, no change needed.
+  - `Platform::isDarwin()` — new method to gate VideoToolbox probe (currently
+    gated on `!isWindows()`, which wastes a probe on Linux).
+  - `RawArchiver` — uses bare `tar` command without `findTool()`, unlike
+    `ArchiveVerifier`. Fix the inconsistency.
 
 ## Toolchain inventory (Docker image must include)
 
 Images:
 
 - `ffmpeg` (rotation normalization)
+- `ffprobe` (video stream metadata: dimensions, bitrate, codec, pixel format)
 - `exiftool` (metadata copy + portrait/live photo detection)
-- `ssimulacra2` (quality metric)
+- `ssimulacra2` (image quality metric)
 - `heif-enc` (HEIC encode; via libheif tools)
+- `heif-dec` (HEIC decode back to PNG for quality comparison)
 
 ARW archiving:
 
 - `tar`
 - `xz`
 
-Videos (already part of the app; included here because Docker is the toolchain
-strategy):
+Videos:
 
-- `ffmpeg` with `libx265`
+- `ffmpeg` with `libx265` (CPU encoding)
+- `ffmpeg` with `libvmaf` (**required** — video quality scoring; `FfmpegEncoder`
+  throws `RuntimeException` if the `libvmaf` filter is missing)
 - optional: `hevc_nvenc` (NVIDIA hosts only)
+
+## Toolchain sources
+
+| Tool | Source | Notes |
+|---|---|---|
+| **PHP 8.5** | `php:8.5-cli-bookworm` base image | Stable since Nov 2025 |
+| **ffmpeg + ffprobe** | `COPY --from=mwader/static-ffmpeg:8.0.1` | Static binaries, includes libvmaf, libx265, all codecs. No build stage needed. |
+| **heif-enc + heif-dec** | `apt -t bookworm-backports libheif-examples libheif-plugin-x265` | Backports required: stable 1.15.1 lacks `heif-dec` and uses built-in x265; backports 1.19.7 has `heif-dec` but uses plugin architecture requiring separate `libheif-plugin-x265`. |
+| **ssimulacra2** | Build from [cloudinary/ssimulacra2](https://github.com/cloudinary/ssimulacra2) in multi-stage | Binary name: `ssimulacra2`. Syntax: `ssimulacra2 <ref> <cand>`. Matches existing Unix code path — no `image` subcommand. |
+| **exiftool** | `apt install libimage-exiftool-perl` | Standard package |
+| **tar** | Pre-installed in Debian | Already in base image |
+| **xz** | `apt install xz-utils` | Standard package |
+
+### Why not `ssimulacra2_rs` (Rust)?
+
+`cargo install ssimulacra2_rs` produces a binary named `ssimulacra2_rs` with
+syntax `ssimulacra2_rs image <ref> <cand>` (requires `image` subcommand). The
+existing code only uses the `image` subcommand on Windows. Using the Rust binary
+on Linux would require either renaming + code changes, or a symlink + wrong CLI
+syntax. The Cloudinary C++ build avoids all of this.
+
+### Why not `apt install ffmpeg`?
+
+Debian's packaged FFmpeg does **not** include `libvmaf`. Without it,
+`videos:squeeze` fails at startup (`FfmpegEncoder` checks for the `libvmaf`
+filter and throws). `mwader/static-ffmpeg` includes libvmaf, libx265, and
+every other codec needed, as fully static binaries with zero dependencies.
 
 ## Phase 1 — Docker image (CPU-only baseline)
 
 Deliverables:
 
-- `Dockerfile` that builds a Linux image capable of running Gallinor end-to-end.
-- A minimal `docker-compose.yml` that bind-mounts the gallery and runs commands.
+- `Dockerfile` — multi-stage build producing a Linux image with the full toolchain.
+- `docker-compose.yml` — base compose for CPU usage.
+- `docker-compose.nvidia.yml` — GPU overlay (layered with `-f`).
+- `docker-compose.override.yml.dist` — development template (source mount).
+- `.dockerignore` — exclude build artifacts from context.
 
-Baseline approach:
+### Dockerfile
 
-- Start with a Debian/Ubuntu base image for widest package availability.
-- Install PHP 8.5 (or a pinned PHP base image if available in your toolchain).
-- Install the toolchain packages via `apt` where feasible.
-- For tools not reliably available via packages (often `ssimulacra2`), download
-  a pinned release artifact or build from source in a multi-stage build.
-
-Acceptance criteria:
-
-- Running:
-
-  ```bash
-  docker compose run --rm gallinor \
-    php app.php images:squeeze --dry-run /data/gallery
-  ```
-
-  succeeds and tool detection works.
-
-### Example: Dockerfile notes (toolchain)
-
-Suggested base:
-
-- `php:8.5-cli`
-
-Suggested packages (names vary by distro):
-
-- HEIC: `libheif-examples` (for `heif-enc` / `heif-convert`)
-- Quality + metadata: `ffmpeg`, `libimage-exiftool-perl`
-- Archiving: `xz-utils`, `tar`
-- Build helpers (if needed): `git`, `unzip`, build toolchain
-
-SSIMULACRA2:
-
-- Either ship a pinned binary, or build/install `ssimulacra2_rs`.
-- Confirm the Linux binary name (`ssimulacra2` vs `ssimulacra2_rs`) and map it
-  in `Platform::findTool()`.
-
-### Example: NVENC-capable FFmpeg (optional)
-
-Relying on distro `ffmpeg` packages is inconsistent for NVENC (`hevc_nvenc`).
-If you want predictable NVENC support, build FFmpeg from source in a multi-stage
-Dockerfile with `nv-codec-headers` and `libx265`.
-
-High-level outline:
-
-- Build stage: compile FFmpeg with NVENC + `libx265`.
-- Runtime stage: copy the built `ffmpeg` into the final image.
-- NVENC runtime libraries come from the host driver (NVIDIA Container Toolkit /
-  Docker Desktop GPU integration), not from the image.
-
-Trimmed example:
+Base image: `php:8.5-cli-bookworm`.
 
 ```dockerfile
-FROM php:8.5-cli AS ffmpeg-build
+# syntax=docker/dockerfile:1
+
+# --- Stage 1: build ssimulacra2 ---
+FROM debian:bookworm-slim AS ssimulacra2-build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  ca-certificates git build-essential pkg-config yasm nasm \
-  libx265-dev \
+    cmake ninja-build g++ git ca-certificates \
+    libhwy-dev liblcms2-dev libjpeg62-turbo-dev libpng-dev \
   && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --depth 1 https://github.com/FFmpeg/nv-codec-headers.git /tmp/nv \
-  && make -C /tmp/nv install
+RUN git clone --depth 1 https://github.com/cloudinary/ssimulacra2.git /src \
+  && cmake -S /src -B /build -DCMAKE_BUILD_TYPE=Release -G Ninja \
+  && ninja -C /build
 
-RUN git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git /tmp/ffmpeg \
-  && cd /tmp/ffmpeg \
-  && ./configure --prefix=/opt/ffmpeg --disable-doc --disable-debug \
-    --enable-gpl --enable-libx265 \
-    --enable-nvenc --enable-nvdec --enable-cuvid \
-  && make -j"$(nproc)" \
-  && make install
+# --- Stage 2: runtime ---
+FROM php:8.5-cli-bookworm
 
-FROM php:8.5-cli
+# Prevent docs/man/locale from being installed
+RUN echo 'path-exclude=/usr/share/doc/*' > /etc/dpkg/dpkg.cfg.d/nodoc \
+  && echo 'path-exclude=/usr/share/man/*' >> /etc/dpkg/dpkg.cfg.d/nodoc \
+  && echo 'path-exclude=/usr/share/locale/*' >> /etc/dpkg/dpkg.cfg.d/nodoc \
+  && echo 'path-exclude=/usr/share/info/*' >> /etc/dpkg/dpkg.cfg.d/nodoc
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-  libheif-examples \
-  ffmpeg libimage-exiftool-perl xz-utils tar \
-  && rm -rf /var/lib/apt/lists/*
+# Enable bookworm-backports for libheif 1.19+ (heif-dec + x265 plugin)
+# BuildKit cache mounts keep apt cache across builds without bloating the image
+RUN echo 'deb http://deb.debian.org/debian bookworm-backports main' \
+      > /etc/apt/sources.list.d/backports.list
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+      libimage-exiftool-perl \
+      xz-utils \
+    && apt-get install -y --no-install-recommends -t bookworm-backports \
+      libheif-examples \
+      libheif-plugin-x265
 
-COPY --from=ffmpeg-build /opt/ffmpeg/ /usr/local/
+# Remove docs/locale that were already present in the base image
+RUN rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/locale/* /usr/share/info/*
+
+# Static ffmpeg + ffprobe (includes libvmaf, libx265, all codecs)
+COPY --from=mwader/static-ffmpeg:8.0.1 /ffmpeg /usr/local/bin/
+COPY --from=mwader/static-ffmpeg:8.0.1 /ffprobe /usr/local/bin/
+
+# ssimulacra2 from build stage
+COPY --from=ssimulacra2-build /build/ssimulacra2 /usr/local/bin/
+
+# App installation
+WORKDIR /app
+
+COPY composer.json composer.lock ./
+RUN --mount=type=cache,target=/root/.composer/cache \
+    --mount=from=composer:2,source=/usr/bin/composer,target=/usr/bin/composer \
+    composer install --no-dev --no-scripts --no-interaction --prefer-dist
+
+COPY . .
+RUN --mount=from=composer:2,source=/usr/bin/composer,target=/usr/bin/composer \
+    composer dump-autoload --optimize
+RUN mkdir -p var && chmod 777 var
+
+ENTRYPOINT ["php", "app.php"]
 ```
 
-### Example: docker-compose.yml (single-container execution)
+### .dockerignore
 
-Parallelism is internal, so Compose does not need a “worker” service.
+```
+.git/
+vendor/
+var/
+gallery/
+node_modules/
+*.md
+docs/
+tests/
+.phpunit*
+phpstan*
+rector*
+```
+
+### docker-compose.yml
 
 ```yaml
 services:
   gallinor:
     build: .
-    working_dir: /app
     volumes:
       - ${GALLINOR_GALLERY_PATH:-./gallery}:/data/gallery
+    tmpfs:
+      - /tmp:size=4G
 ```
 
-#### Running with a custom gallery path
+The `tmpfs` mount for `/tmp` avoids disk I/O for temp files (VMAF JSON logs,
+intermediate video encodes, parallel worker temp dirs under
+`sys_get_temp_dir()/gallinor-parallel/`).
+
+### docker-compose.nvidia.yml
+
+Separate overlay file for GPU support. Uses the same `gallinor` service name.
+
+```yaml
+services:
+  gallinor:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+```
+
+- CPU: `docker compose run --rm gallinor ...`
+- GPU: `docker compose -f docker-compose.yml -f docker-compose.nvidia.yml run --rm gallinor ...`
+
+### docker-compose.override.yml.dist (development)
+
+Template for development (source mounted instead of baked in):
+
+```yaml
+services:
+  gallinor:
+    volumes:
+      - .:/app
+      - ${GALLINOR_GALLERY_PATH:-./gallery}:/data/gallery
+    tmpfs:
+      - /tmp:size=4G
+```
+
+Usage: `cp docker-compose.override.yml.dist docker-compose.override.yml`
+
+Docker Compose auto-loads `docker-compose.override.yml` when present, so the dev
+mount activates without extra flags. Add `docker-compose.override.yml` to
+`.gitignore`.
+
+### CPU allocation
+
+Containers use all CPUs the Docker engine sees — no limits in compose. On native
+Linux this is all host CPUs. On Docker Desktop (macOS/Windows), the VM has a
+fixed CPU count set in **Settings > Resources**. There is no compose-level or CLI
+way to request more CPUs than the VM has — users must increase this in Docker
+Desktop settings for best parallel performance.
+
+### Running with a custom gallery path
 
 `/data/gallery` is the **container path**. The host path is provided via
-`GALLINOR_GALLERY_PATH` (used by Compose for volume interpolation).
+`GALLINOR_GALLERY_PATH` (Compose volume interpolation).
 
 macOS/Linux:
 
 ```bash
 GALLINOR_GALLERY_PATH="$HOME/Photos/vacation-2024" \
   docker compose run --rm gallinor \
-  php app.php images:squeeze /data/gallery --dry-run
+  images:squeeze /data/gallery --dry-run
 ```
 
 Windows PowerShell:
@@ -178,298 +265,172 @@ Windows PowerShell:
 ```powershell
 $env:GALLINOR_GALLERY_PATH = "C:\\Users\\User\\Pictures\\vacation-2024"
 docker compose run --rm gallinor `
-  php app.php images:squeeze /data/gallery --dry-run
+  images:squeeze /data/gallery --dry-run
 ```
 
-Windows CMD:
-
-```bat
-set GALLINOR_GALLERY_PATH=C:\Users\User\Pictures\vacation-2024
-docker compose run --rm gallinor php app.php images:squeeze /data/gallery ^
-  --dry-run
-```
-
-If you prefer not to use `GALLINOR_GALLERY_PATH`, you can also bypass Compose
-and bind-mount directly:
+Or bypass Compose and bind-mount directly:
 
 ```bash
 docker run --rm -v "/host/path:/data/gallery" gallinor \
-  php app.php images:squeeze /data/gallery --dry-run
+  images:squeeze /data/gallery --dry-run
 ```
+
+### Acceptance criteria
+
+```bash
+# Tool detection — images
+docker compose run --rm gallinor images:squeeze --dry-run /data/gallery
+
+# Tool detection — videos (CPU mode)
+docker compose run --rm gallinor videos:squeeze --dry-run --use-cpu /data/gallery
+
+# Verify specific tools
+docker compose run --rm gallinor sh -c 'ffmpeg -filters 2>&1 | grep libvmaf'
+docker compose run --rm gallinor sh -c 'heif-enc --list-encoders 2>&1 | grep x265'
+docker compose run --rm gallinor heif-dec --version
+docker compose run --rm gallinor ssimulacra2
+```
+
+### Image size
+
+Estimated ~320 MB compressed. The two largest components (PHP base ~181 MB,
+static FFmpeg ~118 MB) make up 92% of the total. The Dockerfile includes
+low-effort optimizations:
+
+- `path-exclude` in dpkg config prevents docs/man/locale from being installed
+- Cleanup of pre-existing docs/locale from the base image (~5–10 MB saved)
+- BuildKit cache mounts for apt and composer (faster rebuilds, no size bloat)
+- Composer binary bind-mounted at build time instead of copied into the image
+
+Further size reductions would require Alpine (uncertain libheif x265 plugin
+availability) or a custom minimal FFmpeg build (high maintenance cost). Neither
+is worth the complexity at this image size.
 
 ## Phase 2 — Linux platform support in the app
 
-Update `Platform` implementation to support Linux:
+### 2a. Add Linux to NativePlatform
 
-- `nCores()`:
-  - Prefer `nproc` inside the container (respects cgroup limits on modern
-    Docker/cgroup v2 setups).
-- `findTool()`:
-  - Use `which` like macOS.
-  - Confirm the correct SSIMULACRA2 binary name in the image:
-    - some environments use `ssimulacra2`, others `ssimulacra2_rs`.
+**File:** `src/Shared/Infrastructure/NativePlatform.php`
 
-Acceptance criteria:
+- Add `OS_LINUX = 'Linux'` constant and add it to the constructor whitelist.
+- Add `isLinux(): bool` and `isDarwin(): bool` to the `Platform` interface
+  (`src/Shared/Domain/Platform.php`) and implementation.
+- Add Linux branch in `detectNCores()`: use `nproc` (respects cgroup limits).
+- `findTool()`: `which` already works for Linux — no change needed.
 
-- The CLI prints the correct core count and finds tools when run inside
-  Docker.
+### 2b. Fix VideoToolbox probe on Linux
+
+**File:** `src/Video/Infrastructure/FfmpegEncoder.php`
+
+Change the VideoToolbox gate from `!isWindows()` to `isDarwin()`:
+
+```php
+// Before:
+$hasAppleToolbox = !$this->platform->isWindows()
+    && $this->ffmpegHasEncoder('hevc_videotoolbox');
+
+// After:
+$hasAppleToolbox = $this->platform->isDarwin()
+    && $this->ffmpegHasEncoder('hevc_videotoolbox');
+```
+
+This avoids a wasted encoder probe on Linux.
+
+### 2c. Fix tar inconsistency in RawArchiver
+
+**File:** `src/Images/Domain/RawArchiver.php`
+
+`RawArchiver` invokes `tar` as a bare command without `findTool()`, while
+`ArchiveVerifier` uses `findTool('tar')`. Fix by adding
+`$this->tarPath = $this->platform->findTool('tar')` to the constructor and using
+the resolved path in both `archiveWindows()` and `archiveUnix()`.
+
+### 2d. OS-gated code audit
+
+| Location | Current gate | Linux behavior |
+|---|---|---|
+| `NativePlatform::__construct` | Whitelist Darwin/Windows | Add Linux |
+| `NativePlatform::detectNCores` | Darwin/Windows branches | Add `nproc` branch |
+| `NativePlatform::findTool` | `isWindows()` for `where.exe` vs `which` | OK — falls to `which` |
+| `NativePlatform::findTool` | `isWindows()` for ssimulacra2 rename | OK — Linux uses `ssimulacra2` name |
+| `Ssimulacra2::score` | `isWindows()` for `image` subcommand | OK — Linux uses `[$path, $ref, $cand]` matching Cloudinary binary |
+| `FfmpegEncoder::__construct` | `!isWindows()` for VideoToolbox | Fixed: use `isDarwin()` |
+| `Exiftool::command` | `isWindows()` for UTF-8 charset flag | OK — skipped on Linux |
+| `Exiftool::normalizePathArgument` | `isWindows()` for backslash/realpath | OK — skipped on Linux |
+| `RawArchiver::archive` | `isWindows()` for two-step tar | OK — uses Unix pipe path |
+| `RawArchiver::archive` | bare `tar` command | Fixed: use `findTool('tar')` |
+
+### Acceptance criteria
+
+- The CLI prints the correct core count and finds all tools when run inside Docker.
+- `images:squeeze --dry-run` and `videos:squeeze --dry-run --use-cpu` both succeed.
 
 ## Phase 3 — Docker UX (wrapper scripts)
 
-Add cross-platform helper scripts to make Docker the “default runner”
+Add cross-platform helper scripts to make Docker the "default runner"
 without users needing to remember compose incantations.
 
-Requirements:
+### Design decisions
 
-- Support gallery path selection with priority: CLI arg → env var → default.
-- Provide a single “run” entrypoint for common commands:
-  - `images:squeeze`, `images:remove-originals`, `videos:squeeze`, etc.
-- Optionally auto-detect cores inside the container and pass `--concurrency`
-  explicitly (until Linux `Platform::nCores()` is implemented, or as a belt and
-  braces approach).
-
-### Wrapper script behaviour (v1)
-
-The wrapper scripts should:
-
-- resolve gallery path (CLI arg → env var → default)
-- optionally enable an NVIDIA compose override (`docker-compose.nvidia.yml`,
-  best-effort with CPU fallback)
-- probe container CPU count via `nproc` (optional)
-- pass an explicit `--concurrency` when `--parallel` is used (optional)
+- **No `nproc` probing** in wrapper scripts. After Phase 2, `NativePlatform`
+  handles `nCores()` on Linux via `nproc`, and `ParallelConcurrency::defaultFromCores()`
+  sets smart defaults. No need to duplicate this logic in shell.
+- **No `--build` on every run**. Users run `docker compose build` explicitly.
+- **GPU via `-f` overlay**. The `--nvidia` flag layers `docker-compose.nvidia.yml`
+  automatically. Falls back to CPU if it fails.
 
 ### macOS/Linux: `scripts/docker-run.sh`
 
-Usage (one-liner):
-
 ```bash
 ./scripts/docker-run.sh images:squeeze "$HOME/Photos/vacation-2024" --parallel
+./scripts/docker-run.sh --nvidia videos:squeeze "$HOME/Videos"
 ```
 
-Disable NVIDIA probing/override explicitly:
+Behavior:
 
-```bash
-./scripts/docker-run.sh --no-nvidia images:squeeze "$HOME/Photos/vacation-2024" --parallel
-```
-
-Draft:
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-USE_NVIDIA=1
-if [[ "${1:-}" == "--no-nvidia" ]]; then
-  USE_NVIDIA=0
-  shift
-fi
-if [[ "${GALLINOR_DOCKER_GPU:-}" == "none" ]]; then
-  USE_NVIDIA=0
-fi
-
-COMMAND="${1:-}"
-if [[ -z "$COMMAND" ]]; then
-  echo "Usage: $0 [--no-nvidia] <command> [gallery_path] [args...]" >&2
-  exit 2
-fi
-shift
-
-GALLERY_PATH="${1:-}"
-if [[ -n "${GALLERY_PATH}" && "${GALLERY_PATH}" != -* ]]; then
-  shift
-else
-  GALLERY_PATH="${GALLINOR_GALLERY_PATH:-./gallery}"
-fi
-
-export GALLINOR_GALLERY_PATH="$GALLERY_PATH"
-
-BASE_COMPOSE=(-f docker-compose.yml)
-GPU_COMPOSE=("${BASE_COMPOSE[@]}")
-if [[ "$USE_NVIDIA" -eq 1 && -f docker-compose.nvidia.yml ]]; then
-  GPU_COMPOSE+=(-f docker-compose.nvidia.yml)
-fi
-
-WANTS_PARALLEL=0
-HAS_CONCURRENCY=0
-for arg in "$@"; do
-  [[ "$arg" == "--parallel" ]] && WANTS_PARALLEL=1
-  [[ "$arg" == "--concurrency" || "$arg" == --concurrency=* ]] && HAS_CONCURRENCY=1
-done
-
-EXTRA_ARGS=()
-if [[ "$WANTS_PARALLEL" -eq 1 && "$HAS_CONCURRENCY" -eq 0 ]]; then
-  N_CORES="$(
-    docker compose "${BASE_COMPOSE[@]}" run --rm --no-deps --build gallinor \
-      sh -lc 'nproc 2>/dev/null || getconf _NPROCESSORS_ONLN' 2>/dev/null \
-      | tr -d '\r\n' || echo 1
-  )"
-  N_CORES="${N_CORES:-1}"
-
-  A=$((N_CORES / 4))
-  B=$((N_CORES / 8 + 2))
-  CONCURRENCY=$A
-  if ((B < A)); then CONCURRENCY=$B; fi
-  if ((CONCURRENCY < 1)); then CONCURRENCY=1; fi
-
-  EXTRA_ARGS=(--concurrency="$CONCURRENCY")
-fi
-
-RUN_ARGS=(run --rm --build gallinor php app.php "$COMMAND" /data/gallery)
-RUN_ARGS+=("${EXTRA_ARGS[@]}")
-RUN_ARGS+=("$@")
-
-if ! docker compose "${GPU_COMPOSE[@]}" "${RUN_ARGS[@]}"; then
-  if [[ "$USE_NVIDIA" -eq 1 && -f docker-compose.nvidia.yml ]]; then
-    echo "NVIDIA override failed; retrying CPU-only." >&2
-    docker compose "${BASE_COMPOSE[@]}" "${RUN_ARGS[@]}"
-  else
-    exit 1
-  fi
-fi
-```
+- Resolve gallery path: CLI arg > `$GALLINOR_GALLERY_PATH` > `./gallery`
+- Optional `--nvidia` flag: layer `docker-compose.nvidia.yml` via `-f`
+- CPU fallback if NVIDIA compose fails
+- Pass remaining args through to the app
 
 ### Windows: `scripts/docker-run.ps1`
 
-Usage (one-liner):
-
-```powershell
-.\scripts\docker-run.ps1 images:squeeze "C:\Users\User\Pictures\vacation-2024" --parallel
-```
-
-Disable NVIDIA probing/override explicitly:
-
-```powershell
-.\scripts\docker-run.ps1 --no-nvidia images:squeeze "C:\Users\User\Pictures\vacation-2024" --parallel
-```
-
-Draft:
-
-```powershell
-param(
-  [Parameter(ValueFromRemainingArguments = $true)]
-  [string[]] $argv
-)
-
-Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-
-$useNvidia = $true
-if ($argv.Count -gt 0 -and $argv[0] -eq "--no-nvidia") {
-  $useNvidia = $false
-  $argv = if ($argv.Count -gt 1) { $argv[1..($argv.Count - 1)] } else { @() }
-}
-if ($env:GALLINOR_DOCKER_GPU -eq "none") {
-  $useNvidia = $false
-}
-
-if ($argv.Count -lt 1) {
-  Write-Error "Usage: .\scripts\docker-run.ps1 [--no-nvidia] <command> [gallery_path] [args...]"
-}
-
-$command = $argv[0]
-$rest = @()
-if ($argv.Count -gt 1) { $rest = $argv[1..($argv.Count - 1)] }
-
-# Gallery path is optional. If the first remaining arg does not start with '-',
-# treat it as the host path to mount.
-$galleryPath = $env:GALLINOR_GALLERY_PATH
-if (-not $galleryPath) { $galleryPath = ".\gallery" }
-
-if ($rest.Count -gt 0 -and -not $rest[0].StartsWith("-")) {
-  $galleryPath = $rest[0]
-  $rest = if ($rest.Count -gt 1) { $rest[1..($rest.Count - 1)] } else { @() }
-}
-
-$env:GALLINOR_GALLERY_PATH = $galleryPath
-
-$baseCompose = @("-f", "docker-compose.yml")
-$gpuCompose = @($baseCompose)
-if ($useNvidia -and (Test-Path "docker-compose.nvidia.yml")) {
-  $gpuCompose += @("-f", "docker-compose.nvidia.yml")
-}
-
-$wantsParallel = $rest -contains "--parallel"
-$hasConcurrency = $false
-for ($i = 0; $i -lt $rest.Count; $i++) {
-  if ($rest[$i] -eq "--concurrency") { $hasConcurrency = $true }
-  if ($rest[$i] -like "--concurrency=*") { $hasConcurrency = $true }
-}
-
-$extraArgs = @()
-if ($wantsParallel -and -not $hasConcurrency) {
-  $nCores = 1
-  try {
-    $nCoresRaw = & docker compose @baseCompose run --rm --no-deps --build gallinor `
-      sh -lc 'nproc 2>/dev/null || getconf _NPROCESSORS_ONLN' 2>$null
-    [void][int]::TryParse(($nCoresRaw | Out-String).Trim(), [ref]$nCores)
-  } catch {
-    $nCores = 1
-  }
-
-  $a = [int]($nCores / 4)
-  $b = [int]($nCores / 8) + 2
-  $concurrency = [Math]::Max(1, [Math]::Min($a, $b))
-  $extraArgs = @("--concurrency=$concurrency")
-}
-
-$runArgs = @("run", "--rm", "--build", "gallinor", "php", "app.php", $command, "/data/gallery")
-$runArgs += $extraArgs
-$runArgs += $rest
-
-try {
-  & docker compose @gpuCompose @runArgs
-} catch {
-  if ($useNvidia -and (Test-Path "docker-compose.nvidia.yml")) {
-    Write-Warning "NVIDIA override failed; retrying CPU-only."
-    & docker compose @baseCompose @runArgs
-  } else {
-    throw
-  }
-}
-```
+Same logic in PowerShell.
 
 ## Phase 4 — GPU notes (videos)
 
 ### macOS: no VideoToolbox inside Docker
 
-`videotoolbox` is a macOS framework. Docker on macOS runs Linux containers in a
-VM, so FFmpeg in the container cannot access VideoToolbox.
+Docker on macOS runs Linux containers in a VM — FFmpeg cannot access
+VideoToolbox. Docker runs will use CPU encoding (`libx265`).
 
-Implication:
-
-- Docker runs on macOS will use CPU encoding (`libx265`), not VideoToolbox.
-
-### Windows: NVIDIA NVENC via Docker Desktop (WSL2)
+### Windows/Linux: NVIDIA NVENC
 
 Host requirements:
 
-- Docker Desktop with WSL2 backend
-- NVIDIA GPU + drivers with WSL2 GPU support
+- Docker Desktop with WSL2 backend (Windows), or native Docker (Linux)
+- NVIDIA GPU + drivers with container toolkit support
 
-Validation command:
+Validation:
 
 ```bash
 docker run --rm --gpus all nvidia/cuda:12.9.0-base-ubuntu22.04 nvidia-smi
 ```
 
-### Enable GPU for Gallinor containers
-
-Keep GPU config in an optional override file, e.g. `docker-compose.nvidia.yml`,
-so CPU-only hosts can still use base compose.
-
-Inside the built image, confirm FFmpeg supports NVENC:
+Confirm FFmpeg supports NVENC inside the image:
 
 ```bash
-docker compose run --rm gallinor \
-  ffmpeg -hide_banner -encoders | grep -i nvenc
+docker compose -f docker-compose.yml -f docker-compose.nvidia.yml run --rm gallinor \
+  sh -c 'ffmpeg -hide_banner -encoders 2>&1 | grep -i nvenc'
 ```
 
-If `hevc_nvenc` is missing, build/install an NVENC-enabled FFmpeg (often
-requires a multi-stage build and `nv-codec-headers`).
+The static FFmpeg from `mwader/static-ffmpeg` includes NVENC codec support.
+NVENC runtime libraries come from the host driver via the NVIDIA Container
+Toolkit, not from the image.
 
 ## Future (optional) — Multi-container distribution
 
 If we later need to distribute work across multiple containers/machines, then a
 durable queue (Messenger/SQLite/Redis/etc.) becomes relevant. This is not
-required for the “Dockerize the toolchain” goal and should stay separate
+required for the "Dockerize the toolchain" goal and should stay separate
 from the initial Docker rollout.
