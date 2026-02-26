@@ -126,7 +126,7 @@ metadata probing via ffprobe also runs without Symfony's default 60s timeout so
 cloud on-demand files (for example OneDrive placeholders) can finish hydration.
 For rotated/VFR sources, VMAF invocation keeps the original source as the
 first FFmpeg input (autorotation preserved), aligns both streams by decode
-order via `settb=AVTB,setpts=N/(FRAME_RATE*TB)`, and then compares as
+order via `settb=AVTB,setpts=N`, and then compares as
 `[distorted][reference]libvmaf` to avoid timestamp-based frame-pairing drift.
 Video encoding uses FFmpeg `-fps_mode passthrough` to preserve source frame
 cadence/timestamps and avoid frame-drop drift on VFR clips.

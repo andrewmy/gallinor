@@ -128,8 +128,8 @@ TXT,
         self::assertArrayHasKey($filterComplexIndex + 1, $argv);
 
         $filter = $argv[$filterComplexIndex + 1];
-        self::assertStringContainsString('[0:v]settb=AVTB,setpts=N/(FRAME_RATE*TB)[reference]', $filter);
-        self::assertStringContainsString('[1:v]settb=AVTB,setpts=N/(FRAME_RATE*TB)[distorted]', $filter);
+        self::assertStringContainsString('[0:v]settb=AVTB,setpts=N[reference]', $filter);
+        self::assertStringContainsString('[1:v]settb=AVTB,setpts=N[distorted]', $filter);
         self::assertStringContainsString('[distorted][reference]libvmaf=', $filter);
     }
 

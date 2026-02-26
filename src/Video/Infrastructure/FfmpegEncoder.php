@@ -297,9 +297,9 @@ final class FfmpegEncoder implements Encoder
             $processedFilePath,
             '-filter_complex',
             // Keep original as first input so ffmpeg applies source autorotation.
-            // Align by decode order, not source timestamps, to avoid VFR/frame-time drift.
+            // Align by decode order, not source timestamps/r_frame_rate, to avoid VFR drift.
             sprintf(
-                '[0:v]settb=AVTB,setpts=N/(FRAME_RATE*TB)[reference];[1:v]settb=AVTB,setpts=N/(FRAME_RATE*TB)[distorted];[distorted][reference]libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10',
+                '[0:v]settb=AVTB,setpts=N[reference];[1:v]settb=AVTB,setpts=N[distorted];[distorted][reference]libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10',
                 $vmafLogFileName,
                 $this->platform->nCores(),
             ),
