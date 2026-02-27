@@ -160,6 +160,45 @@ final class VideoProcessorTest extends TestCase
         self::assertSame(['line1', 'line2', 'line3'], $linesReceived);
     }
 
+    public function test_attempt_start_callback_receives_bitrate_for_each_attempt(): void
+    {
+        $file = self::create1080pVideo(needsEncoding: true);
+
+        $this->processExecutor = new InMemoryProcessExecutor(
+            commandResults: [],
+            fileSizes: [sys_get_temp_dir() => 4 * 1024 * 1024],
+        );
+        $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
+
+        $this->encoder->allows()
+            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
+            ->andReturnUsing(static function ($unusedFile, $unusedBaseBitrate, $unusedMaxSpike, $path) {
+                return 'ffmpeg > ' . $path;
+            });
+
+        $callCount  = 0;
+        $vmafScores = [85.0, 92.0, 89.0];
+        $this->encoder->allows()
+            ->qualityScore(Mockery::any(), Mockery::any())
+            ->andReturnUsing(static function () use (&$callCount, $vmafScores) {
+                return $vmafScores[$callCount++];
+            });
+
+        $this->logger->allows()->info(Mockery::any(), Mockery::any());
+
+        $attemptBitrates = [];
+        $result          = $this->processor->processVideo(
+            file: $file,
+            dryRun: false,
+            attemptStartCallback: static function (int $bitrateKbps) use (&$attemptBitrates): void {
+                $attemptBitrates[] = $bitrateKbps;
+            },
+        );
+
+        self::assertTrue($result->success);
+        self::assertSame([8_000, 10_432, 9_932], $attemptBitrates);
+    }
+
     public function test_adaptive_bitrate_step_for_near_threshold_vmaf(): void
     {
         $this->assertAdaptiveBitrateStep(89.0, (int) (2000 * max(1.0, min(4.0, 1.8 ** (1.0 / 15)))));
@@ -191,6 +230,8 @@ final class VideoProcessorTest extends TestCase
                 4_500_000, // 8000k
                 3_400_000, // 6000k (better, still acceptable)
                 3_700_000, // 4000k (fails quality, stop)
+                3_300_000, // 5000k (refinement probe fails, keep 6000k)
+                3_250_000, // 5500k (refinement probe fails, keep 6000k)
             ],
         );
         $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
@@ -202,7 +243,7 @@ final class VideoProcessorTest extends TestCase
             });
 
         $callCount  = 0;
-        $vmafScores = [97.0, 93.0, 89.0];
+        $vmafScores = [97.0, 93.0, 89.0, 89.5, 89.2];
         $this->encoder->allows()
             ->qualityScore(Mockery::any(), Mockery::any())
             ->andReturnUsing(static function () use (&$callCount, $vmafScores) {
@@ -218,6 +259,52 @@ final class VideoProcessorTest extends TestCase
         self::assertSame(6000, $result->finalBitrate);
         self::assertSame(93.0, $result->vmafScore);
         self::assertSame(3_400_000, $result->newSize);
+    }
+
+    public function test_refines_between_failing_and_passing_bitrates_after_coarse_downward_search(): void
+    {
+        $file = self::create4kVideo(needsEncoding: true);
+
+        $this->processExecutor = new InMemoryProcessExecutor(
+            commandResults: [],
+            fileSizes: [],
+            sizeSequence: [
+                50_000_000, // 28000k
+                44_000_000, // 24000k
+                38_000_000, // 20000k
+                33_000_000, // 16000k
+                28_000_000, // 12000k
+                23_000_000, // 8000k (last passing coarse probe)
+                20_000_000, // 4000k (fail)
+                21_000_000, // 6000k (refinement pass)
+                19_500_000, // 5000k (refinement fail)
+            ],
+        );
+        $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
+
+        $this->encoder->allows()
+            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
+            ->andReturnUsing(static function ($unusedFile, $baseBitrate, $unusedMaxSpike, $path) {
+                return sprintf('ffmpeg bitrate=%d > %s', $baseBitrate, $path);
+            });
+
+        $callCount  = 0;
+        $vmafScores = [96.3, 95.9, 95.5, 94.6, 93.2, 90.5, 82.8, 90.1, 88.9];
+        $this->encoder->allows()
+            ->qualityScore(Mockery::any(), Mockery::any())
+            ->andReturnUsing(static function () use (&$callCount, $vmafScores) {
+                return $vmafScores[$callCount++];
+            });
+
+        $this->logger->allows()->info(Mockery::any(), Mockery::any());
+
+        $result = $this->processor->processVideo($file, dryRun: false);
+
+        self::assertTrue($result->success);
+        self::assertFalse($result->skipped);
+        self::assertSame(6_000, $result->finalBitrate);
+        self::assertSame(90.1, $result->vmafScore);
+        self::assertSame(21_000_000, $result->newSize);
     }
 
     public function test_refines_downward_after_retry_with_smaller_steps(): void
@@ -338,6 +425,20 @@ final class VideoProcessorTest extends TestCase
             codecName: 'h264',
             duration: 60.0,
             currentSize: 5_000_000,
+        );
+    }
+
+    private static function create4kVideo(bool $needsEncoding = true): VideoFile
+    {
+        return new VideoFile(
+            path: sys_get_temp_dir() . '/gallinor_test_video_4k.mp4',
+            width: 3840,
+            height: 2160,
+            bitRate: $needsEncoding ? 45_000_000 : 28_000_000,
+            pixFmt: 'yuv420p',
+            codecName: 'h264',
+            duration: 60.0,
+            currentSize: 60_000_000,
         );
     }
 

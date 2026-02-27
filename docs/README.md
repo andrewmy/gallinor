@@ -12,6 +12,7 @@ are intentionally “decision heavy” and not necessarily implemented yet.
 - [VIDEO_SCOUT_SEARCH_PLAN.md](VIDEO_SCOUT_SEARCH_PLAN.md)
   - Video-only execution plan that balances hidden savings discovery against
     extra encode/VMAF runtime using scout probes and near-optimal refinement.
+
 ## Relationship map
 
 - Dockerisation (implemented — see root `Dockerfile` and `README.md`) is

@@ -25,13 +25,14 @@ use const DIRECTORY_SEPARATOR;
 
 final readonly class VideoProcessor
 {
-    private const float MIN_VMAF_SCORE                 = 90.0;
-    private const float DOWNWARD_SEARCH_MIN_VMAF_SCORE = 96.0;
-    private const float MAX_BITRATE_SPIKE              = 1.25;
-    private const float MAX_BITRATE_OVERHEAD           = 1.1;
-    private const int RETRY_REFINEMENT_STEP_DIVISOR    = 4;
-    private const int RETRY_REFINEMENT_MIN_STEP_KBPS   = 250;
-    private const int RETRY_REFINEMENT_MAX_PROBES      = 4;
+    private const float MIN_VMAF_SCORE                         = 90.0;
+    private const float DOWNWARD_SEARCH_MIN_VMAF_SCORE         = 96.0;
+    private const float MAX_BITRATE_SPIKE                      = 1.25;
+    private const float MAX_BITRATE_OVERHEAD                   = 1.1;
+    private const int BRACKET_REFINEMENT_MAX_OVERSHOOT_PERCENT = 110;
+    private const int RETRY_REFINEMENT_STEP_DIVISOR            = 4;
+    private const int RETRY_REFINEMENT_MIN_STEP_KBPS           = 250;
+    private const int RETRY_REFINEMENT_MAX_PROBES              = 4;
 
     public function __construct(
         private Encoder $encoder,
@@ -43,11 +44,14 @@ final readonly class VideoProcessor
     /** @param callable(int, float, int): void|null $statusCallback Called with (bitrate, vmafScore, saved) after each attempt */
 
     /** @param callable(string): void|null $lineCallback Called with each line of ffmpeg output during encoding */
+
+    /** @param callable(int): void|null $attemptStartCallback Called with target bitrate (kbps) before each encode attempt */
     public function processVideo(
         VideoFile $file,
         bool $dryRun = false,
         callable|null $statusCallback = null,
         callable|null $lineCallback = null,
+        callable|null $attemptStartCallback = null,
     ): VideoProcessResult {
         $defaultBaseBitrate = $file->baseBitrate();
         $baseBitrate        = $defaultBaseBitrate;
@@ -88,15 +92,16 @@ final readonly class VideoProcessor
         $bitrateStep = $file->bitrateStep();
 
         while (true) {
-            $candidate     = $this->evaluateBitrateCandidate(
+            $candidate     = $this->runProbe(
                 file: $file,
                 bitrateKbps: $baseBitrate,
+                qcTime: $qcTime,
                 lineCallback: $lineCallback,
                 statusCallback: $statusCallback,
+                attemptStartCallback: $attemptStartCallback,
             );
             $tempFilePath  = $candidate['tempFilePath'];
             $processedSize = $candidate['processedSize'];
-            $qcTime       += $candidate['qcTime'];
 
             // Check if encoded file is larger than original - skip if so
             if ($candidate['isLargerThanOriginal']) {
@@ -174,8 +179,9 @@ final readonly class VideoProcessor
             $bitrateStep !== null
             && ($bestVmafScore >= self::DOWNWARD_SEARCH_MIN_VMAF_SCORE || $retryCount > 0)
         ) {
-            $searchBitrate = $bestBitrate;
-            $probeCount    = 0;
+            $searchBitrate        = $bestBitrate;
+            $probeCount           = 0;
+            $lowestFailingBitrate = null;
 
             $downwardStep  = $retryCount > 0
                 ? max(self::RETRY_REFINEMENT_MIN_STEP_KBPS, intdiv($bitrateStep, self::RETRY_REFINEMENT_STEP_DIVISOR))
@@ -192,15 +198,16 @@ final readonly class VideoProcessor
                     break;
                 }
 
-                $candidateResult        = $this->evaluateBitrateCandidate(
+                $candidateResult        = $this->runProbe(
                     file: $file,
                     bitrateKbps: $candidateBitrate,
+                    qcTime: $qcTime,
                     lineCallback: $lineCallback,
                     statusCallback: $statusCallback,
+                    attemptStartCallback: $attemptStartCallback,
                 );
                 $candidateTempFilePath  = $candidateResult['tempFilePath'];
                 $candidateProcessedSize = $candidateResult['processedSize'];
-                $qcTime                += $candidateResult['qcTime'];
 
                 if ($candidateResult['isLargerThanOriginal']) {
                     @unlink($candidateTempFilePath);
@@ -211,21 +218,78 @@ final readonly class VideoProcessor
 
                 if ($candidateVmafScore < self::MIN_VMAF_SCORE) {
                     @unlink($candidateTempFilePath);
+                    $lowestFailingBitrate = $candidateBitrate;
                     break;
                 }
 
                 $probeCount++;
                 $searchBitrate = $candidateBitrate;
-                if ($candidateProcessedSize < $bestProcessedSize) {
-                    @unlink($bestTempFilePath);
-                    $bestTempFilePath  = $candidateTempFilePath;
-                    $bestProcessedSize = $candidateProcessedSize;
-                    $bestVmafScore     = $candidateVmafScore;
-                    $bestBitrate       = $candidateBitrate;
-                    continue;
-                }
+                $this->adoptBetterCandidateOrDiscard(
+                    bestTempFilePath: $bestTempFilePath,
+                    bestProcessedSize: $bestProcessedSize,
+                    bestVmafScore: $bestVmafScore,
+                    bestBitrate: $bestBitrate,
+                    candidateTempFilePath: $candidateTempFilePath,
+                    candidateProcessedSize: $candidateProcessedSize,
+                    candidateVmafScore: $candidateVmafScore,
+                    candidateBitrate: $candidateBitrate,
+                );
+            }
 
-                @unlink($candidateTempFilePath);
+            if ($lowestFailingBitrate !== null) {
+                $passingBitrate = $searchBitrate;
+                $failingBitrate = $lowestFailingBitrate;
+                $refinementStep = max(
+                    self::RETRY_REFINEMENT_MIN_STEP_KBPS,
+                    intdiv($bitrateStep, self::RETRY_REFINEMENT_STEP_DIVISOR),
+                );
+
+                while ($passingBitrate * 100 > $failingBitrate * self::BRACKET_REFINEMENT_MAX_OVERSHOOT_PERCENT) {
+                    $candidateBitrate = self::snapBitrateToStep(
+                        intdiv($passingBitrate + $failingBitrate, 2),
+                        $refinementStep,
+                    );
+
+                    if ($candidateBitrate <= $failingBitrate || $candidateBitrate >= $passingBitrate) {
+                        break;
+                    }
+
+                    $candidateResult        = $this->runProbe(
+                        file: $file,
+                        bitrateKbps: $candidateBitrate,
+                        qcTime: $qcTime,
+                        lineCallback: $lineCallback,
+                        statusCallback: $statusCallback,
+                        attemptStartCallback: $attemptStartCallback,
+                    );
+                    $candidateTempFilePath  = $candidateResult['tempFilePath'];
+                    $candidateProcessedSize = $candidateResult['processedSize'];
+
+                    if ($candidateResult['isLargerThanOriginal']) {
+                        @unlink($candidateTempFilePath);
+                        $failingBitrate = $candidateBitrate;
+                        continue;
+                    }
+
+                    $candidateVmafScore = $candidateResult['vmafScore'];
+                    if ($candidateVmafScore < self::MIN_VMAF_SCORE) {
+                        @unlink($candidateTempFilePath);
+                        $failingBitrate = $candidateBitrate;
+                        continue;
+                    }
+
+                    $passingBitrate = $candidateBitrate;
+                    $this->adoptBetterCandidateOrDiscard(
+                        bestTempFilePath: $bestTempFilePath,
+                        bestProcessedSize: $bestProcessedSize,
+                        bestVmafScore: $bestVmafScore,
+                        bestBitrate: $bestBitrate,
+                        candidateTempFilePath: $candidateTempFilePath,
+                        candidateProcessedSize: $candidateProcessedSize,
+                        candidateVmafScore: $candidateVmafScore,
+                        candidateBitrate: $candidateBitrate,
+                    );
+                }
             }
         }
 
@@ -274,8 +338,81 @@ final readonly class VideoProcessor
         return (int) ($baseStep * $multiplier);
     }
 
+    private function adoptBetterCandidateOrDiscard(
+        string &$bestTempFilePath,
+        int &$bestProcessedSize,
+        float &$bestVmafScore,
+        int &$bestBitrate,
+        string $candidateTempFilePath,
+        int $candidateProcessedSize,
+        float $candidateVmafScore,
+        int $candidateBitrate,
+    ): void {
+        if ($candidateProcessedSize >= $bestProcessedSize) {
+            @unlink($candidateTempFilePath);
+
+            return;
+        }
+
+        @unlink($bestTempFilePath);
+        $bestTempFilePath  = $candidateTempFilePath;
+        $bestProcessedSize = $candidateProcessedSize;
+        $bestVmafScore     = $candidateVmafScore;
+        $bestBitrate       = $candidateBitrate;
+    }
+
+    private static function snapBitrateToStep(int $bitrateKbps, int $stepKbps): int
+    {
+        if ($stepKbps <= 1) {
+            return $bitrateKbps;
+        }
+
+        return max(
+            $stepKbps,
+            intdiv($bitrateKbps + intdiv($stepKbps, 2), $stepKbps) * $stepKbps,
+        );
+    }
+
     /**
      * @param callable(int, float, int): void|null $statusCallback
+     * @param callable(int): void|null             $attemptStartCallback
+     *
+     * @return array{
+     *   tempFilePath: string,
+     *   processedSize: int,
+     *   vmafScore: float,
+     *   isLargerThanOriginal: bool
+     * }
+     */
+    private function runProbe(
+        VideoFile $file,
+        int $bitrateKbps,
+        float &$qcTime,
+        callable|null $lineCallback = null,
+        callable|null $statusCallback = null,
+        callable|null $attemptStartCallback = null,
+    ): array {
+        $candidate = $this->evaluateBitrateCandidate(
+            file: $file,
+            bitrateKbps: $bitrateKbps,
+            lineCallback: $lineCallback,
+            statusCallback: $statusCallback,
+            attemptStartCallback: $attemptStartCallback,
+        );
+
+        $qcTime += $candidate['qcTime'];
+
+        return [
+            'tempFilePath' => $candidate['tempFilePath'],
+            'processedSize' => $candidate['processedSize'],
+            'vmafScore' => $candidate['vmafScore'],
+            'isLargerThanOriginal' => $candidate['isLargerThanOriginal'],
+        ];
+    }
+
+    /**
+     * @param callable(int, float, int): void|null $statusCallback
+     * @param callable(int): void|null             $attemptStartCallback
      *
      * @return array{
      *   tempFilePath: string,
@@ -290,7 +427,12 @@ final readonly class VideoProcessor
         int $bitrateKbps,
         callable|null $lineCallback = null,
         callable|null $statusCallback = null,
+        callable|null $attemptStartCallback = null,
     ): array {
+        if ($attemptStartCallback !== null) {
+            $attemptStartCallback($bitrateKbps);
+        }
+
         [$tempFilePath, $processedSize] = $this->encode($file, $bitrateKbps, $lineCallback);
         if ($processedSize >= $file->currentSize) {
             return [

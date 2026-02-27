@@ -276,7 +276,8 @@ TXT,
 Encoder hevc_videotoolbox [VideoToolbox H.265 Encoder]:
   -prio_speed        <boolean>
   -realtime          <boolean>
-  -spatialaq         <int>
+  -spatial_aq        <int>
+  -power_efficient   <int>
   -max_ref_frames    <int>
 TXT,
         );
@@ -298,8 +299,35 @@ TXT,
         self::assertStringContainsString('-quality quality', $command);
         self::assertStringContainsString('-prio_speed 0', $command);
         self::assertStringContainsString('-realtime 0', $command);
-        self::assertStringContainsString('-spatialaq 1', $command);
+        self::assertStringContainsString('-spatial_aq 1', $command);
+        self::assertStringContainsString('-power_efficient 0', $command);
         self::assertStringContainsString('-max_ref_frames 4', $command);
+    }
+
+    public function test_apple_command_uses_legacy_spatialaq_name_when_exposed_by_ffmpeg(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\nV..... hevc_videotoolbox Apple VideoToolbox encoder\n",
+            <<<'TXT'
+Encoder hevc_videotoolbox [VideoToolbox H.265 Encoder]:
+  -spatialaq         <int>
+TXT,
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: false,
+            platform: self::darwinPlatformWithTools($ffmpegPath),
+        );
+
+        $command = $encoder->commandForFile(
+            file: self::videoFile(hasRotation: false),
+            baseBitrate: 8000,
+            maxBitrateSpike: 1.25,
+            tempFilePath: '/tmp/out.mp4',
+        );
+
+        self::assertStringContainsString('-spatialaq 1', $command);
+        self::assertStringNotContainsString('-spatial_aq 1', $command);
     }
 
     public function test_apple_command_skips_unsupported_quality_options(): void
@@ -330,6 +358,8 @@ TXT,
         self::assertStringNotContainsString('-prio_speed', $command);
         self::assertStringNotContainsString('-realtime', $command);
         self::assertStringNotContainsString('-spatialaq', $command);
+        self::assertStringNotContainsString('-spatial_aq', $command);
+        self::assertStringNotContainsString('-power_efficient', $command);
         self::assertStringNotContainsString('-max_ref_frames', $command);
     }
 

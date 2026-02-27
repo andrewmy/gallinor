@@ -135,12 +135,13 @@ final class Squeeze extends Command
         $progressBar->start();
 
         foreach ($fileList as $file) {
-            $fileName = basename($file->path);
+            $fileName             = basename($file->path);
+            $currentTargetBitrate = $file->baseBitrate();
             $progressBar->setMessage($fileName, 'status');
             $progressBar->display();
 
             $progressData = [];
-            $lineCallback = static function (string $line) use ($progressBar, $fileName, &$progressData): void {
+            $lineCallback = static function (string $line) use ($progressBar, $fileName, &$progressData, &$currentTargetBitrate): void {
                 // Parse ffmpeg progress output (key=value format)
                 if (! str_contains($line, '=')) {
                     return;
@@ -156,8 +157,9 @@ final class Squeeze extends Command
 
                 $progressBar->setMessage(
                     sprintf(
-                        '%s | frame=%s fps=%s size=%s time=%s speed=%s',
+                        '%s | %sk | frame=%s fps=%s size=%s time=%s speed=%s',
                         $fileName,
+                        $currentTargetBitrate,
                         $progressData['frame'],
                         $progressData['fps'] ?? 'N/A',
                         $progressData['size'] ?? 'N/A',
@@ -169,10 +171,14 @@ final class Squeeze extends Command
                 $progressBar->display();
             };
 
+            $attemptStartCallback = static function (int $bitrateKbps) use (&$currentTargetBitrate): void {
+                $currentTargetBitrate = $bitrateKbps;
+            };
+
             $statusCallback = static function (int $bitrate, float $vmafScore, int $saved) use ($output, $progressBar, $fileName, &$totalSavings, $cliHelper): void {
                 $runningTotal = $totalSavings + $saved;
                 $progressBar->clear();
-                $output->writeln(sprintf('%s | %sk, VMAF=%.1f, saved %s (total: %s)', $fileName, $bitrate, $vmafScore, $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)));
+                $output->writeln(sprintf('%s | %sk | VMAF=%.1f, saved %s (total: %s)', $fileName, $bitrate, $vmafScore, $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)));
                 $progressBar->display();
             };
 
@@ -182,6 +188,7 @@ final class Squeeze extends Command
                     dryRun: false,
                     statusCallback: $statusCallback,
                     lineCallback: $lineCallback,
+                    attemptStartCallback: $attemptStartCallback,
                 );
 
                 if ($result->skipped) {

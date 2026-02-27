@@ -47,7 +47,8 @@ final class FfmpegEncoder implements Encoder
     private readonly bool $hasNvencBFrames;
     private readonly bool $hasApplePrioSpeed;
     private readonly bool $hasAppleRealtime;
-    private readonly bool $hasAppleSpatialAq;
+    private readonly string|null $appleSpatialAqOption;
+    private readonly bool $hasApplePowerEfficient;
     private readonly bool $hasAppleMaxRefFrames;
     public readonly bool $hasVmaf;
 
@@ -83,10 +84,11 @@ final class FfmpegEncoder implements Encoder
 
         $appleHelp = $hasAppleToolbox ? $this->ffmpegEncoderHelp('encoder=hevc_videotoolbox') : null;
 
-        $this->hasApplePrioSpeed    = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'prio_speed');
-        $this->hasAppleRealtime     = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'realtime');
-        $this->hasAppleSpatialAq    = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'spatialaq');
-        $this->hasAppleMaxRefFrames = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'max_ref_frames');
+        $this->hasApplePrioSpeed      = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'prio_speed');
+        $this->hasAppleRealtime       = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'realtime');
+        $this->appleSpatialAqOption   = self::detectAppleSpatialAqOption($appleHelp);
+        $this->hasApplePowerEfficient = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'power_efficient');
+        $this->hasAppleMaxRefFrames   = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'max_ref_frames');
 
         $this->hasVmaf = $this->ffmpegHasFilter('libvmaf');
     }
@@ -156,6 +158,23 @@ final class FfmpegEncoder implements Encoder
     private static function encoderHelpHasValue(string $helpOutput, string $value): bool
     {
         return preg_match('/\b' . preg_quote($value, '/') . '\b/m', $helpOutput) === 1;
+    }
+
+    private static function detectAppleSpatialAqOption(string|null $appleHelp): string|null
+    {
+        if ($appleHelp === null) {
+            return null;
+        }
+
+        if (self::encoderHelpHasOption($appleHelp, 'spatial_aq')) {
+            return 'spatial_aq';
+        }
+
+        if (self::encoderHelpHasOption($appleHelp, 'spatialaq')) {
+            return 'spatialaq';
+        }
+
+        return null;
     }
 
     /** @throws RuntimeException */
@@ -331,8 +350,12 @@ final class FfmpegEncoder implements Encoder
                 $params[] = '-realtime 0';
             }
 
-            if ($this->hasAppleSpatialAq) {
-                $params[] = '-spatialaq 1';
+            if ($this->appleSpatialAqOption !== null) {
+                $params[] = '-' . $this->appleSpatialAqOption . ' 1';
+            }
+
+            if ($this->hasApplePowerEfficient) {
+                $params[] = '-power_efficient 0';
             }
 
             if ($this->hasAppleMaxRefFrames) {
