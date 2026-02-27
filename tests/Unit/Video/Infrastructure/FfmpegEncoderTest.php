@@ -268,6 +268,71 @@ TXT,
         self::assertStringNotContainsString('-b_ref_mode middle', $command);
     }
 
+    public function test_apple_command_enables_supported_quality_options(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\nV..... hevc_videotoolbox Apple VideoToolbox encoder\n",
+            <<<'TXT'
+Encoder hevc_videotoolbox [VideoToolbox H.265 Encoder]:
+  -prio_speed        <boolean>
+  -realtime          <boolean>
+  -spatialaq         <int>
+  -max_ref_frames    <int>
+TXT,
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: false,
+            platform: self::darwinPlatformWithTools($ffmpegPath),
+        );
+
+        $command = $encoder->commandForFile(
+            file: self::videoFile(hasRotation: false),
+            baseBitrate: 8000,
+            maxBitrateSpike: 1.25,
+            tempFilePath: '/tmp/out.mp4',
+        );
+
+        self::assertStringContainsString('-c:v hevc_videotoolbox', $command);
+        self::assertStringContainsString('-maxrate:v 10000k', $command);
+        self::assertStringContainsString('-quality quality', $command);
+        self::assertStringContainsString('-prio_speed 0', $command);
+        self::assertStringContainsString('-realtime 0', $command);
+        self::assertStringContainsString('-spatialaq 1', $command);
+        self::assertStringContainsString('-max_ref_frames 4', $command);
+    }
+
+    public function test_apple_command_skips_unsupported_quality_options(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\nV..... hevc_videotoolbox Apple VideoToolbox encoder\n",
+            <<<'TXT'
+Encoder hevc_videotoolbox [VideoToolbox H.265 Encoder]:
+  -quality           <int>
+TXT,
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: false,
+            platform: self::darwinPlatformWithTools($ffmpegPath),
+        );
+
+        $command = $encoder->commandForFile(
+            file: self::videoFile(hasRotation: false),
+            baseBitrate: 8000,
+            maxBitrateSpike: 1.25,
+            tempFilePath: '/tmp/out.mp4',
+        );
+
+        self::assertStringContainsString('-c:v hevc_videotoolbox', $command);
+        self::assertStringContainsString('-maxrate:v 10000k', $command);
+        self::assertStringContainsString('-quality quality', $command);
+        self::assertStringNotContainsString('-prio_speed', $command);
+        self::assertStringNotContainsString('-realtime', $command);
+        self::assertStringNotContainsString('-spatialaq', $command);
+        self::assertStringNotContainsString('-max_ref_frames', $command);
+    }
+
     public function test_video_file_from_path_reads_probe_stream_and_rotation_metadata(): void
     {
         $sourcePath = $this->tmpDir . '/source.mp4';

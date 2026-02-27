@@ -45,6 +45,10 @@ final class FfmpegEncoder implements Encoder
     private readonly bool $hasNvencMultipass;
     private readonly bool $hasNvencBRefMode;
     private readonly bool $hasNvencBFrames;
+    private readonly bool $hasApplePrioSpeed;
+    private readonly bool $hasAppleRealtime;
+    private readonly bool $hasAppleSpatialAq;
+    private readonly bool $hasAppleMaxRefFrames;
     public readonly bool $hasVmaf;
 
     public function __construct(
@@ -76,6 +80,13 @@ final class FfmpegEncoder implements Encoder
         $this->hasNvencMultipass   = $nvencHelp !== null && self::encoderHelpHasOption($nvencHelp, 'multipass');
         $this->hasNvencBRefMode    = $nvencHelp !== null && self::encoderHelpHasOption($nvencHelp, 'b_ref_mode');
         $this->hasNvencBFrames     = $nvencHelp !== null && self::encoderHelpHasOption($nvencHelp, 'bf');
+
+        $appleHelp = $hasAppleToolbox ? $this->ffmpegEncoderHelp('encoder=hevc_videotoolbox') : null;
+
+        $this->hasApplePrioSpeed    = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'prio_speed');
+        $this->hasAppleRealtime     = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'realtime');
+        $this->hasAppleSpatialAq    = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'spatialaq');
+        $this->hasAppleMaxRefFrames = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'max_ref_frames');
 
         $this->hasVmaf = $this->ffmpegHasFilter('libvmaf');
     }
@@ -307,7 +318,26 @@ final class FfmpegEncoder implements Encoder
                 $params[] = '-b_ref_mode middle';
             }
         } elseif ($encoder === EncoderName::Apple) {
-            $params[] = '-quality quality';
+            $params = array_merge($params, [
+                sprintf('-maxrate:v %dk', $baseBitrate * $maxBitrateSpike),
+                '-quality quality',
+            ]);
+
+            if ($this->hasApplePrioSpeed) {
+                $params[] = '-prio_speed 0';
+            }
+
+            if ($this->hasAppleRealtime) {
+                $params[] = '-realtime 0';
+            }
+
+            if ($this->hasAppleSpatialAq) {
+                $params[] = '-spatialaq 1';
+            }
+
+            if ($this->hasAppleMaxRefFrames) {
+                $params[] = '-max_ref_frames 4';
+            }
         } elseif ($encoder === EncoderName::Cpu) {
             $params = array_merge($params, [
                 '-preset medium',
