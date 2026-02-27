@@ -368,7 +368,7 @@ final class FfmpegEncoder implements Encoder
         return implode(' ', $params);
     }
 
-    public function qualityScore(string $originalFilePath, string $processedFilePath): float
+    public function qualityScore(string $originalFilePath, string $processedFilePath, int $subsample = 10): float
     {
         if (! $this->hasVmaf) {
             throw new RuntimeException('VMAF filter is not available in ffmpeg');
@@ -392,9 +392,10 @@ final class FfmpegEncoder implements Encoder
             // Keep original as first input so ffmpeg applies source autorotation.
             // Align by decode order, not source timestamps/r_frame_rate, to avoid VFR drift.
             sprintf(
-                '[0:v]settb=AVTB,setpts=N[reference];[1:v]settb=AVTB,setpts=N[distorted];[distorted][reference]libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=10',
+                '[0:v]settb=AVTB,setpts=N[reference];[1:v]settb=AVTB,setpts=N[distorted];[distorted][reference]libvmaf=log_path=%s:log_fmt=json:n_threads=%s:n_subsample=%d',
                 $vmafLogFileName,
                 $this->platform->nCores(),
+                $subsample,
             ),
         ];
 

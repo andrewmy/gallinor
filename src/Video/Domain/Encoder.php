@@ -13,7 +13,7 @@ interface Encoder
 
     public function commandForFile(VideoFile $file, int $baseBitrate, float $maxBitrateSpike, string $tempFilePath): string;
 
-    public function qualityScore(string $originalFilePath, string $processedFilePath): float;
+    public function qualityScore(string $originalFilePath, string $processedFilePath, int $subsample = 10): float;
 
     /** @throws RuntimeException */
     public function describeCapabilities(callable $writer): void;
