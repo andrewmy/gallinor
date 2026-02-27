@@ -342,8 +342,11 @@ final class Squeeze extends Command
             $fileList[] = $videoFile;
 
             $sizeEstimate = $videoFile->sizeEstimate($videoFile->baseBitrate());
+            $rotationNote = $videoFile->hasRotation
+                ? ' | rotated, CPU'
+                : '';
             $output->writeln(sprintf(
-                "Dimensions: %sx%s\nCurrent bitrate: %s Kbps\nPixel format: %s\nCurrent size: %s\nProjected size: %s\nProjected Savings: %s",
+                "%sx%s | %s Kbps | %s | %s \u{27A1}\u{FE0F} %s, \u{2013}%s%s",
                 $videoFile->width,
                 $videoFile->height,
                 number_format((int) ($videoFile->bitRate / 1024), thousands_separator: ' '),
@@ -351,13 +354,8 @@ final class Squeeze extends Command
                 $this->cliHelper->formatBytes($videoFile->currentSize),
                 $this->cliHelper->formatBytes($sizeEstimate),
                 $this->cliHelper->formatBytes($videoFile->currentSize - $sizeEstimate),
+                $rotationNote,
             ));
-
-            if (! $videoFile->hasRotation) {
-                continue;
-            }
-
-            $output->writeln('<info>Using CPU encoder due to video rotation</info>');
         }
 
         return [$fileList, $totalSkippedFiles, $totalSkippedSize];
