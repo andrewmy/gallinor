@@ -27,6 +27,7 @@ use function basename;
 use function count;
 use function explode;
 use function file_exists;
+use function filesize;
 use function is_numeric;
 use function microtime;
 use function number_format;
@@ -92,7 +93,14 @@ final class Squeeze extends Command
         $totalSuccessfullyProcessed = 0;
         $totalPostProcessingSkipped = 0;
 
-        [$fileList, $totalSkippedFiles, $totalSkippedSize] = $this->gatherFileList(
+        [
+            $fileList,
+            $totalSkippedFiles,
+            $totalSkippedSize,
+            $totalSkippedWithOptimalFiles,
+            $totalSkippedWithOptimalSize,
+            $totalExistingOptimalSize,
+        ] = $this->gatherFileList(
             directories: $directories,
             output: $output,
         );
@@ -108,14 +116,26 @@ final class Squeeze extends Command
             0,
         );
 
-        $output->writeln(sprintf(
+        $processableCurrentSize = $totalCurrentSize - $totalSkippedSize;
+        $projectedSavings       = $processableCurrentSize - $totalProjectedSize;
+        $projection             = sprintf(
             "\n\nProjection:\n  Current size: %s\n  Projected size: %s\n  Projected savings: %s\n  Skipped: %d (%s)",
             $this->cliHelper->formatBytes($totalCurrentSize),
             $this->cliHelper->formatBytes($totalProjectedSize),
-            $this->cliHelper->formatBytes($totalCurrentSize - $totalProjectedSize),
+            $this->cliHelper->formatBytes($projectedSavings),
             $totalSkippedFiles,
             $this->cliHelper->formatBytes($totalSkippedSize),
-        ));
+        );
+
+        if ($totalSkippedWithOptimalFiles > 0) {
+            $projection .= sprintf(
+                "\n  Pending savings: %s (%d with optimal)",
+                $this->cliHelper->formatBytes($totalSkippedWithOptimalSize - $totalExistingOptimalSize),
+                $totalSkippedWithOptimalFiles,
+            );
+        }
+
+        $output->writeln($projection);
         $gatherTime = microtime(true);
         $output->writeln(sprintf('<info>Gather time: %.3fs</info>', $gatherTime - $factoryTime));
 
@@ -291,15 +311,20 @@ final class Squeeze extends Command
     /**
      * @param list<string> $directories
      *
-     * @return array{list<VideoFile>, int, int} Tuple of file list, total skipped files, and total skipped size
+     * @return array{list<VideoFile>, int, int, int, int, int}
+     * Tuple of file list, total skipped files, total skipped size,
+     * skipped-with-optimal files, skipped-with-optimal total size, existing optimal total size
      */
     private function gatherFileList(
         array $directories,
         OutputInterface $output,
     ): array {
-        $fileList          = [];
-        $totalSkippedFiles = 0;
-        $totalSkippedSize  = 0;
+        $fileList                     = [];
+        $totalSkippedFiles            = 0;
+        $totalSkippedSize             = 0;
+        $totalSkippedWithOptimalSize  = 0;
+        $totalSkippedWithOptimalFiles = 0;
+        $totalExistingOptimalSize     = 0;
 
         $files = $this->scanner->scanDirectories($directories);
 
@@ -336,6 +361,13 @@ final class Squeeze extends Command
                 ));
                 $totalSkippedFiles++;
                 $totalSkippedSize += $videoFile->currentSize;
+                $totalSkippedWithOptimalFiles++;
+                $totalSkippedWithOptimalSize += $videoFile->currentSize;
+                $existingOptimalSize          = filesize($optimalFilePath);
+                if ($existingOptimalSize !== false) {
+                    $totalExistingOptimalSize += $existingOptimalSize;
+                }
+
                 continue;
             }
 
@@ -358,6 +390,13 @@ final class Squeeze extends Command
             ));
         }
 
-        return [$fileList, $totalSkippedFiles, $totalSkippedSize];
+        return [
+            $fileList,
+            $totalSkippedFiles,
+            $totalSkippedSize,
+            $totalSkippedWithOptimalFiles,
+            $totalSkippedWithOptimalSize,
+            $totalExistingOptimalSize,
+        ];
     }
 }
