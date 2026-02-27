@@ -27,8 +27,10 @@ use function basename;
 use function count;
 use function explode;
 use function file_exists;
+use function is_numeric;
 use function microtime;
 use function number_format;
+use function round;
 use function sprintf;
 use function str_contains;
 
@@ -141,7 +143,7 @@ final class Squeeze extends Command
             $progressBar->display();
 
             $progressData = [];
-            $lineCallback = static function (string $line) use ($progressBar, $fileName, &$progressData, &$currentTargetBitrate): void {
+            $lineCallback = static function (string $line) use ($progressBar, $fileName, &$progressData, &$currentTargetBitrate, $cliHelper): void {
                 // Parse ffmpeg progress output (key=value format)
                 if (! str_contains($line, '=')) {
                     return;
@@ -155,6 +157,11 @@ final class Squeeze extends Command
                     return;
                 }
 
+                $size = isset($progressData['total_size']) && is_numeric($progressData['total_size'])
+                    ? $cliHelper->formatBytes((int) $progressData['total_size'])
+                    : null;
+                $time = $progressData['out_time'] ?? 'N/A';
+
                 $progressBar->setMessage(
                     sprintf(
                         '%s | %sk | frame=%s fps=%s size=%s time=%s speed=%s',
@@ -162,8 +169,8 @@ final class Squeeze extends Command
                         $currentTargetBitrate,
                         $progressData['frame'],
                         $progressData['fps'] ?? 'N/A',
-                        $progressData['size'] ?? 'N/A',
-                        $progressData['time'] ?? 'N/A',
+                        $size ?? 'N/A',
+                        $time,
                         $progressData['speed'] ?? 'N/A',
                     ),
                     'status',
@@ -175,11 +182,32 @@ final class Squeeze extends Command
                 $currentTargetBitrate = $bitrateKbps;
             };
 
-            $statusCallback = static function (int $bitrate, float $vmafScore, int $saved) use ($output, $progressBar, $fileName, $file, &$totalSavings, $cliHelper): void {
-                $runningTotal = $totalSavings + $saved;
-                $resultSize   = $file->currentSize - $saved;
+            $scoringStartCallback = static function (int $bitrateKbps, int $processedSize, float $encodeSeconds) use ($progressBar, $fileName, &$progressData, $cliHelper): void {
+                $size = isset($progressData['total_size']) && is_numeric($progressData['total_size'])
+                    ? $cliHelper->formatBytes((int) $progressData['total_size'])
+                    : $cliHelper->formatBytes($processedSize);
+                $time = sprintf('%ss', (int) round($encodeSeconds));
+
+                $progressBar->setMessage(
+                    sprintf(
+                        '%s | %sk | size=%s time=%s | scoring',
+                        $fileName,
+                        $bitrateKbps,
+                        $size,
+                        $time,
+                    ),
+                    'status',
+                );
+                $progressBar->display();
+            };
+
+            $statusCallback = static function (int $bitrate, float $vmafScore, int $saved, float $encodeSeconds, float $scoreSeconds) use ($output, $progressBar, $fileName, $file, &$totalSavings, $cliHelper): void {
+                $runningTotal     = $totalSavings + $saved;
+                $resultSize       = $file->currentSize - $saved;
+                $encodeSecondsInt = (int) round($encodeSeconds);
+                $scoreSecondsInt  = (int) round($scoreSeconds);
                 $progressBar->clear();
-                $output->writeln(sprintf('%s | %sk | VMAF=%.1f, size=%s, saved %s (total: %s)', $fileName, $bitrate, $vmafScore, $cliHelper->formatBytes($resultSize), $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)));
+                $output->writeln(sprintf('%s | %sk | VMAF=%.1f, %ds enc, %ds score, size=%s, -%s (total: %s)', $fileName, $bitrate, $vmafScore, $encodeSecondsInt, $scoreSecondsInt, $cliHelper->formatBytes($resultSize), $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)));
                 $progressBar->display();
             };
 
@@ -190,6 +218,7 @@ final class Squeeze extends Command
                     statusCallback: $statusCallback,
                     lineCallback: $lineCallback,
                     attemptStartCallback: $attemptStartCallback,
+                    scoringStartCallback: $scoringStartCallback,
                 );
 
                 if ($result->skipped) {

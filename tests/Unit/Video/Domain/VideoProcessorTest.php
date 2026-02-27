@@ -114,10 +114,12 @@ final class VideoProcessorTest extends TestCase
         $this->logger->allows()->info(Mockery::any(), Mockery::any());
 
         $callbackInvoked = false;
-        $callback        = static function (int $bitrate, float $vmafScore, int $saved) use (&$callbackInvoked): void {
+        $callback        = static function (int $bitrate, float $vmafScore, int $saved, float $encodeSeconds, float $scoreSeconds) use (&$callbackInvoked): void {
             $callbackInvoked = true;
             self::assertSame(8000, $bitrate);
             self::assertSame(95.0, $vmafScore);
+            self::assertGreaterThanOrEqual(0.0, $encodeSeconds);
+            self::assertGreaterThanOrEqual(0.0, $scoreSeconds);
         };
 
         $result = $this->processor->processVideo($file, dryRun: false, statusCallback: $callback);
@@ -197,6 +199,61 @@ final class VideoProcessorTest extends TestCase
 
         self::assertTrue($result->success);
         self::assertSame([8_000, 10_432, 9_932], $attemptBitrates);
+    }
+
+    public function test_scoring_start_callback_receives_bitrate_encoded_size_and_encode_seconds_for_each_attempt(): void
+    {
+        $file = self::create1080pVideo(needsEncoding: true);
+
+        $encodedSize           = 4 * 1024 * 1024;
+        $this->processExecutor = new InMemoryProcessExecutor(
+            commandResults: [],
+            fileSizes: [sys_get_temp_dir() => $encodedSize],
+        );
+        $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
+
+        $this->encoder->allows()
+            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
+            ->andReturnUsing(static function ($unusedFile, $unusedBaseBitrate, $unusedMaxSpike, $path) {
+                return 'ffmpeg > ' . $path;
+            });
+
+        $callCount  = 0;
+        $vmafScores = [85.0, 92.0, 89.0];
+        $this->encoder->allows()
+            ->qualityScore(Mockery::any(), Mockery::any())
+            ->andReturnUsing(static function () use (&$callCount, $vmafScores) {
+                return $vmafScores[$callCount++];
+            });
+
+        $this->logger->allows()->info(Mockery::any(), Mockery::any());
+
+        $scoringStarts = [];
+        $result        = $this->processor->processVideo(
+            file: $file,
+            dryRun: false,
+            scoringStartCallback: static function (int $bitrateKbps, int $processedSize, float $encodeSeconds) use (&$scoringStarts): void {
+                $scoringStarts[] = [$bitrateKbps, $processedSize, $encodeSeconds];
+            },
+        );
+
+        self::assertTrue($result->success);
+        self::assertCount(3, $scoringStarts);
+        self::assertSame(
+            [
+                [8_000, $encodedSize],
+                [10_432, $encodedSize],
+                [9_932, $encodedSize],
+            ],
+            [
+                [$scoringStarts[0][0], $scoringStarts[0][1]],
+                [$scoringStarts[1][0], $scoringStarts[1][1]],
+                [$scoringStarts[2][0], $scoringStarts[2][1]],
+            ],
+        );
+        self::assertGreaterThanOrEqual(0.0, $scoringStarts[0][2]);
+        self::assertGreaterThanOrEqual(0.0, $scoringStarts[1][2]);
+        self::assertGreaterThanOrEqual(0.0, $scoringStarts[2][2]);
     }
 
     public function test_adaptive_bitrate_step_for_near_threshold_vmaf(): void

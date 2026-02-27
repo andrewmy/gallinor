@@ -42,17 +42,20 @@ final readonly class VideoProcessor
     ) {
     }
 
-    /** @param callable(int, float, int): void|null $statusCallback Called with (bitrate, vmafScore, saved) after each attempt */
+    /** @param callable(int, float, int, float, float): void|null $statusCallback Called with (bitrate, vmafScore, saved, encodeSeconds, scoreSeconds) after each attempt */
 
     /** @param callable(string): void|null $lineCallback Called with each line of ffmpeg output during encoding */
 
     /** @param callable(int): void|null $attemptStartCallback Called with target bitrate (kbps) before each encode attempt */
+
+    /** @param callable(int, int, float): void|null $scoringStartCallback Called with (bitrate, encodedSize, encodeSeconds) right before scoring starts */
     public function processVideo(
         VideoFile $file,
         bool $dryRun = false,
         callable|null $statusCallback = null,
         callable|null $lineCallback = null,
         callable|null $attemptStartCallback = null,
+        callable|null $scoringStartCallback = null,
     ): VideoProcessResult {
         $defaultBaseBitrate = $file->baseBitrate();
         $baseBitrate        = $defaultBaseBitrate;
@@ -100,6 +103,7 @@ final readonly class VideoProcessor
                 lineCallback: $lineCallback,
                 statusCallback: $statusCallback,
                 attemptStartCallback: $attemptStartCallback,
+                scoringStartCallback: $scoringStartCallback,
             );
             $tempFilePath  = $candidate['tempFilePath'];
             $processedSize = $candidate['processedSize'];
@@ -207,6 +211,7 @@ final readonly class VideoProcessor
                     lineCallback: $lineCallback,
                     statusCallback: $statusCallback,
                     attemptStartCallback: $attemptStartCallback,
+                    scoringStartCallback: $scoringStartCallback,
                 );
                 $candidateTempFilePath  = $candidateResult['tempFilePath'];
                 $candidateProcessedSize = $candidateResult['processedSize'];
@@ -267,6 +272,7 @@ final readonly class VideoProcessor
                         lineCallback: $lineCallback,
                         statusCallback: $statusCallback,
                         attemptStartCallback: $attemptStartCallback,
+                        scoringStartCallback: $scoringStartCallback,
                     );
                     $candidateTempFilePath  = $candidateResult['tempFilePath'];
                     $candidateProcessedSize = $candidateResult['processedSize'];
@@ -390,8 +396,9 @@ final readonly class VideoProcessor
     }
 
     /**
-     * @param callable(int, float, int): void|null $statusCallback
-     * @param callable(int): void|null             $attemptStartCallback
+     * @param callable(int, float, int, float, float): void|null $statusCallback
+     * @param callable(int): void|null                           $attemptStartCallback
+     * @param callable(int, int, float): void|null               $scoringStartCallback
      *
      * @return array{
      *   tempFilePath: string,
@@ -407,6 +414,7 @@ final readonly class VideoProcessor
         callable|null $lineCallback = null,
         callable|null $statusCallback = null,
         callable|null $attemptStartCallback = null,
+        callable|null $scoringStartCallback = null,
     ): array {
         $candidate = $this->evaluateBitrateCandidate(
             file: $file,
@@ -414,6 +422,7 @@ final readonly class VideoProcessor
             lineCallback: $lineCallback,
             statusCallback: $statusCallback,
             attemptStartCallback: $attemptStartCallback,
+            scoringStartCallback: $scoringStartCallback,
         );
 
         $qcTime += $candidate['qcTime'];
@@ -427,8 +436,9 @@ final readonly class VideoProcessor
     }
 
     /**
-     * @param callable(int, float, int): void|null $statusCallback
-     * @param callable(int): void|null             $attemptStartCallback
+     * @param callable(int, float, int, float, float): void|null $statusCallback
+     * @param callable(int): void|null                           $attemptStartCallback
+     * @param callable(int, int, float): void|null               $scoringStartCallback
      *
      * @return array{
      *   tempFilePath: string,
@@ -444,12 +454,15 @@ final readonly class VideoProcessor
         callable|null $lineCallback = null,
         callable|null $statusCallback = null,
         callable|null $attemptStartCallback = null,
+        callable|null $scoringStartCallback = null,
     ): array {
         if ($attemptStartCallback !== null) {
             $attemptStartCallback($bitrateKbps);
         }
 
+        $encodeStartTime                = microtime(true);
         [$tempFilePath, $processedSize] = $this->encode($file, $bitrateKbps, $lineCallback);
+        $encodeTime                     = microtime(true) - $encodeStartTime;
         if ($processedSize >= $file->currentSize) {
             return [
                 'tempFilePath' => $tempFilePath,
@@ -460,6 +473,10 @@ final readonly class VideoProcessor
             ];
         }
 
+        if ($scoringStartCallback !== null) {
+            $scoringStartCallback($bitrateKbps, $processedSize, $encodeTime);
+        }
+
         $startTime = microtime(true);
         $vmafScore = $this->encoder->qualityScore(
             originalFilePath: $file->path,
@@ -468,7 +485,7 @@ final readonly class VideoProcessor
         $qcTime    = microtime(true) - $startTime;
 
         if ($statusCallback !== null) {
-            $statusCallback($bitrateKbps, $vmafScore, $file->currentSize - $processedSize);
+            $statusCallback($bitrateKbps, $vmafScore, $file->currentSize - $processedSize, $encodeTime, $qcTime);
         }
 
         return [

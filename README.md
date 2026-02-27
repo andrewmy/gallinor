@@ -85,7 +85,8 @@ For running without Docker on macOS or Windows.
 - On Windows:
   - PowerShell
 - For video:
-  - FFmpeg with HEVC (H.265) support installed and available in your system PATH
+  - FFmpeg v8+ with HEVC (H.265) support installed and available in your
+    system PATH
     - macOS: `brew install ffmpeg`
   - For hardware acceleration:
     - macOS: Apple Silicon or Intel with VideoToolbox support
@@ -93,7 +94,7 @@ For running without Docker on macOS or Windows.
   - For quality check — VMAF library installed and available in your system
     PATH, usually is in the box with ffmpeg
 - For images:
-  - ffmpeg (used for rotation-safe quality comparisons)
+  - ffmpeg v8+ (used for rotation-safe quality comparisons)
     - macOS: `brew install ffmpeg`
   - libheif (HEIC tools)
     - macOS: `brew install libheif`

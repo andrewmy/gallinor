@@ -50,6 +50,7 @@ php app.php images:remove-originals <path>
 - PHP 8.5+ with strict types.
 - Native runtime targets: macOS + Windows (`Platform` guards this).
 - Linux is supported via Docker workflows.
+- Runtime expects ffmpeg v8+.
 - Domain flows should report operational failures via result objects where
   already modeled (avoid widening exception-driven control flow).
 - Keep constructor injection/manual wiring in `app.php` (no DI container).
