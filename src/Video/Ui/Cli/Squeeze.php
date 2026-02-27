@@ -175,10 +175,11 @@ final class Squeeze extends Command
                 $currentTargetBitrate = $bitrateKbps;
             };
 
-            $statusCallback = static function (int $bitrate, float $vmafScore, int $saved) use ($output, $progressBar, $fileName, &$totalSavings, $cliHelper): void {
+            $statusCallback = static function (int $bitrate, float $vmafScore, int $saved) use ($output, $progressBar, $fileName, $file, &$totalSavings, $cliHelper): void {
                 $runningTotal = $totalSavings + $saved;
+                $resultSize   = $file->currentSize - $saved;
                 $progressBar->clear();
-                $output->writeln(sprintf('%s | %sk | VMAF=%.1f, saved %s (total: %s)', $fileName, $bitrate, $vmafScore, $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)));
+                $output->writeln(sprintf('%s | %sk | VMAF=%.1f, size=%s, saved %s (total: %s)', $fileName, $bitrate, $vmafScore, $cliHelper->formatBytes($resultSize), $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)));
                 $progressBar->display();
             };
 
