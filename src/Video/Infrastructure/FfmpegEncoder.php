@@ -49,7 +49,6 @@ final class FfmpegEncoder implements Encoder
     private readonly bool $hasAppleRealtime;
     private readonly string|null $appleSpatialAqOption;
     private readonly bool $hasApplePowerEfficient;
-    private readonly bool $hasAppleMaxRefFrames;
     public readonly bool $hasVmaf;
 
     public function __construct(
@@ -88,7 +87,6 @@ final class FfmpegEncoder implements Encoder
         $this->hasAppleRealtime       = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'realtime');
         $this->appleSpatialAqOption   = self::detectAppleSpatialAqOption($appleHelp);
         $this->hasApplePowerEfficient = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'power_efficient');
-        $this->hasAppleMaxRefFrames   = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'max_ref_frames');
 
         $this->hasVmaf = $this->ffmpegHasFilter('libvmaf');
     }
@@ -337,10 +335,8 @@ final class FfmpegEncoder implements Encoder
                 $params[] = '-b_ref_mode middle';
             }
         } elseif ($encoder === EncoderName::Apple) {
-            $params = array_merge($params, [
-                sprintf('-maxrate:v %dk', $baseBitrate * $maxBitrateSpike),
-                '-quality quality',
-            ]);
+            $params[] = sprintf('-maxrate:v %dk', $baseBitrate * $maxBitrateSpike);
+            $params[] = '-quality quality';
 
             if ($this->hasApplePrioSpeed) {
                 $params[] = '-prio_speed 0';
@@ -356,10 +352,6 @@ final class FfmpegEncoder implements Encoder
 
             if ($this->hasApplePowerEfficient) {
                 $params[] = '-power_efficient 0';
-            }
-
-            if ($this->hasAppleMaxRefFrames) {
-                $params[] = '-max_ref_frames 4';
             }
         } elseif ($encoder === EncoderName::Cpu) {
             $params = array_merge($params, [

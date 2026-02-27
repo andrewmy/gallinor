@@ -295,13 +295,13 @@ TXT,
         );
 
         self::assertStringContainsString('-c:v hevc_videotoolbox', $command);
-        self::assertStringContainsString('-maxrate:v 10000k', $command);
         self::assertStringContainsString('-quality quality', $command);
         self::assertStringContainsString('-prio_speed 0', $command);
         self::assertStringContainsString('-realtime 0', $command);
         self::assertStringContainsString('-spatial_aq 1', $command);
         self::assertStringContainsString('-power_efficient 0', $command);
-        self::assertStringContainsString('-max_ref_frames 4', $command);
+        self::assertStringContainsString('-maxrate:v 10000k', $command);
+        self::assertStringNotContainsString('-max_ref_frames', $command);
     }
 
     public function test_apple_command_uses_legacy_spatialaq_name_when_exposed_by_ffmpeg(): void
@@ -353,8 +353,8 @@ TXT,
         );
 
         self::assertStringContainsString('-c:v hevc_videotoolbox', $command);
-        self::assertStringContainsString('-maxrate:v 10000k', $command);
         self::assertStringContainsString('-quality quality', $command);
+        self::assertStringContainsString('-maxrate:v 10000k', $command);
         self::assertStringNotContainsString('-prio_speed', $command);
         self::assertStringNotContainsString('-realtime', $command);
         self::assertStringNotContainsString('-spatialaq', $command);

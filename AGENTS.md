@@ -70,6 +70,8 @@ php app.php images:remove-originals <path>
   - use CPU encoder for rotated sources (Display Matrix) to avoid HW QC drift
 - Hardware flags must be capability-gated by encoder help output
   (NVENC and VideoToolbox options vary by ffmpeg build).
+- VideoToolbox keeps `-maxrate` enabled and leaves reference-frame selection on
+  encoder auto.
 - VMAF requires `libvmaf` filter availability (not `vmafmotion`).
 
 ## Image Rules To Preserve
