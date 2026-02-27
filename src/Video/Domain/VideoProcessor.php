@@ -26,6 +26,7 @@ use const DIRECTORY_SEPARATOR;
 final readonly class VideoProcessor
 {
     private const float MIN_VMAF_SCORE                         = 90.0;
+    private const float ACCEPTABLE_VMAF_HEADROOM               = 1.0;
     private const float DOWNWARD_SEARCH_MIN_VMAF_SCORE         = 96.0;
     private const float MAX_BITRATE_SPIKE                      = 1.25;
     private const float MAX_BITRATE_OVERHEAD                   = 1.1;
@@ -178,6 +179,7 @@ final readonly class VideoProcessor
         if (
             $bitrateStep !== null
             && ($bestVmafScore >= self::DOWNWARD_SEARCH_MIN_VMAF_SCORE || $retryCount > 0)
+            && ! self::isWithinAcceptableVmafHeadroom($bestVmafScore)
         ) {
             $searchBitrate        = $bestBitrate;
             $probeCount           = 0;
@@ -234,6 +236,10 @@ final readonly class VideoProcessor
                     candidateVmafScore: $candidateVmafScore,
                     candidateBitrate: $candidateBitrate,
                 );
+
+                if (self::isWithinAcceptableVmafHeadroom($candidateVmafScore)) {
+                    break;
+                }
             }
 
             if ($lowestFailingBitrate !== null) {
@@ -289,6 +295,10 @@ final readonly class VideoProcessor
                         candidateVmafScore: $candidateVmafScore,
                         candidateBitrate: $candidateBitrate,
                     );
+
+                    if (self::isWithinAcceptableVmafHeadroom($candidateVmafScore)) {
+                        break;
+                    }
                 }
             }
         }
@@ -336,6 +346,12 @@ final readonly class VideoProcessor
         $multiplier = max(1.0, min(4.0, $multiplier));
 
         return (int) ($baseStep * $multiplier);
+    }
+
+    private static function isWithinAcceptableVmafHeadroom(float $vmafScore): bool
+    {
+        return $vmafScore >= self::MIN_VMAF_SCORE
+            && $vmafScore <= self::MIN_VMAF_SCORE + self::ACCEPTABLE_VMAF_HEADROOM;
     }
 
     private function adoptBetterCandidateOrDiscard(

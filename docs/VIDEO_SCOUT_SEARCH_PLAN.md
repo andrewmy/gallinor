@@ -8,6 +8,7 @@ Already implemented in baseline video flow:
 
 - Adaptive upward bitrate retries when VMAF is below threshold.
 - Downward probing from passing bitrate when there is quality headroom.
+- Early-stop window for downward probing when pass lands in `[threshold, threshold + 1]`.
 - Midpoint fail/pass bracket refinement with 10% overshoot stop condition.
 
 Still not implemented (this plan scope):

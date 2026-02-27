@@ -261,7 +261,7 @@ final class VideoProcessorTest extends TestCase
         self::assertSame(3_400_000, $result->newSize);
     }
 
-    public function test_refines_between_failing_and_passing_bitrates_after_coarse_downward_search(): void
+    public function test_stops_coarse_downward_search_when_vmaf_is_within_threshold_plus_one(): void
     {
         $file = self::create4kVideo(needsEncoding: true);
 
@@ -274,10 +274,7 @@ final class VideoProcessorTest extends TestCase
                 38_000_000, // 20000k
                 33_000_000, // 16000k
                 28_000_000, // 12000k
-                23_000_000, // 8000k (last passing coarse probe)
-                20_000_000, // 4000k (fail)
-                21_000_000, // 6000k (refinement pass)
-                19_500_000, // 5000k (refinement fail)
+                23_000_000, // 8000k (pass in [90, 91], stop)
             ],
         );
         $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
@@ -289,7 +286,7 @@ final class VideoProcessorTest extends TestCase
             });
 
         $callCount  = 0;
-        $vmafScores = [96.3, 95.9, 95.5, 94.6, 93.2, 90.5, 82.8, 90.1, 88.9];
+        $vmafScores = [96.3, 95.9, 95.5, 94.6, 93.2, 90.5];
         $this->encoder->allows()
             ->qualityScore(Mockery::any(), Mockery::any())
             ->andReturnUsing(static function () use (&$callCount, $vmafScores) {
@@ -302,9 +299,9 @@ final class VideoProcessorTest extends TestCase
 
         self::assertTrue($result->success);
         self::assertFalse($result->skipped);
-        self::assertSame(6_000, $result->finalBitrate);
-        self::assertSame(90.1, $result->vmafScore);
-        self::assertSame(21_000_000, $result->newSize);
+        self::assertSame(8_000, $result->finalBitrate);
+        self::assertSame(90.5, $result->vmafScore);
+        self::assertSame(23_000_000, $result->newSize);
     }
 
     public function test_refines_downward_after_retry_with_smaller_steps(): void
