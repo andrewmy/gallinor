@@ -16,6 +16,7 @@ use Mockery\MockInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
+use function array_key_last;
 use function max;
 use function min;
 use function sprintf;
@@ -114,13 +115,14 @@ final class VideoProcessorTest extends TestCase
         $this->logger->allows()->info(Mockery::any(), Mockery::any());
 
         $callbackInvoked = false;
-        $callback        = static function (int $bitrate, float $vmafScore, int $saved, float $encodeSeconds, float $scoreSeconds, string $scoreMode) use (&$callbackInvoked): void {
+        $seenModes       = [];
+        $callback        = static function (int $bitrate, float $vmafScore, int $saved, float $encodeSeconds, float $scoreSeconds, string $scoreMode) use (&$callbackInvoked, &$seenModes): void {
             $callbackInvoked = true;
+            $seenModes[]     = $scoreMode;
             self::assertSame(8000, $bitrate);
             self::assertSame(95.0, $vmafScore);
             self::assertGreaterThanOrEqual(0.0, $encodeSeconds);
             self::assertGreaterThanOrEqual(0.0, $scoreSeconds);
-            self::assertSame('coarse', $scoreMode);
         };
 
         $result = $this->processor->processVideo($file, dryRun: false, statusCallback: $callback);
@@ -130,6 +132,7 @@ final class VideoProcessorTest extends TestCase
         self::assertSame(95.0, $result->vmafScore);
         self::assertSame(0, $result->retryCount);
         self::assertTrue($callbackInvoked);
+        self::assertSame(['coarse', 'fine'], $seenModes);
     }
 
     public function test_line_callback_is_invoked_for_each_output_line(): void
@@ -180,11 +183,13 @@ final class VideoProcessorTest extends TestCase
             });
 
         $callCount  = 0;
-        $vmafScores = [85.0, 92.0, 89.0];
+        $vmafScores = [85.0, 92.0, 90.5];
         $this->encoder->allows()
             ->qualityScore(Mockery::any(), Mockery::any(), Mockery::any())
             ->andReturnUsing(static function () use (&$callCount, $vmafScores) {
-                return $vmafScores[$callCount++];
+                $index = $callCount++;
+
+                return $vmafScores[$index] ?? $vmafScores[array_key_last($vmafScores)];
             });
 
         $this->logger->allows()->info(Mockery::any(), Mockery::any());
@@ -199,7 +204,7 @@ final class VideoProcessorTest extends TestCase
         );
 
         self::assertTrue($result->success);
-        self::assertSame([8_000, 10_432, 9_932], $attemptBitrates);
+        self::assertSame([8_000, 10_432], $attemptBitrates);
     }
 
     public function test_scoring_start_callback_receives_bitrate_encoded_size_and_encode_seconds_for_each_attempt(): void
@@ -220,11 +225,13 @@ final class VideoProcessorTest extends TestCase
             });
 
         $callCount  = 0;
-        $vmafScores = [85.0, 92.0, 89.0];
+        $vmafScores = [85.0, 92.0, 90.5];
         $this->encoder->allows()
             ->qualityScore(Mockery::any(), Mockery::any(), Mockery::any())
             ->andReturnUsing(static function () use (&$callCount, $vmafScores) {
-                return $vmafScores[$callCount++];
+                $index = $callCount++;
+
+                return $vmafScores[$index] ?? $vmafScores[array_key_last($vmafScores)];
             });
 
         $this->logger->allows()->info(Mockery::any(), Mockery::any());
@@ -244,7 +251,7 @@ final class VideoProcessorTest extends TestCase
             [
                 [8_000, $encodedSize],
                 [10_432, $encodedSize],
-                [9_932, $encodedSize],
+                [10_432, $encodedSize],
             ],
             [
                 [$scoringStarts[0][0], $scoringStarts[0][1]],
@@ -257,7 +264,7 @@ final class VideoProcessorTest extends TestCase
         self::assertGreaterThanOrEqual(0.0, $scoringStarts[2][2]);
         self::assertSame('coarse', $scoringStarts[0][3]);
         self::assertSame('coarse', $scoringStarts[1][3]);
-        self::assertSame('coarse', $scoringStarts[2][3]);
+        self::assertSame('fine', $scoringStarts[2][3]);
     }
 
     public function test_gray_zone_switches_to_confirmed_sampling_for_follow_up_probes(): void
@@ -306,7 +313,7 @@ final class VideoProcessorTest extends TestCase
 
     public function test_adaptive_bitrate_step_for_near_threshold_vmaf(): void
     {
-        $this->assertAdaptiveBitrateStep(89.0, (int) (2000 * max(1.0, min(4.0, 1.8 ** (1.0 / 15)))));
+        $this->assertAdaptiveBitrateStep(88.9, (int) (2000 * max(1.0, min(4.0, 1.8 ** (1.1 / 15)))));
     }
 
     public function test_adaptive_bitrate_step_for_close_to_threshold_vmaf(): void
@@ -348,11 +355,13 @@ final class VideoProcessorTest extends TestCase
             });
 
         $callCount  = 0;
-        $vmafScores = [97.0, 93.0, 89.0, 89.5, 89.2];
+        $vmafScores = [97.0, 93.0, 93.0, 89.0, 89.5, 89.2, 89.2];
         $this->encoder->allows()
             ->qualityScore(Mockery::any(), Mockery::any(), Mockery::any())
             ->andReturnUsing(static function () use (&$callCount, $vmafScores) {
-                return $vmafScores[$callCount++];
+                $index = $callCount++;
+
+                return $vmafScores[$index] ?? $vmafScores[array_key_last($vmafScores)];
             });
 
         $this->logger->allows()->info(Mockery::any(), Mockery::any());
@@ -391,11 +400,13 @@ final class VideoProcessorTest extends TestCase
             });
 
         $callCount  = 0;
-        $vmafScores = [96.3, 95.9, 95.5, 94.6, 93.2, 90.5];
+        $vmafScores = [96.3, 95.9, 95.5, 94.6, 93.2, 92.0, 91.5, 91.3, 91.2, 90.7, 90.5];
         $this->encoder->allows()
             ->qualityScore(Mockery::any(), Mockery::any(), Mockery::any())
             ->andReturnUsing(static function () use (&$callCount, $vmafScores) {
-                return $vmafScores[$callCount++];
+                $index = $callCount++;
+
+                return $vmafScores[$index] ?? $vmafScores[array_key_last($vmafScores)];
             });
 
         $this->logger->allows()->info(Mockery::any(), Mockery::any());
@@ -432,11 +443,13 @@ final class VideoProcessorTest extends TestCase
             });
 
         $callCount  = 0;
-        $vmafScores = [85.0, 92.0, 91.0, 89.5];
+        $vmafScores = [85.0, 92.0, 92.0, 91.1, 91.1, 89.5, 89.5];
         $this->encoder->allows()
             ->qualityScore(Mockery::any(), Mockery::any(), Mockery::any())
             ->andReturnUsing(static function () use (&$callCount, $vmafScores) {
-                return $vmafScores[$callCount++];
+                $index = $callCount++;
+
+                return $vmafScores[$index] ?? $vmafScores[array_key_last($vmafScores)];
             });
 
         $this->logger->allows()->info(Mockery::any(), Mockery::any());
@@ -447,7 +460,7 @@ final class VideoProcessorTest extends TestCase
         self::assertFalse($result->skipped);
         self::assertSame(1, $result->retryCount);
         self::assertSame(9_932, $result->finalBitrate);
-        self::assertSame(91.0, $result->vmafScore);
+        self::assertSame(91.1, $result->vmafScore);
         self::assertSame(4_050_000, $result->newSize);
     }
 
@@ -466,11 +479,13 @@ final class VideoProcessorTest extends TestCase
             });
 
         $callCount  = 0;
-        $vmafScores = [$initialVmaf, 92.0, 89.0];
+        $vmafScores = [$initialVmaf, 92.0, 92.0, 89.0];
         $this->encoder->allows()
             ->qualityScore(Mockery::any(), Mockery::any(), Mockery::any())
             ->andReturnUsing(static function () use (&$callCount, $vmafScores) {
-                return $vmafScores[$callCount++];
+                $index = $callCount++;
+
+                return $vmafScores[$index] ?? $vmafScores[array_key_last($vmafScores)];
             });
 
         $this->logger->allows()->info(Mockery::any(), Mockery::any());
