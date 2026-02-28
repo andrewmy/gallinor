@@ -204,7 +204,7 @@ final class Squeeze extends Command
                 $currentTargetBitrate = $bitrateKbps;
             };
 
-            $scoringStartCallback = static function (int $bitrateKbps, int $processedSize, float $encodeSeconds, string $scoreMode) use ($progressBar, $fileName, &$progressData, $cliHelper): void {
+            $scoringStartCallback = static function (int $bitrateKbps, int $processedSize, float $encodeSeconds) use ($progressBar, $fileName, &$progressData, $cliHelper): void {
                 $size = isset($progressData['total_size']) && is_numeric($progressData['total_size'])
                     ? $cliHelper->formatBytes((int) $progressData['total_size'])
                     : $cliHelper->formatBytes($processedSize);
@@ -212,25 +212,24 @@ final class Squeeze extends Command
 
                 $progressBar->setMessage(
                     sprintf(
-                        '%s | %sk | size=%s time=%s | %s scoring',
+                        '%s | %sk | size=%s time=%s | scoring',
                         $fileName,
                         $bitrateKbps,
                         $size,
                         $time,
-                        $scoreMode,
                     ),
                     'status',
                 );
                 $progressBar->display();
             };
 
-            $statusCallback = static function (int $bitrate, float $vmafScore, int $saved, float $encodeSeconds, float $scoreSeconds, string $scoreMode) use ($output, $progressBar, $fileName, $file, &$totalSavings, $cliHelper): void {
+            $statusCallback = static function (int $bitrate, float $vmafScore, int $saved, float $encodeSeconds, float $scoreSeconds) use ($output, $progressBar, $fileName, $file, &$totalSavings, $cliHelper): void {
                 $runningTotal     = $totalSavings + $saved;
                 $resultSize       = $file->currentSize - $saved;
                 $encodeSecondsInt = (int) round($encodeSeconds);
                 $scoreSecondsInt  = (int) round($scoreSeconds);
                 $progressBar->clear();
-                $output->writeln(sprintf('%s | %sk | %s VMAF=%.1f, %ds enc, %ds score, size=%s, -%s (total: %s)', $fileName, $bitrate, $scoreMode, $vmafScore, $encodeSecondsInt, $scoreSecondsInt, $cliHelper->formatBytes($resultSize), $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)));
+                $output->writeln(sprintf('%s | %sk | VMAF=%.1f, %ds enc, %ds score, size=%s, -%s (total: %s)', $fileName, $bitrate, $vmafScore, $encodeSecondsInt, $scoreSecondsInt, $cliHelper->formatBytes($resultSize), $cliHelper->formatBytes($saved), $cliHelper->formatBytes($runningTotal)));
                 $progressBar->display();
             };
 

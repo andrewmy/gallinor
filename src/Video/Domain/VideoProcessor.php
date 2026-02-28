@@ -28,14 +28,9 @@ final readonly class VideoProcessor
     private const float MIN_VMAF_SCORE                         = 90.0;
     private const float ACCEPTABLE_VMAF_HEADROOM               = 1.0;
     private const float DOWNWARD_SEARCH_MIN_VMAF_SCORE         = 96.0;
-    private const float GRAY_ZONE_MIN_VMAF_SCORE               = 89.0;
-    private const float GRAY_ZONE_MAX_VMAF_SCORE               = 91.0;
     private const float MAX_BITRATE_SPIKE                      = 1.25;
     private const float MAX_BITRATE_OVERHEAD                   = 1.1;
-    private const int COARSE_VMAF_SUBSAMPLE                    = 30;
-    private const int CONFIRMED_VMAF_SUBSAMPLE                 = 10;
-    private const string SCORE_MODE_COARSE                     = 'coarse';
-    private const string SCORE_MODE_FINE                       = 'fine';
+    private const int VMAF_SUBSAMPLE                           = 10;
     private const int BRACKET_REFINEMENT_MAX_OVERSHOOT_PERCENT = 110;
     private const int RETRY_REFINEMENT_STEP_DIVISOR            = 4;
     private const int RETRY_REFINEMENT_MIN_STEP_KBPS           = 250;
@@ -48,13 +43,13 @@ final readonly class VideoProcessor
     ) {
     }
 
-    /** @param callable(int, float, int, float, float, string): void|null $statusCallback Called with (bitrate, vmafScore, saved, encodeSeconds, scoreSeconds, scoreMode) after each scoring attempt */
+    /** @param callable(int, float, int, float, float): void|null $statusCallback Called with (bitrate, vmafScore, saved, encodeSeconds, scoreSeconds) after each scoring attempt */
 
     /** @param callable(string): void|null $lineCallback Called with each line of ffmpeg output during encoding */
 
     /** @param callable(int): void|null $attemptStartCallback Called with target bitrate (kbps) before each encode attempt */
 
-    /** @param callable(int, int, float, string): void|null $scoringStartCallback Called with (bitrate, encodedSize, encodeSeconds, scoreMode) right before scoring starts */
+    /** @param callable(int, int, float): void|null $scoringStartCallback Called with (bitrate, encodedSize, encodeSeconds) right before scoring starts */
     public function processVideo(
         VideoFile $file,
         bool $dryRun = false,
@@ -96,9 +91,8 @@ final readonly class VideoProcessor
             );
         }
 
-        $retryCount                 = 0;
-        $qcTime                     = 0.0;
-        $upwardUseConfirmedSampling = false;
+        $retryCount = 0;
+        $qcTime     = 0.0;
 
         $bitrateStep = $file->bitrateStep();
 
@@ -111,11 +105,9 @@ final readonly class VideoProcessor
                 statusCallback: $statusCallback,
                 attemptStartCallback: $attemptStartCallback,
                 scoringStartCallback: $scoringStartCallback,
-                useConfirmedSampling: $upwardUseConfirmedSampling,
             );
             $tempFilePath  = $candidate['tempFilePath'];
             $processedSize = $candidate['processedSize'];
-            $searchVmaf    = $candidate['searchVmafScore'];
 
             // Check if encoded file is larger than original - skip if so
             if ($candidate['isLargerThanOriginal']) {
@@ -184,21 +176,17 @@ final readonly class VideoProcessor
         $bestTempFilePath  = $tempFilePath;
         $bestProcessedSize = $processedSize;
         $bestVmafScore     = $vmafScore;
-        $bestSearchVmaf    = $searchVmaf;
         $bestBitrate       = $baseBitrate;
 
-        // Probe lower bitrates and keep the smallest passing file:
-        // - coarse search when first pass has large headroom
-        // - bounded fine-grained refinement after upward retries
+        // Probe lower bitrates and keep the smallest passing file.
         if (
             $bitrateStep !== null
-            && ($bestSearchVmaf >= self::DOWNWARD_SEARCH_MIN_VMAF_SCORE || $retryCount > 0)
+            && ($bestVmafScore >= self::DOWNWARD_SEARCH_MIN_VMAF_SCORE || $retryCount > 0)
             && ! self::isWithinAcceptableVmafHeadroom($bestVmafScore)
         ) {
-            $searchBitrate                = $bestBitrate;
-            $probeCount                   = 0;
-            $lowestFailingBitrate         = null;
-            $downwardUseConfirmedSampling = false;
+            $searchBitrate        = $bestBitrate;
+            $probeCount           = 0;
+            $lowestFailingBitrate = null;
 
             $downwardStep  = $retryCount > 0
                 ? max(self::RETRY_REFINEMENT_MIN_STEP_KBPS, intdiv($bitrateStep, self::RETRY_REFINEMENT_STEP_DIVISOR))
@@ -223,11 +211,9 @@ final readonly class VideoProcessor
                     statusCallback: $statusCallback,
                     attemptStartCallback: $attemptStartCallback,
                     scoringStartCallback: $scoringStartCallback,
-                    useConfirmedSampling: $downwardUseConfirmedSampling,
                 );
                 $candidateTempFilePath  = $candidateResult['tempFilePath'];
                 $candidateProcessedSize = $candidateResult['processedSize'];
-                $candidateSearchVmaf    = $candidateResult['searchVmafScore'];
 
                 if ($candidateResult['isLargerThanOriginal']) {
                     @unlink($candidateTempFilePath);
@@ -248,12 +234,10 @@ final readonly class VideoProcessor
                     bestTempFilePath: $bestTempFilePath,
                     bestProcessedSize: $bestProcessedSize,
                     bestVmafScore: $bestVmafScore,
-                    bestSearchVmaf: $bestSearchVmaf,
                     bestBitrate: $bestBitrate,
                     candidateTempFilePath: $candidateTempFilePath,
                     candidateProcessedSize: $candidateProcessedSize,
                     candidateVmafScore: $candidateVmafScore,
-                    candidateSearchVmaf: $candidateSearchVmaf,
                     candidateBitrate: $candidateBitrate,
                 );
 
@@ -288,11 +272,9 @@ final readonly class VideoProcessor
                         statusCallback: $statusCallback,
                         attemptStartCallback: $attemptStartCallback,
                         scoringStartCallback: $scoringStartCallback,
-                        useConfirmedSampling: $downwardUseConfirmedSampling,
                     );
                     $candidateTempFilePath  = $candidateResult['tempFilePath'];
                     $candidateProcessedSize = $candidateResult['processedSize'];
-                    $candidateSearchVmaf    = $candidateResult['searchVmafScore'];
 
                     if ($candidateResult['isLargerThanOriginal']) {
                         @unlink($candidateTempFilePath);
@@ -312,12 +294,10 @@ final readonly class VideoProcessor
                         bestTempFilePath: $bestTempFilePath,
                         bestProcessedSize: $bestProcessedSize,
                         bestVmafScore: $bestVmafScore,
-                        bestSearchVmaf: $bestSearchVmaf,
                         bestBitrate: $bestBitrate,
                         candidateTempFilePath: $candidateTempFilePath,
                         candidateProcessedSize: $candidateProcessedSize,
                         candidateVmafScore: $candidateVmafScore,
-                        candidateSearchVmaf: $candidateSearchVmaf,
                         candidateBitrate: $candidateBitrate,
                     );
 
@@ -379,22 +359,14 @@ final readonly class VideoProcessor
             && $vmafScore <= self::MIN_VMAF_SCORE + self::ACCEPTABLE_VMAF_HEADROOM;
     }
 
-    private static function isInGrayZone(float $vmafScore): bool
-    {
-        return $vmafScore >= self::GRAY_ZONE_MIN_VMAF_SCORE
-            && $vmafScore <= self::GRAY_ZONE_MAX_VMAF_SCORE;
-    }
-
     private function adoptBetterCandidateOrDiscard(
         string &$bestTempFilePath,
         int &$bestProcessedSize,
         float &$bestVmafScore,
-        float &$bestSearchVmaf,
         int &$bestBitrate,
         string $candidateTempFilePath,
         int $candidateProcessedSize,
         float $candidateVmafScore,
-        float $candidateSearchVmaf,
         int $candidateBitrate,
     ): void {
         if ($candidateProcessedSize >= $bestProcessedSize) {
@@ -407,7 +379,6 @@ final readonly class VideoProcessor
         $bestTempFilePath  = $candidateTempFilePath;
         $bestProcessedSize = $candidateProcessedSize;
         $bestVmafScore     = $candidateVmafScore;
-        $bestSearchVmaf    = $candidateSearchVmaf;
         $bestBitrate       = $candidateBitrate;
     }
 
@@ -424,15 +395,14 @@ final readonly class VideoProcessor
     }
 
     /**
-     * @param callable(int, float, int, float, float, string): void|null $statusCallback
-     * @param callable(int): void|null                                   $attemptStartCallback
-     * @param callable(int, int, float, string): void|null               $scoringStartCallback
+     * @param callable(int, float, int, float, float): void|null $statusCallback
+     * @param callable(int): void|null                           $attemptStartCallback
+     * @param callable(int, int, float): void|null               $scoringStartCallback
      *
      * @return array{
      *   tempFilePath: string,
      *   processedSize: int,
      *   vmafScore: float,
-     *   searchVmafScore: float,
      *   isLargerThanOriginal: bool
      * }
      */
@@ -444,7 +414,6 @@ final readonly class VideoProcessor
         callable|null $statusCallback = null,
         callable|null $attemptStartCallback = null,
         callable|null $scoringStartCallback = null,
-        bool &$useConfirmedSampling = false,
     ): array {
         $candidate = $this->evaluateBitrateCandidate(
             file: $file,
@@ -453,7 +422,6 @@ final readonly class VideoProcessor
             statusCallback: $statusCallback,
             attemptStartCallback: $attemptStartCallback,
             scoringStartCallback: $scoringStartCallback,
-            useConfirmedSampling: $useConfirmedSampling,
         );
 
         $qcTime += $candidate['qcTime'];
@@ -462,21 +430,19 @@ final readonly class VideoProcessor
             'tempFilePath' => $candidate['tempFilePath'],
             'processedSize' => $candidate['processedSize'],
             'vmafScore' => $candidate['vmafScore'],
-            'searchVmafScore' => $candidate['searchVmafScore'],
             'isLargerThanOriginal' => $candidate['isLargerThanOriginal'],
         ];
     }
 
     /**
-     * @param callable(int, float, int, float, float, string): void|null $statusCallback
-     * @param callable(int): void|null                                   $attemptStartCallback
-     * @param callable(int, int, float, string): void|null               $scoringStartCallback
+     * @param callable(int, float, int, float, float): void|null $statusCallback
+     * @param callable(int): void|null                           $attemptStartCallback
+     * @param callable(int, int, float): void|null               $scoringStartCallback
      *
      * @return array{
      *   tempFilePath: string,
      *   processedSize: int,
      *   vmafScore: float,
-     *   searchVmafScore: float,
      *   qcTime: float,
      *   isLargerThanOriginal: bool
      * }
@@ -488,7 +454,6 @@ final readonly class VideoProcessor
         callable|null $statusCallback = null,
         callable|null $attemptStartCallback = null,
         callable|null $scoringStartCallback = null,
-        bool &$useConfirmedSampling = false,
     ): array {
         if ($attemptStartCallback !== null) {
             $attemptStartCallback($bitrateKbps);
@@ -502,71 +467,32 @@ final readonly class VideoProcessor
                 'tempFilePath' => $tempFilePath,
                 'processedSize' => $processedSize,
                 'vmafScore' => 0.0,
-                'searchVmafScore' => 0.0,
                 'qcTime' => 0.0,
                 'isLargerThanOriginal' => true,
             ];
         }
 
-        $scoreMode      = $useConfirmedSampling
-            ? self::SCORE_MODE_FINE
-            : self::SCORE_MODE_COARSE;
-        $scoreSubsample = $useConfirmedSampling
-            ? self::CONFIRMED_VMAF_SUBSAMPLE
-            : self::COARSE_VMAF_SUBSAMPLE;
         if ($scoringStartCallback !== null) {
-            $scoringStartCallback($bitrateKbps, $processedSize, $encodeTime, $scoreMode);
+            $scoringStartCallback($bitrateKbps, $processedSize, $encodeTime);
         }
 
-        $startTime       = microtime(true);
-        $vmafScore       = $this->encoder->qualityScore(
+        $startTime = microtime(true);
+        $vmafScore = $this->encoder->qualityScore(
             originalFilePath: $file->path,
             processedFilePath: $tempFilePath,
-            subsample: $scoreSubsample,
+            subsample: self::VMAF_SUBSAMPLE,
         );
-        $scoreTime       = microtime(true) - $startTime;
-        $qcTime          = $scoreTime;
-        $searchVmafScore = $vmafScore;
+        $scoreTime = microtime(true) - $startTime;
+        $qcTime    = $scoreTime;
 
         if ($statusCallback !== null) {
-            $statusCallback($bitrateKbps, $vmafScore, $file->currentSize - $processedSize, $encodeTime, $scoreTime, $scoreMode);
-        }
-
-        $mustRunFinePass = ! $useConfirmedSampling
-            && $vmafScore >= self::MIN_VMAF_SCORE
-            && $vmafScore < self::DOWNWARD_SEARCH_MIN_VMAF_SCORE
-            && ! self::isInGrayZone($vmafScore);
-        $mustRunFineGray = ! $useConfirmedSampling && self::isInGrayZone($vmafScore);
-
-        if ($mustRunFinePass || $mustRunFineGray) {
-            if ($mustRunFineGray) {
-                $useConfirmedSampling = true;
-            }
-
-            $scoreMode = self::SCORE_MODE_FINE;
-            if ($scoringStartCallback !== null) {
-                $scoringStartCallback($bitrateKbps, $processedSize, $encodeTime, $scoreMode);
-            }
-
-            $startTime       = microtime(true);
-            $vmafScore       = $this->encoder->qualityScore(
-                originalFilePath: $file->path,
-                processedFilePath: $tempFilePath,
-                subsample: self::CONFIRMED_VMAF_SUBSAMPLE,
-            );
-            $scoreTime       = microtime(true) - $startTime;
-            $qcTime         += $scoreTime;
-            $searchVmafScore = max($searchVmafScore, $vmafScore);
-            if ($statusCallback !== null) {
-                $statusCallback($bitrateKbps, $vmafScore, $file->currentSize - $processedSize, $encodeTime, $scoreTime, $scoreMode);
-            }
+            $statusCallback($bitrateKbps, $vmafScore, $file->currentSize - $processedSize, $encodeTime, $scoreTime);
         }
 
         return [
             'tempFilePath' => $tempFilePath,
             'processedSize' => $processedSize,
             'vmafScore' => $vmafScore,
-            'searchVmafScore' => $searchVmafScore,
             'qcTime' => $qcTime,
             'isLargerThanOriginal' => false,
         ];
