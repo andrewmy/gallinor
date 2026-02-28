@@ -224,6 +224,48 @@ TXT,
         self::assertStringContainsString('-c:v hevc_videotoolbox', $command);
     }
 
+    public function test_non_darwin_prefers_nvidia_when_qsv_and_nvenc_are_available(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\nV..... hevc_qsv Intel Quick Sync Video H.265 encoder\nV..... hevc_nvenc NVIDIA NVENC hevc encoder\n",
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: false,
+            platform: self::platformWithTools($ffmpegPath),
+        );
+
+        $command = $encoder->commandForFile(
+            file: self::videoFile(hasRotation: false),
+            baseBitrate: 8000,
+            maxBitrateSpike: 1.25,
+            tempFilePath: '/tmp/out.mp4',
+        );
+
+        self::assertStringContainsString('-c:v hevc_nvenc', $command);
+    }
+
+    public function test_selects_qsv_when_it_is_the_only_hardware_encoder(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\nV..... hevc_qsv Intel Quick Sync Video H.265 encoder\n",
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: false,
+            platform: self::platformWithTools($ffmpegPath),
+        );
+
+        $command = $encoder->commandForFile(
+            file: self::videoFile(hasRotation: false),
+            baseBitrate: 8000,
+            maxBitrateSpike: 1.25,
+            tempFilePath: '/tmp/out.mp4',
+        );
+
+        self::assertStringContainsString('-c:v hevc_qsv', $command);
+    }
+
     public function test_command_preserves_fps_mode_passthrough(): void
     {
         $ffmpegPath = $this->createFakeFfmpegWithEncoders(
@@ -410,6 +452,104 @@ TXT,
         self::assertStringNotContainsString('-spatial_aq', $command);
         self::assertStringNotContainsString('-power_efficient', $command);
         self::assertStringNotContainsString('-max_ref_frames', $command);
+    }
+
+    public function test_cpu_fallback_is_not_enforced_for_rotated_video_with_qsv(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\nV..... hevc_qsv Intel Quick Sync Video H.265 encoder\n",
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: false,
+            platform: self::platformWithTools($ffmpegPath),
+        );
+
+        self::assertFalse($encoder->isCpuFallbackEnforced(self::videoFile(hasRotation: true)));
+    }
+
+    public function test_qsv_command_enables_supported_quality_options(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\nV..... hevc_qsv Intel Quick Sync Video H.265 encoder\n",
+            <<<'TXT'
+Encoder hevc_qsv [HEVC (Intel Quick Sync Video acceleration)]:
+  -preset            <int>
+  -look_ahead        <boolean>
+  -look_ahead_depth  <int>
+  -extbrc            <int>
+  -mbbrc             <int>
+  -adaptive_i        <int>
+  -adaptive_b        <int>
+  -b_strategy        <int>
+  -bf                <int>
+  -bitrate_limit     <int>
+TXT,
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: false,
+            platform: self::platformWithTools($ffmpegPath),
+        );
+
+        $command = $encoder->commandForFile(
+            file: self::videoFile(hasRotation: false),
+            baseBitrate: 8000,
+            maxBitrateSpike: 1.25,
+            tempFilePath: '/tmp/out.mp4',
+        );
+
+        self::assertStringContainsString('-c:v hevc_qsv', $command);
+        self::assertStringContainsString('-pix_fmt p010le', $command);
+        self::assertStringContainsString('-profile:v main10', $command);
+        self::assertStringContainsString('-maxrate:v 10000k', $command);
+        self::assertStringContainsString('-preset slow', $command);
+        self::assertStringContainsString('-look_ahead 1', $command);
+        self::assertStringContainsString('-look_ahead_depth 40', $command);
+        self::assertStringContainsString('-extbrc 1', $command);
+        self::assertStringContainsString('-mbbrc 1', $command);
+        self::assertStringContainsString('-adaptive_i 1', $command);
+        self::assertStringContainsString('-adaptive_b 1', $command);
+        self::assertStringContainsString('-b_strategy 1', $command);
+        self::assertStringContainsString('-bf 4', $command);
+        self::assertStringContainsString('-bitrate_limit 1', $command);
+    }
+
+    public function test_qsv_command_skips_unsupported_quality_options(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\nV..... hevc_qsv Intel Quick Sync Video H.265 encoder\n",
+            <<<'TXT'
+Encoder hevc_qsv [HEVC (Intel Quick Sync Video acceleration)]:
+  -async_depth       <int>
+TXT,
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: false,
+            platform: self::platformWithTools($ffmpegPath),
+        );
+
+        $command = $encoder->commandForFile(
+            file: self::videoFile(hasRotation: false),
+            baseBitrate: 8000,
+            maxBitrateSpike: 1.25,
+            tempFilePath: '/tmp/out.mp4',
+        );
+
+        self::assertStringContainsString('-c:v hevc_qsv', $command);
+        self::assertStringContainsString('-pix_fmt p010le', $command);
+        self::assertStringContainsString('-maxrate:v 10000k', $command);
+        self::assertStringNotContainsString('-preset slow', $command);
+        self::assertStringNotContainsString('-look_ahead 1', $command);
+        self::assertStringNotContainsString('-look_ahead_depth 40', $command);
+        self::assertStringNotContainsString('-extbrc 1', $command);
+        self::assertStringNotContainsString('-mbbrc 1', $command);
+        self::assertStringNotContainsString('-adaptive_i 1', $command);
+        self::assertStringNotContainsString('-adaptive_b 1', $command);
+        self::assertStringNotContainsString('-b_strategy 1', $command);
+        self::assertStringNotContainsString('-bf 4', $command);
+        self::assertStringNotContainsString('-bitrate_limit 1', $command);
     }
 
     public function test_video_file_from_path_reads_probe_stream_and_rotation_metadata(): void

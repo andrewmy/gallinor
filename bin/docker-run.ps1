@@ -2,6 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $composeFiles = @("-f", "docker-compose.yml")
 $nvidia = $false
+$intel = $false
 $appArgs = @()
 $volumes = @()
 $pathIndex = 0
@@ -10,6 +11,8 @@ $seenCommand = $false
 foreach ($arg in $args) {
     if ($arg -eq "--nvidia") {
         $nvidia = $true
+    } elseif ($arg -eq "--intel") {
+        $intel = $true
     } elseif ($arg.StartsWith("-")) {
         $appArgs += $arg
     } elseif (-not $seenCommand) {
@@ -27,6 +30,11 @@ foreach ($arg in $args) {
     } else {
         $appArgs += $arg
     }
+}
+
+if ($nvidia -and $intel) {
+    Write-Error "Error: --nvidia and --intel are mutually exclusive."
+    exit 1
 }
 
 if ($nvidia) {
@@ -59,5 +67,29 @@ if ($nvidia) {
     $composeFiles += @("-f", "docker-compose.nvidia.yml")
 }
 
-& docker compose @composeFiles run --rm @volumes gallinor @appArgs
+$runArgs = @("run", "--rm")
+
+if ($intel) {
+    if (-not $IsLinux) {
+        Write-Error "Error: Intel Docker acceleration requires a Linux host with /dev/dri access."
+        exit 1
+    }
+
+    if (-not (Test-Path -Path "/dev/dri" -PathType Container)) {
+        Write-Error "Error: /dev/dri is not available on this host."
+        Write-Error "Ensure Intel iGPU drivers are loaded and render nodes are exposed."
+        exit 1
+    }
+
+    $null = docker run --rm --device /dev/dri:/dev/dri debian:bookworm-slim sh -lc 'ls /dev/dri/renderD* >/dev/null 2>&1' 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Error: Intel render node is not accessible inside Docker."
+        Write-Error "Ensure Docker can map /dev/dri and your user has render-device permissions."
+        exit 1
+    }
+
+    $composeFiles += @("-f", "docker-compose.intel.yml")
+}
+
+& docker compose @composeFiles @runArgs @volumes gallinor @appArgs
 exit $LASTEXITCODE

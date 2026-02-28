@@ -3,14 +3,18 @@ set -euo pipefail
 
 COMPOSE_FILES=(-f docker-compose.yml)
 NVIDIA=false
+INTEL=false
 ARGS=()
 VOLUMES=()
+RUN_ARGS=(--rm --user "$(id -u):$(id -g)")
 path_index=0
 seen_command=false
 
 for arg in "$@"; do
     if [[ "$arg" == "--nvidia" ]]; then
         NVIDIA=true
+    elif [[ "$arg" == "--intel" ]]; then
+        INTEL=true
     elif [[ "$arg" == -* ]]; then
         ARGS+=("$arg")
     elif ! $seen_command; then
@@ -29,6 +33,11 @@ for arg in "$@"; do
         ARGS+=("$arg")
     fi
 done
+
+if $NVIDIA && $INTEL; then
+    echo "Error: --nvidia and --intel are mutually exclusive." >&2
+    exit 1
+fi
 
 if $NVIDIA; then
     # Preflight: check Compose version supports gpus field (2.30.0+)
@@ -54,7 +63,49 @@ if $NVIDIA; then
     COMPOSE_FILES+=(-f docker-compose.nvidia.yml)
 fi
 
-exec docker compose "${COMPOSE_FILES[@]}" run --rm \
-    --user "$(id -u):$(id -g)" \
+if $INTEL; then
+    if [[ "$(uname -s)" != "Linux" ]]; then
+        echo "Error: Intel Docker acceleration requires a Linux host with /dev/dri access." >&2
+        exit 1
+    fi
+
+    if [[ ! -d /dev/dri ]]; then
+        echo "Error: /dev/dri is not available on this host." >&2
+        echo "Ensure Intel iGPU drivers are loaded and render nodes are exposed." >&2
+        exit 1
+    fi
+
+    if ! docker run --rm --device /dev/dri:/dev/dri debian:bookworm-slim sh -lc 'ls /dev/dri/renderD* >/dev/null 2>&1'; then
+        echo "Error: Intel render node is not accessible inside Docker." >&2
+        echo "Ensure Docker can map /dev/dri and your user has render-device permissions." >&2
+        exit 1
+    fi
+
+    # Keep host render/video access by adding matching device group IDs.
+    dri_groups=()
+    for node in /dev/dri/renderD* /dev/dri/card*; do
+        [[ -e "$node" ]] || continue
+        gid=$(stat -c '%g' "$node")
+        seen=false
+        for existing in "${dri_groups[@]}"; do
+            if [[ "$existing" == "$gid" ]]; then
+                seen=true
+                break
+            fi
+        done
+        if ! $seen; then
+            dri_groups+=("$gid")
+        fi
+    done
+
+    for gid in "${dri_groups[@]}"; do
+        RUN_ARGS+=(--group-add "$gid")
+    done
+
+    COMPOSE_FILES+=(-f docker-compose.intel.yml)
+fi
+
+exec docker compose "${COMPOSE_FILES[@]}" run \
+    "${RUN_ARGS[@]}" \
     ${VOLUMES[@]+"${VOLUMES[@]}"} \
     gallinor "${ARGS[@]}"

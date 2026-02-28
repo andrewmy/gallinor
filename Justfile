@@ -53,6 +53,8 @@ docker-smoke:
     docker compose -f docker-compose.yml run --rm --entrypoint sh gallinor -c \
         'ffmpeg -filters 2>&1 | grep -q libvmaf'
     docker compose -f docker-compose.yml run --rm --entrypoint sh gallinor -c \
+        'ffmpeg -encoders 2>&1 | grep -q hevc_qsv'
+    docker compose -f docker-compose.yml run --rm --entrypoint sh gallinor -c \
         'heif-enc --list-encoders 2>&1 | grep -q x265'
 
 # Full CI flow

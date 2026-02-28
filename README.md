@@ -11,7 +11,8 @@ simplicity and ease of use.
   - Reduce mp4 video file sizes, re-encoding everything to HEVC (H.265) with
     quality-based bitrate (VMAF score ≥ 90)
   - Support 720p, 1080p, and 4K videos
-  - Support for Apple and NVidia hardware acceleration for video encoding
+  - Support for Apple, NVidia, and Intel Quick Sync hardware acceleration for
+    video encoding
   - Support for CPU video encoding as a last resort
 - Images:
   - Convert JPEGs to HEIC (default) with quality-based encoding (SSIMULACRA2
@@ -65,6 +66,23 @@ Requirements: NVIDIA GPU + drivers, NVIDIA Container Toolkit, Docker Compose
 2.30.0+. The wrapper runs preflight checks and fails with clear errors if
 anything is missing.
 
+### Intel Quick Sync acceleration
+
+For video encoding with Quick Sync (`hevc_qsv`), pass `--intel` to the wrapper:
+
+```shell
+./bin/docker-run.sh --intel videos:squeeze "$HOME/Videos"
+```
+
+Requirements:
+
+- Linux host with Intel iGPU (`/dev/dri` exposed)
+- Docker with device passthrough enabled
+- Intel media runtime available in container (bundled in the image)
+
+The wrapper runs preflight checks for `/dev/dri` and render-node access.
+`--nvidia` and `--intel` are mutually exclusive.
+
 Apple VideoToolbox is not available inside Docker (the container runs Linux).
 On macOS, Docker video runs will use CPU encoding (`--use-cpu`).
 
@@ -90,7 +108,7 @@ For running without Docker on macOS or Windows.
     - macOS: `brew install ffmpeg`
   - For hardware acceleration:
     - macOS: Apple Silicon or Intel with VideoToolbox support
-    - Win: NVidia GPU with NVENC support
+    - Win: NVidia GPU with NVENC support, or Intel iGPU with Quick Sync support
   - For quality check — VMAF library installed and available in your system
     PATH, usually is in the box with ffmpeg
 - For images:
@@ -143,6 +161,9 @@ By default, files with existing `.optimal.mp4` variants are skipped.
 By default, videos whose bitrate is already acceptable are also skipped in
 preflight. Use `--force-any-bitrate` to still run squeeze attempts for those
 files.
+On native runs, Gallinor auto-selects hardware encoder in this order:
+`hevc_videotoolbox` (macOS), `hevc_nvenc`, then `hevc_qsv`. Use `--use-cpu`
+to force `libx265`.
 
 ### Rename optimal videos to replace originals
 

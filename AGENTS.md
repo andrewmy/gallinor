@@ -6,7 +6,8 @@ Concise development guide for this repository.
 
 Gallinor is a PHP 8.5+ CLI for reducing media size while preserving quality.
 
-- Video: re-encode to HEVC (NVENC / Apple VideoToolbox / CPU fallback),
+- Video: re-encode to HEVC (NVENC / Apple VideoToolbox / Intel Quick Sync /
+  CPU fallback),
   validate with VMAF.
 - Images: JPEG -> HEIC (SSIMULACRA2 threshold), archive ARW with xz.
 
@@ -50,6 +51,9 @@ php app.php images:remove-originals <path>
 - PHP 8.5+ with strict types.
 - Native runtime targets: macOS + Windows (`Platform` guards this).
 - Linux is supported via Docker workflows.
+- Docker GPU wrappers:
+  - `./bin/docker-run.sh --nvidia ...` for NVENC
+  - `./bin/docker-run.sh --intel ...` for Quick Sync (`/dev/dri`, Linux host)
 - Runtime expects ffmpeg v8+.
 - Domain flows should report operational failures via result objects where
   already modeled (avoid widening exception-driven control flow).
@@ -72,11 +76,13 @@ php app.php images:remove-originals <path>
   - keep source stream as VMAF reference with decode-order alignment (`settb=AVTB,setpts=N`)
   - use CPU encoder for rotated sources when active encoder is NVENC
     (to avoid HW QC drift)
-  - allow Apple VideoToolbox for rotated sources
+  - allow Apple VideoToolbox/Intel Quick Sync for rotated sources
 - Hardware flags must be capability-gated by encoder help output
-  (NVENC and VideoToolbox options vary by ffmpeg build).
+  (NVENC, VideoToolbox, and QSV options vary by ffmpeg build).
 - VideoToolbox keeps `-maxrate` enabled and leaves reference-frame selection on
   encoder auto.
+- Quick Sync keeps `-maxrate` enabled and enables quality knobs only when
+  exposed by the active ffmpeg build.
 - VMAF requires `libvmaf` filter availability (not `vmafmotion`).
 
 ## Image Rules To Preserve

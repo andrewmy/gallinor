@@ -1,0 +1,6 @@
+services:
+  gallinor:
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      LIBVA_DRIVER_NAME: ${LIBVA_DRIVER_NAME:-iHD}

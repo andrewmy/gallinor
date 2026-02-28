@@ -49,6 +49,16 @@ final class FfmpegEncoder implements Encoder
     private readonly bool $hasAppleRealtime;
     private readonly string|null $appleSpatialAqOption;
     private readonly bool $hasApplePowerEfficient;
+    private readonly bool $hasQsvPreset;
+    private readonly bool $hasQsvLookAhead;
+    private readonly bool $hasQsvLookAheadDepth;
+    private readonly bool $hasQsvExtBrc;
+    private readonly bool $hasQsvMbBrc;
+    private readonly bool $hasQsvAdaptiveI;
+    private readonly bool $hasQsvAdaptiveB;
+    private readonly bool $hasQsvBStrategy;
+    private readonly bool $hasQsvBFrames;
+    private readonly bool $hasQsvBitrateLimit;
     public readonly bool $hasVmaf;
 
     public function __construct(
@@ -60,15 +70,22 @@ final class FfmpegEncoder implements Encoder
 
         $hasAppleToolbox = $this->platform->isDarwin() && $this->ffmpegHasEncoder('hevc_videotoolbox');
         $hasNvEncoder    = $this->ffmpegHasEncoder('hevc_nvenc');
+        $hasIntelQsv     = $this->ffmpegHasEncoder('hevc_qsv');
 
         if ($useCpu) {
             $this->activeEncoder = EncoderName::Cpu;
         } else {
-            if (! $hasAppleToolbox && ! $hasNvEncoder) {
-                throw new RuntimeException('No hardware HEVC encoder found (neither Apple VideoToolbox nor NVIDIA NVENC)');
+            if (! $hasAppleToolbox && ! $hasNvEncoder && ! $hasIntelQsv) {
+                throw new RuntimeException('No hardware HEVC encoder found (Apple VideoToolbox, NVIDIA NVENC, Intel Quick Sync)');
             }
 
-            $this->activeEncoder = $hasAppleToolbox ? EncoderName::Apple : EncoderName::Nvidia;
+            if ($hasAppleToolbox) {
+                $this->activeEncoder = EncoderName::Apple;
+            } elseif ($hasNvEncoder) {
+                $this->activeEncoder = EncoderName::Nvidia;
+            } else {
+                $this->activeEncoder = EncoderName::Intel;
+            }
         }
 
         $nvencHelp = $hasNvEncoder ? $this->ffmpegEncoderHelp('encoder=hevc_nvenc') : null;
@@ -87,6 +104,19 @@ final class FfmpegEncoder implements Encoder
         $this->hasAppleRealtime       = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'realtime');
         $this->appleSpatialAqOption   = self::detectAppleSpatialAqOption($appleHelp);
         $this->hasApplePowerEfficient = $appleHelp !== null && self::encoderHelpHasOption($appleHelp, 'power_efficient');
+
+        $qsvHelp = $hasIntelQsv ? $this->ffmpegEncoderHelp('encoder=hevc_qsv') : null;
+
+        $this->hasQsvPreset         = $qsvHelp !== null && self::encoderHelpHasOption($qsvHelp, 'preset');
+        $this->hasQsvLookAhead      = $qsvHelp !== null && self::encoderHelpHasOption($qsvHelp, 'look_ahead');
+        $this->hasQsvLookAheadDepth = $qsvHelp !== null && self::encoderHelpHasOption($qsvHelp, 'look_ahead_depth');
+        $this->hasQsvExtBrc         = $qsvHelp !== null && self::encoderHelpHasOption($qsvHelp, 'extbrc');
+        $this->hasQsvMbBrc          = $qsvHelp !== null && self::encoderHelpHasOption($qsvHelp, 'mbbrc');
+        $this->hasQsvAdaptiveI      = $qsvHelp !== null && self::encoderHelpHasOption($qsvHelp, 'adaptive_i');
+        $this->hasQsvAdaptiveB      = $qsvHelp !== null && self::encoderHelpHasOption($qsvHelp, 'adaptive_b');
+        $this->hasQsvBStrategy      = $qsvHelp !== null && self::encoderHelpHasOption($qsvHelp, 'b_strategy');
+        $this->hasQsvBFrames        = $qsvHelp !== null && self::encoderHelpHasOption($qsvHelp, 'bf');
+        $this->hasQsvBitrateLimit   = $qsvHelp !== null && self::encoderHelpHasOption($qsvHelp, 'bitrate_limit');
 
         $this->hasVmaf = $this->ffmpegHasFilter('libvmaf');
     }
@@ -282,7 +312,9 @@ final class FfmpegEncoder implements Encoder
         ]);
 
         if (in_array($file->pixFmt, ['yuv420p', 'yuv420p10le'], true)) {
-            if ($encoder !== EncoderName::Nvidia) {
+            if ($encoder === EncoderName::Intel) {
+                $params[] = '-pix_fmt p010le';
+            } elseif ($encoder !== EncoderName::Nvidia) {
                 $params[] = '-pix_fmt yuv420p10le';
             }
 
@@ -352,6 +384,48 @@ final class FfmpegEncoder implements Encoder
 
             if ($this->hasApplePowerEfficient) {
                 $params[] = '-power_efficient 0';
+            }
+        } elseif ($encoder === EncoderName::Intel) {
+            $params[] = sprintf('-maxrate:v %dk', $baseBitrate * $maxBitrateSpike);
+
+            if ($this->hasQsvPreset) {
+                $params[] = '-preset slow';
+            }
+
+            if ($this->hasQsvLookAhead) {
+                $params[] = '-look_ahead 1';
+            }
+
+            if ($this->hasQsvLookAheadDepth) {
+                $params[] = '-look_ahead_depth 40';
+            }
+
+            if ($this->hasQsvExtBrc) {
+                $params[] = '-extbrc 1';
+            }
+
+            if ($this->hasQsvMbBrc) {
+                $params[] = '-mbbrc 1';
+            }
+
+            if ($this->hasQsvAdaptiveI) {
+                $params[] = '-adaptive_i 1';
+            }
+
+            if ($this->hasQsvAdaptiveB) {
+                $params[] = '-adaptive_b 1';
+            }
+
+            if ($this->hasQsvBStrategy) {
+                $params[] = '-b_strategy 1';
+            }
+
+            if ($this->hasQsvBFrames) {
+                $params[] = '-bf 4';
+            }
+
+            if ($this->hasQsvBitrateLimit) {
+                $params[] = '-bitrate_limit 1';
             }
         } elseif ($encoder === EncoderName::Cpu) {
             $params = array_merge($params, [
@@ -443,6 +517,13 @@ final class FfmpegEncoder implements Encoder
         $writer(sprintf('Using encoder: %s', $this->activeEncoder->value));
 
         if ($this->activeEncoder !== EncoderName::Nvidia || ! $this->hasTemporalAq) {
+            if (
+                $this->activeEncoder === EncoderName::Intel
+                && ($this->hasQsvLookAhead || $this->hasQsvExtBrc || $this->hasQsvAdaptiveI || $this->hasQsvAdaptiveB)
+            ) {
+                $writer('QSV quality knobs: available');
+            }
+
             return;
         }
 

@@ -19,6 +19,7 @@ FROM debian:bookworm-slim AS ffmpeg-build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake nasm pkg-config git ca-certificates \
     meson ninja-build python3 zlib1g-dev \
+    libdrm-dev libva-dev libvpl-dev \
   && rm -rf /var/lib/apt/lists/*
 
 ARG PREFIX=/opt/ffmpeg
@@ -94,6 +95,9 @@ RUN git clone --depth 1 --branch $FFMPEG_TAG \
     --enable-gpl --enable-version3 --enable-nonfree \
     --enable-libx265 \
     --enable-libvmaf \
+    --enable-libvpl \
+    --enable-vaapi \
+    --enable-libdrm \
     --disable-debug --disable-doc --disable-ffplay \
   && make -j$(nproc) \
   && strip /src/ffmpeg/ffmpeg /src/ffmpeg/ffprobe
@@ -113,7 +117,9 @@ RUN echo 'deb http://deb.debian.org/debian bookworm-backports main' \
       > /etc/apt/sources.list.d/backports.list
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
+    set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
       libimage-exiftool-perl \
       xz-utils \
       unzip \
@@ -121,9 +127,21 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       liblcms2-2 \
       libjpeg62-turbo \
       libpng16-16 \
-    && apt-get install -y --no-install-recommends -t bookworm-backports \
+      libdrm2 \
+      libva2 \
+      libva-drm2 \
+      libvpl2 \
+    ; \
+    apt-get install -y --no-install-recommends -t bookworm-backports \
       libheif-examples \
-      libheif-plugin-x265
+      libheif-plugin-x265 \
+    ; \
+    apt-get install -y --no-install-recommends intel-media-va-driver-non-free \
+      || apt-get install -y --no-install-recommends intel-media-va-driver \
+      || apt-get install -y --no-install-recommends i965-va-driver \
+    ; \
+    apt-get install -y --no-install-recommends libmfx1 \
+      || apt-get install -y --no-install-recommends libmfx-gen1.2
 
 # Remove docs/locale that were already present in the base image
 RUN rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/locale/* /usr/share/info/*

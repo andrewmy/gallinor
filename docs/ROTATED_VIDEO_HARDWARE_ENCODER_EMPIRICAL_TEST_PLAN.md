@@ -24,7 +24,7 @@ In scope:
 - Synthetic clips with and without Display Matrix rotation.
 - Supported Gallinor resolutions: `720p`, `1080p`, `4K`.
 - Encoders: `libx265` (reference), `hevc_videotoolbox` (macOS),
-  `hevc_nvenc` (NVIDIA machine).
+  `hevc_nvenc` (NVIDIA machine), `hevc_qsv` (Intel Quick Sync machine).
 - VMAF scoring with Gallinor's decode-order alignment strategy.
 
 Out of scope:
@@ -39,16 +39,18 @@ Out of scope:
 2. `libvmaf` filter available in ffmpeg build.
 3. For macOS VT run: `hevc_videotoolbox` encoder available.
 4. For NVIDIA run: `hevc_nvenc` encoder available.
-5. Gallinor repo checked out (for command parity and references).
+5. For Intel run: `hevc_qsv` encoder available.
+6. Gallinor repo checked out (for command parity and references).
 
 Quick capability check:
 
 ```bash
 ffmpeg -hide_banner -version
-ffmpeg -hide_banner -encoders | rg 'hevc_(videotoolbox|nvenc)|libx265'
+ffmpeg -hide_banner -encoders | rg 'hevc_(videotoolbox|nvenc|qsv)|libx265'
 ffmpeg -hide_banner -filters | rg 'libvmaf|vmafmotion'
 ffmpeg -hide_banner -h encoder=hevc_videotoolbox | sed -n '1,220p'
 ffmpeg -hide_banner -h encoder=hevc_nvenc | sed -n '1,260p'
+ffmpeg -hide_banner -h encoder=hevc_qsv | sed -n '1,260p'
 ```
 
 Expected:
@@ -198,6 +200,39 @@ Notes for NVENC:
 - Gallinor capability-gates these in code; this script is an aggressive parity
   baseline for investigation.
 
+### Intel Quick Sync (Intel machine)
+
+Use flags matching Gallinor's QSV path as closely as possible:
+
+```bash
+encode_qsv() {
+  local src="$1"
+  local out="$2"
+  local bitrate="$3"
+  local maxrate=$(( bitrate * 125 / 100 ))
+
+  ffmpeg -hide_banner -loglevel error \
+    -fflags +genpts -i "$src" \
+    -c:a copy -c:v hevc_qsv \
+    -b:v "${bitrate}k" -maxrate:v "${maxrate}k" \
+    -pix_fmt p010le -profile:v main10 \
+    -preset slow \
+    -look_ahead 1 -look_ahead_depth 40 \
+    -extbrc 1 -mbbrc 1 \
+    -adaptive_i 1 -adaptive_b 1 -b_strategy 1 -bf 4 \
+    -bitrate_limit 1 \
+    -tag:v hvc1 -map_metadata 0 -movflags +use_metadata_tags+faststart \
+    -fps_mode passthrough -y "$out"
+}
+```
+
+Notes for QSV:
+
+- Some options vary by ffmpeg build and Intel media-driver stack. If an option
+  is rejected, remove only the unsupported option and re-run.
+- Gallinor capability-gates these in code, so this runbook command is an
+  aggressive parity baseline.
+
 ### Run Encodes
 
 Use Gallinor default base bitrates for initial pass:
@@ -228,6 +263,10 @@ for src in "$TMP_DIR"/src_*.mp4; do
   if ffmpeg -hide_banner -encoders | rg -q hevc_nvenc; then
     encode_nvenc "$src" "$TMP_DIR/${name}_nvenc.mp4" "$bitrate"
   fi
+
+  if ffmpeg -hide_banner -encoders | rg -q hevc_qsv; then
+    encode_qsv "$src" "$TMP_DIR/${name}_qsv.mp4" "$bitrate"
+  fi
 done
 ```
 
@@ -236,7 +275,7 @@ done
 Collect display and coded dimensions and rotation side data:
 
 ```bash
-for f in "$TMP_DIR"/src_*.mp4 "$TMP_DIR"/*_cpu.mp4 "$TMP_DIR"/*_vt.mp4 "$TMP_DIR"/*_nvenc.mp4; do
+for f in "$TMP_DIR"/src_*.mp4 "$TMP_DIR"/*_cpu.mp4 "$TMP_DIR"/*_vt.mp4 "$TMP_DIR"/*_nvenc.mp4 "$TMP_DIR"/*_qsv.mp4; do
   [ -f "$f" ] || continue
   ffprobe -hide_banner -v error -show_streams -select_streams v:0 -of json "$f" \
     | jq -c --arg file "$(basename "$f")" \
@@ -284,7 +323,7 @@ Run across outputs:
 ```bash
 for src in "$TMP_DIR"/src_*.mp4; do
   base="${src%.mp4}"
-  for kind in cpu vt nvenc; do
+  for kind in cpu vt nvenc qsv; do
     out="${base}_${kind}.mp4"
     [ -f "$out" ] || continue
     log="$TMP_DIR/vmaf_$(basename "$base")_${kind}.xml"
@@ -310,6 +349,8 @@ Encoder policy decision guidance:
   keep or enforce CPU fallback for NVENC + rotated.
 - If VT remains stable on rotated clips with successful VMAF and correct
   geometry, allow VT for rotated on macOS.
+- If QSV remains stable on rotated clips with successful VMAF and correct
+  geometry, allow QSV for rotated Intel runs.
 
 ## Suggested Result Table
 
@@ -361,3 +402,7 @@ When reproducing on NVIDIA hardware, attach:
 3. Stream summary JSON/CSV.
 4. VMAF logs and extracted means.
 5. A short conclusion with fallback recommendation.
+
+When reproducing on Intel hardware, also attach:
+
+1. `ffmpeg -h encoder=hevc_qsv` output.
