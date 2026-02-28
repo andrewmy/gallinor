@@ -64,6 +64,37 @@ final class VideoProcessorTest extends TestCase
         self::assertSame($file->path, $result->outputPath);
     }
 
+    public function test_force_process_encodes_even_when_bitrate_is_acceptable(): void
+    {
+        $file        = self::create1080pVideo(needsEncoding: false);
+        $encodedSize = 4 * 1024 * 1024;
+
+        $this->processExecutor = new InMemoryProcessExecutor(
+            commandResults: [],
+            fileSizes: [sys_get_temp_dir() => $encodedSize],
+        );
+        $this->processor       = new VideoProcessor($this->encoder, $this->logger, $this->processExecutor);
+
+        $this->encoder->allows()
+            ->commandForFile(Mockery::any(), Mockery::any(), Mockery::any(), Mockery::type('string'))
+            ->andReturnUsing(static function ($unusedFile, $unusedBaseBitrate, $unusedMaxSpike, $path) {
+                return 'ffmpeg > ' . $path;
+            });
+        $this->encoder->allows()->qualityScore(Mockery::any(), Mockery::any(), Mockery::any())->andReturn(95.0);
+        $this->logger->allows()->info(Mockery::any(), Mockery::any());
+
+        $result = $this->processor->processVideo(
+            file: $file,
+            dryRun: false,
+            forceProcess: true,
+        );
+
+        self::assertTrue($result->success);
+        self::assertFalse($result->skipped);
+        self::assertSame(95.0, $result->vmafScore);
+        self::assertStringContainsString('.optimal.mp4', $result->outputPath);
+    }
+
     public function test_dry_run_returns_projected_size_without_encoding(): void
     {
         $file = new VideoFile(

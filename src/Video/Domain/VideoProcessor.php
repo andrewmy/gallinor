@@ -57,11 +57,12 @@ final readonly class VideoProcessor
         callable|null $lineCallback = null,
         callable|null $attemptStartCallback = null,
         callable|null $scoringStartCallback = null,
+        bool $forceProcess = false,
     ): VideoProcessResult {
         $defaultBaseBitrate = $file->baseBitrate();
         $baseBitrate        = $defaultBaseBitrate;
 
-        if (self::isBitrateAcceptable($file, $defaultBaseBitrate)) {
+        if (! $forceProcess && self::isBitrateAcceptable($file, $defaultBaseBitrate)) {
             return new VideoProcessResult(
                 success: true,
                 skipped: true,

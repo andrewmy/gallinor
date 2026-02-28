@@ -61,6 +61,8 @@ final class Squeeze extends Command
         bool $dryRun = false,
         #[Option(description: 'Force using the CPU encoder, slow')]
         bool $useCpu = false,
+        #[Option(description: 'Try to squeeze videos even when bitrate is already acceptable')]
+        bool $forceAnyBitrate = false,
         #[Argument]
         array $directories = [],
     ): int {
@@ -105,6 +107,7 @@ final class Squeeze extends Command
         ] = $this->gatherFileList(
             directories: $directories,
             output: $output,
+            forceAnyBitrate: $forceAnyBitrate,
         );
 
         $totalCurrentSize   = $totalSkippedSize + array_reduce(
@@ -241,11 +244,12 @@ final class Squeeze extends Command
                     lineCallback: $lineCallback,
                     attemptStartCallback: $attemptStartCallback,
                     scoringStartCallback: $scoringStartCallback,
+                    forceProcess: $forceAnyBitrate,
                 );
 
                 if ($result->skipped) {
                     $progressBar->clear();
-                    $output->write('<comment>Skipped (bitrate acceptable): </comment>');
+                    $output->write('<comment>Skipped: </comment>');
                     $output->writeln($this->cliHelper->link($file->path));
                     $progressBar->display();
                     $totalProcessedSize += $file->currentSize;
@@ -320,6 +324,7 @@ final class Squeeze extends Command
     private function gatherFileList(
         array $directories,
         OutputInterface $output,
+        bool $forceAnyBitrate,
     ): array {
         $fileList                     = [];
         $totalSkippedFiles            = 0;
@@ -343,10 +348,17 @@ final class Squeeze extends Command
 
             try {
                 if (VideoProcessor::isBitrateAcceptable($videoFile, $videoFile->baseBitrate())) {
-                    $output->writeln(sprintf('Bitrate %s Kbps is acceptable, no action needed.', $videoFile->bitRate));
-                    $totalSkippedFiles++;
-                    $totalSkippedSize += $videoFile->currentSize;
-                    continue;
+                    if (! $forceAnyBitrate) {
+                        $output->writeln(sprintf('Bitrate %s Kbps is acceptable, no action needed.', $videoFile->bitRate));
+                        $totalSkippedFiles++;
+                        $totalSkippedSize += $videoFile->currentSize;
+                        continue;
+                    }
+
+                    $output->writeln(sprintf(
+                        'Bitrate %s Kbps is acceptable, but forcing squeeze attempt (--force-any-bitrate).',
+                        $videoFile->bitRate,
+                    ));
                 }
             } catch (UnsupportedResolution $exception) {
                 $output->writeln($exception->getMessage());

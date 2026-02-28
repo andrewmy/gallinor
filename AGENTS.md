@@ -38,7 +38,7 @@ php app.php help
 Common app flows:
 
 ```bash
-php app.php videos:squeeze <path>
+php app.php videos:squeeze <path> [--force-any-bitrate]
 php app.php videos:rename <path>
 
 php app.php images:squeeze <path> [--parallel] [--concurrency=N | --adaptive-concurrency=N]
@@ -59,6 +59,8 @@ php app.php images:remove-originals <path>
 
 - Quality gate: VMAF threshold is 90.
 - Skip files that already have `.optimal.mp4` (default command behavior).
+- Skip bitrate-acceptable sources by default; allow explicit override via
+  `--force-any-bitrate`.
 - Bitrate search behavior:
   - start from resolution base bitrate
   - adaptive upward retries on VMAF fail

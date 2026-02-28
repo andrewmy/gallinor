@@ -26,8 +26,9 @@ runaway multi-encode workflow.
 
 ## Remaining Problem
 
-Current video flow still has a hard "acceptable bitrate" skip. This is fast
-but can miss meaningful savings.
+Current video flow still skips bitrate-acceptable files in preflight by
+default. `--force-any-bitrate` can override that, but default mode stays
+fast and can miss meaningful savings.
 
 Current flow also ties support to known resolution presets. Unknown resolutions
 (for example WhatsApp transcodes) are often skipped because bitrate presets are
@@ -44,7 +45,8 @@ missing.
 5. Unknown resolutions are processed by default (no unsupported-resolution skip
    for bitrate search).
 6. Scope: video-only change (images unchanged in this task).
-7. CLI compatibility: no new user-facing flags.
+7. CLI compatibility: keep existing flags; no new flag beyond current
+   `--force-any-bitrate`.
 
 ## Search Algorithm (Remaining)
 
