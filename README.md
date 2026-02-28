@@ -299,8 +299,10 @@ just docker-smoke
   - Apple VideoToolbox needed 12-14 Mbps or fails completely;
   - NVENC needed 8-12 Mbps.
 - The CPU encoder is very slow and its CRF rate is not really well tested, wear
-  a hard hat and fire up some movie while using it. Unfortunately NVENC does
-  something funny to rotated videos so falling back to CPU there.
+  a hard hat and fire up some movie while using it. NVENC can still do
+  something funny to rotated videos, so rotated clips fall back to CPU only
+  when NVENC is the active encoder. On macOS, rotated clips can use Apple
+  VideoToolbox.
 
 ### Photo
 

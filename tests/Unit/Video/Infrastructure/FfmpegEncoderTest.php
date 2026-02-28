@@ -133,7 +133,7 @@ TXT,
         self::assertStringContainsString('[distorted][reference]libvmaf=', $filter);
     }
 
-    public function test_rotated_video_uses_cpu_when_active_encoder_is_apple(): void
+    public function test_rotated_video_keeps_apple_encoder(): void
     {
         $ffmpegPath = $this->createFakeFfmpegWithEncoders(
             "Encoders:\nV..... hevc_videotoolbox Apple VideoToolbox encoder\n",
@@ -151,7 +151,56 @@ TXT,
             tempFilePath: '/tmp/out.mp4',
         );
 
+        self::assertStringContainsString('-c:v hevc_videotoolbox', $command);
+    }
+
+    public function test_rotated_video_uses_cpu_when_active_encoder_is_nvidia(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\nV..... hevc_nvenc NVIDIA NVENC hevc encoder\n",
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: false,
+            platform: self::platformWithTools($ffmpegPath),
+        );
+
+        $command = $encoder->commandForFile(
+            file: self::videoFile(hasRotation: true),
+            baseBitrate: 8000,
+            maxBitrateSpike: 1.25,
+            tempFilePath: '/tmp/out.mp4',
+        );
+
         self::assertStringContainsString('-c:v libx265', $command);
+    }
+
+    public function test_cpu_fallback_is_enforced_for_rotated_video_with_nvidia(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\nV..... hevc_nvenc NVIDIA NVENC hevc encoder\n",
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: false,
+            platform: self::platformWithTools($ffmpegPath),
+        );
+
+        self::assertTrue($encoder->isCpuFallbackEnforced(self::videoFile(hasRotation: true)));
+    }
+
+    public function test_cpu_fallback_is_not_enforced_for_rotated_video_with_apple(): void
+    {
+        $ffmpegPath = $this->createFakeFfmpegWithEncoders(
+            "Encoders:\nV..... hevc_videotoolbox Apple VideoToolbox encoder\n",
+        );
+
+        $encoder = new FfmpegEncoder(
+            useCpu: false,
+            platform: self::darwinPlatformWithTools($ffmpegPath),
+        );
+
+        self::assertFalse($encoder->isCpuFallbackEnforced(self::videoFile(hasRotation: true)));
     }
 
     public function test_non_rotated_video_keeps_apple_encoder(): void

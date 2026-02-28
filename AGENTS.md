@@ -68,7 +68,9 @@ php app.php images:remove-originals <path>
 - VFR/rotation safety:
   - use `-fps_mode passthrough`
   - keep source stream as VMAF reference with decode-order alignment (`settb=AVTB,setpts=N`)
-  - use CPU encoder for rotated sources (Display Matrix) to avoid HW QC drift
+  - use CPU encoder for rotated sources when active encoder is NVENC
+    (to avoid HW QC drift)
+  - allow Apple VideoToolbox for rotated sources
 - Hardware flags must be capability-gated by encoder help output
   (NVENC and VideoToolbox options vary by ffmpeg build).
 - VideoToolbox keeps `-maxrate` enabled and leaves reference-frame selection on

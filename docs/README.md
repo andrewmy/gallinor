@@ -12,6 +12,9 @@ are intentionally “decision heavy” and not necessarily implemented yet.
 - [VIDEO_SCOUT_SEARCH_PLAN.md](VIDEO_SCOUT_SEARCH_PLAN.md)
   - Video-only execution plan that balances hidden savings discovery against
     extra encode/VMAF runtime using scout probes and near-optimal refinement.
+- [ROTATED_VIDEO_HARDWARE_ENCODER_EMPIRICAL_TEST_PLAN.md](ROTATED_VIDEO_HARDWARE_ENCODER_EMPIRICAL_TEST_PLAN.md)
+  - Step-by-step empirical runbook to reproduce rotated-video geometry and VMAF
+    behavior across CPU, Apple VideoToolbox, and NVIDIA NVENC.
 
 ## Relationship map
 

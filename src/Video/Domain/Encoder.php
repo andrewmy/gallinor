@@ -15,6 +15,8 @@ interface Encoder
 
     public function qualityScore(string $originalFilePath, string $processedFilePath, int $subsample = 10): float;
 
+    public function isCpuFallbackEnforced(VideoFile $file): bool;
+
     /** @throws RuntimeException */
     public function describeCapabilities(callable $writer): void;
 }

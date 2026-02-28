@@ -93,7 +93,7 @@ final class FfmpegEncoder implements Encoder
 
     private function encoderForFile(VideoFile $file): EncoderName
     {
-        if ($file->hasRotation && $this->activeEncoder !== EncoderName::Cpu) {
+        if ($file->hasRotation && $this->activeEncoder === EncoderName::Nvidia) {
             return EncoderName::Cpu;
         }
 
@@ -426,6 +426,11 @@ final class FfmpegEncoder implements Encoder
         }
 
         return (float) $vmafResult['pooled_metrics']['vmaf']['harmonic_mean'];
+    }
+
+    public function isCpuFallbackEnforced(VideoFile $file): bool
+    {
+        return $file->hasRotation && $this->activeEncoder === EncoderName::Nvidia;
     }
 
     /** @throws RuntimeException if VMAF is not available. */

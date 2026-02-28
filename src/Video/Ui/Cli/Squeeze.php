@@ -9,6 +9,7 @@ use App\Shared\Domain\Platform;
 use App\Shared\Infrastructure\RealProcessExecutor;
 use App\Shared\Ui\Cli\CliHelper;
 use App\Shared\Ui\Cli\Timing;
+use App\Video\Domain\Encoder;
 use App\Video\Domain\EncoderFactory;
 use App\Video\Domain\Exceptions\UnsupportedResolution;
 use App\Video\Domain\VideoFile;
@@ -51,6 +52,7 @@ final class Squeeze extends Command
 
     private VideoFinder $videoFinder;
     private VideoProcessor $processor;
+    private Encoder $encoder;
 
     /** @param list<string> $directories */
     public function __invoke(
@@ -64,9 +66,9 @@ final class Squeeze extends Command
     ): int {
         $startTime = $this->cliHelper->startCommand($output, $dryRun, $this->timing);
         try {
-            $encoder           = $this->encoderFactory->create($useCpu);
-            $this->videoFinder = new VideoFinder($encoder);
-            $this->processor   = new VideoProcessor($encoder, $this->logger, new RealProcessExecutor());
+            $this->encoder     = $this->encoderFactory->create($useCpu);
+            $this->videoFinder = new VideoFinder($this->encoder);
+            $this->processor   = new VideoProcessor($this->encoder, $this->logger, new RealProcessExecutor());
         } catch (Throwable $exception) {
             $output->writeln('<error>' . $exception->getMessage() . '</error>');
 
@@ -78,7 +80,7 @@ final class Squeeze extends Command
         $output->writeln(sprintf('<info>Available cores: %d</info>', $this->platform->nCores()));
 
         try {
-            $encoder->describeCapabilities(static fn (string $line) => $output->writeln(sprintf('<info>%s</info>', $line)));
+            $this->encoder->describeCapabilities(static fn (string $line) => $output->writeln(sprintf('<info>%s</info>', $line)));
         } catch (Throwable $exception) {
             $output->writeln(sprintf('<error>%s</error>', $exception->getMessage()));
 
@@ -375,9 +377,13 @@ final class Squeeze extends Command
             $fileList[] = $videoFile;
 
             $sizeEstimate = $videoFile->sizeEstimate($videoFile->baseBitrate());
-            $rotationNote = $videoFile->hasRotation
-                ? ' | rotated, CPU'
-                : '';
+            $rotationNote = '';
+            if ($videoFile->hasRotation) {
+                $rotationNote = $this->encoder->isCpuFallbackEnforced($videoFile)
+                    ? ' | rotated, CPU enforced'
+                    : ' | rotated';
+            }
+
             $output->writeln(sprintf(
                 "%sx%s | %s Kbps | %s | %s \u{27A1}\u{FE0F} %s, \u{2013}%s%s",
                 $videoFile->width,
