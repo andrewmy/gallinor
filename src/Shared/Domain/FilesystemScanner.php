@@ -10,9 +10,9 @@ use SplFileInfo;
 interface FilesystemScanner
 {
     /**
-     * @param list<string> $directories Paths to directories to scan
+     * @param list<string> $paths Paths to files or directories to scan
      *
      * @return Generator<SplFileInfo> Yields SplFileInfo objects for each file found
      */
-    public function scanDirectories(array $directories): Generator;
+    public function scanDirectories(array $paths): Generator;
 }

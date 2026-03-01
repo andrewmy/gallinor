@@ -43,7 +43,7 @@ smoke:
 
 # Check code coverage
 coverage-check: test
-    {{ _dc }} {{ _q }}php vendor/bin/coverage-check var/coverage.xml 29{{ _q }}
+    {{ _dc }} {{ _q }}php vendor/bin/coverage-check var/coverage.xml 37{{ _q }}
 
 # Build Docker image and verify all tools are present
 docker-smoke:

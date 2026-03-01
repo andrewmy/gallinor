@@ -54,7 +54,7 @@ final class Squeeze extends Command
         parent::__construct();
     }
 
-    /** @param list<string> $directories */
+    /** @param list<string> $paths */
     public function __invoke(
         OutputInterface $output,
         #[Option]
@@ -70,7 +70,7 @@ final class Squeeze extends Command
         #[Option(description: 'Job inactivity timeout in seconds (0 disables)')]
         int $jobTimeout = 3600,
         #[Argument]
-        array $directories = [],
+        array $paths = [],
     ): int {
         $startTime = $this->cliHelper->startCommand($output, $dryRun, $this->timing);
 
@@ -127,7 +127,7 @@ final class Squeeze extends Command
         $output->writeln('');
 
         $collection = $collector->collectFromDirectories(
-            $directories,
+            $paths,
             $output,
             ImageFormat::Heic,
             OptimizedFilter::OnlyWithout,

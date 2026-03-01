@@ -14,6 +14,8 @@ use SplFileInfo;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Filesystem\Path;
 
+use function is_dir;
+use function is_file;
 use function rtrim;
 use function trim;
 
@@ -27,22 +29,32 @@ final readonly class SymfonyFilesystemScanner implements FilesystemScanner
     }
 
     /**
-     * @param array<string> $directories
+     * @param list<string> $paths
      *
      * @return Generator<SplFileInfo>
      */
-    public function scanDirectories(array $directories): Generator
+    public function scanDirectories(array $paths): Generator
     {
-        foreach ($directories as $directory) {
-            $normalizedDirectory = $this->normalizePath($directory);
+        foreach ($paths as $path) {
+            $normalizedPath = $this->normalizePath($path);
 
-            if (! $this->fs->exists($normalizedDirectory)) {
-                throw new RuntimeException('Directory not found: ' . $normalizedDirectory);
+            if (! $this->fs->exists($normalizedPath)) {
+                throw new RuntimeException('Path not found: ' . $normalizedPath);
+            }
+
+            if (is_file($normalizedPath)) {
+                yield new SplFileInfo($normalizedPath);
+
+                continue;
+            }
+
+            if (! is_dir($normalizedPath)) {
+                throw new RuntimeException('Path is neither file nor directory: ' . $normalizedPath);
             }
 
             $files = new RecursiveIteratorIterator(
                 new RecursiveDirectoryIterator(
-                    directory: $normalizedDirectory,
+                    directory: $normalizedPath,
                     flags: FilesystemIterator::SKIP_DOTS | FilesystemIterator::FOLLOW_SYMLINKS,
                 ),
             );

@@ -54,7 +54,7 @@ final class Squeeze extends Command
     private VideoProcessor $processor;
     private Encoder $encoder;
 
-    /** @param list<string> $directories */
+    /** @param list<string> $paths */
     public function __invoke(
         OutputInterface $output,
         #[Option]
@@ -64,7 +64,7 @@ final class Squeeze extends Command
         #[Option(description: 'Try to squeeze videos even when bitrate is already acceptable')]
         bool $forceAnyBitrate = false,
         #[Argument]
-        array $directories = [],
+        array $paths = [],
     ): int {
         $startTime = $this->cliHelper->startCommand($output, $dryRun, $this->timing);
         try {
@@ -105,7 +105,7 @@ final class Squeeze extends Command
             $totalSkippedWithOptimalSize,
             $totalExistingOptimalSize,
         ] = $this->gatherFileList(
-            directories: $directories,
+            paths: $paths,
             output: $output,
             forceAnyBitrate: $forceAnyBitrate,
         );
@@ -315,14 +315,14 @@ final class Squeeze extends Command
     }
 
     /**
-     * @param list<string> $directories
+     * @param list<string> $paths
      *
      * @return array{list<VideoFile>, int, int, int, int, int}
      * Tuple of file list, total skipped files, total skipped size,
      * skipped-with-optimal files, skipped-with-optimal total size, existing optimal total size
      */
     private function gatherFileList(
-        array $directories,
+        array $paths,
         OutputInterface $output,
         bool $forceAnyBitrate,
     ): array {
@@ -333,7 +333,7 @@ final class Squeeze extends Command
         $totalSkippedWithOptimalFiles = 0;
         $totalExistingOptimalSize     = 0;
 
-        $files = $this->scanner->scanDirectories($directories);
+        $files = $this->scanner->scanDirectories($paths);
 
         $videos = $this->videoFinder->findVideos(
             $files,

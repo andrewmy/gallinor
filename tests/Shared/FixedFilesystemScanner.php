@@ -20,7 +20,7 @@ final readonly class FixedFilesystemScanner implements FilesystemScanner
     }
 
     /** @inheritDoc */
-    public function scanDirectories(array $directories): Generator
+    public function scanDirectories(array $paths): Generator
     {
         foreach ($this->filePaths as $filePath) {
             yield new SplFileInfo($filePath);

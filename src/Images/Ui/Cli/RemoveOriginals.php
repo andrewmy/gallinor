@@ -41,13 +41,13 @@ final class RemoveOriginals extends Command
         parent::__construct();
     }
 
-    /** @param list<string> $directories */
+    /** @param list<string> $paths */
     public function __invoke(
         OutputInterface $output,
         #[Option]
         bool $dryRun = false,
         #[Argument]
-        array $directories = [],
+        array $paths = [],
     ): int {
         $startTime   = $this->cliHelper->startCommand($output, $dryRun, $this->timing);
         $imageFormat = ImageFormat::Heic;
@@ -63,14 +63,14 @@ final class RemoveOriginals extends Command
         }
 
         $jpegCollection = $collector->collectFromDirectories(
-            $directories,
+            $paths,
             $output,
             $imageFormat,
             OptimizedFilter::OnlyWith,
         );
 
         $verificationResult = $archiveVerifier->verify(
-            $this->scanner->scanDirectories($directories),
+            $this->scanner->scanDirectories($paths),
             fn (string $path) => $output->writeln(sprintf('  Will remove: %s', $this->cliHelper->link($path))),
         );
 

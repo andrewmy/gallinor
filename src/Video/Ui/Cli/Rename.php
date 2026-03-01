@@ -34,13 +34,13 @@ final class Rename extends Command
         parent::__construct();
     }
 
-    /** @param list<string> $directories */
+    /** @param list<string> $paths */
     public function __invoke(
         OutputInterface $output,
         #[Option]
         bool $dryRun = false,
         #[Argument]
-        array $directories = [],
+        array $paths = [],
     ): int {
         $startTime = $this->cliHelper->startCommand($output, $dryRun, $this->timing);
 
@@ -48,7 +48,7 @@ final class Rename extends Command
         $totalOldSize  = 0;
         $totalNewSize  = 0;
 
-        foreach ($this->scanner->scanDirectories($directories) as $file) {
+        foreach ($this->scanner->scanDirectories($paths) as $file) {
             if (! str_ends_with($file->getFilename(), '.' . VideoFile::OPTIMAL_SUFFIX . '.mp4')) {
                 continue;
             }
