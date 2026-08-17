@@ -13,6 +13,7 @@ use App\Images\Domain\ImageOptimizer;
 use App\Images\Domain\Ssimulacra2;
 use App\Images\Domain\StrictMetadataVerifier;
 use App\Images\Ui\Cli\Parallel\ParallelJsonEncoder;
+use App\Images\Ui\Cli\Parallel\ParallelProtocol;
 use App\Images\Ui\Cli\Parallel\ParallelTempDirectoryManager;
 use App\Shared\Domain\Platform;
 use RuntimeException;
@@ -20,9 +21,6 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symplify\EasyParallel\Enum\Action;
-use Symplify\EasyParallel\Enum\Content;
-use Symplify\EasyParallel\Enum\ReactCommand;
 use Throwable;
 
 use function fclose;
@@ -84,8 +82,8 @@ final class SqueezeWorker extends Command
 
         $this->setTempEnv($workerRoot);
         $this->writeMessage($socket, [
-            ReactCommand::ACTION     => Action::HELLO,
-            ReactCommand::IDENTIFIER => $identifier,
+            ParallelProtocol::ACTION_KEY     => ParallelProtocol::HELLO_ACTION,
+            ParallelProtocol::IDENTIFIER_KEY => $identifier,
         ]);
 
         $processedJobs = 0;
@@ -108,12 +106,12 @@ final class SqueezeWorker extends Command
                     continue;
                 }
 
-                $action = $payload[ReactCommand::ACTION] ?? null;
-                if (! is_string($action) || $action !== Action::MAIN) {
+                $action = $payload[ParallelProtocol::ACTION_KEY] ?? null;
+                if ($action !== ParallelProtocol::MAIN_ACTION) {
                     continue;
                 }
 
-                $files = $payload[Content::FILES] ?? null;
+                $files = $payload[ParallelProtocol::FILES_KEY] ?? null;
                 if (! is_array($files) || $files === [] || ! is_array($files[0])) {
                     continue;
                 }
@@ -179,8 +177,8 @@ final class SqueezeWorker extends Command
                         }
 
                         $this->writeMessage($socket, [
-                            ReactCommand::ACTION => Action::RESULT,
-                            Content::RESULT      => $statusPayload,
+                            ParallelProtocol::ACTION_KEY => ParallelProtocol::RESULT_ACTION,
+                            ParallelProtocol::RESULT_KEY => $statusPayload,
                         ]);
                     };
 
@@ -201,8 +199,8 @@ final class SqueezeWorker extends Command
                     $outcome = $optimizer->optimizeJpeg($image, $codec, $statusCallback, $statusEventCallback);
                     if ($outcome instanceof CalculationSkipReason) {
                         $this->writeMessage($socket, [
-                            ReactCommand::ACTION => Action::RESULT,
-                            Content::RESULT      => [
+                            ParallelProtocol::ACTION_KEY => ParallelProtocol::RESULT_ACTION,
+                            ParallelProtocol::RESULT_KEY => [
                                 'v'          => self::PROTOCOL_VERSION,
                                 'type'       => 'result',
                                 'workerId'   => $identifier,
@@ -214,8 +212,8 @@ final class SqueezeWorker extends Command
                         ]);
                     } else {
                         $this->writeMessage($socket, [
-                            ReactCommand::ACTION => Action::RESULT,
-                            Content::RESULT      => [
+                            ParallelProtocol::ACTION_KEY => ParallelProtocol::RESULT_ACTION,
+                            ParallelProtocol::RESULT_KEY => [
                                 'v'        => self::PROTOCOL_VERSION,
                                 'type'     => 'result',
                                 'workerId' => $identifier,
@@ -236,8 +234,8 @@ final class SqueezeWorker extends Command
                     }
                 } catch (Throwable $exception) {
                     $this->writeMessage($socket, [
-                        ReactCommand::ACTION => Action::RESULT,
-                        Content::RESULT      => [
+                        ParallelProtocol::ACTION_KEY => ParallelProtocol::RESULT_ACTION,
+                        ParallelProtocol::RESULT_KEY => [
                             'v'        => self::PROTOCOL_VERSION,
                             'type'     => 'result',
                             'workerId' => $identifier,

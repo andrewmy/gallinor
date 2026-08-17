@@ -11,9 +11,6 @@ use App\Shared\Ui\Cli\CliHelper;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symplify\EasyParallel\Enum\Action;
-use Symplify\EasyParallel\Enum\Content;
-use Symplify\EasyParallel\Enum\ReactCommand;
 
 use function array_map;
 use function basename;
@@ -107,8 +104,8 @@ final readonly class ParallelJpegProcessor
             }
 
             return [
-                ReactCommand::ACTION => Action::MAIN,
-                Content::FILES       => [
+                ParallelProtocol::ACTION_KEY => ParallelProtocol::MAIN_ACTION,
+                ParallelProtocol::FILES_KEY  => [
                     [
                         'jobId'  => $jobId,
                         'path'   => $image->path,

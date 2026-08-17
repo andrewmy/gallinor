@@ -13,11 +13,6 @@ use React\Socket\TcpServer;
 use RuntimeException;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symplify\EasyParallel\Enum\Action;
-use Symplify\EasyParallel\Enum\ReactCommand;
-use Symplify\EasyParallel\Enum\ReactEvent;
-use Symplify\EasyParallel\ValueObject\ParallelProcess;
-use Symplify\EasyParallel\ValueObject\ProcessPool;
 use Throwable;
 
 use function abs;
@@ -293,7 +288,7 @@ final readonly class ParallelWorkerPoolOrchestrator
 
         $loop        = new StreamSelectLoop();
         $tcpServer   = new TcpServer('127.0.0.1:0', $loop);
-        $processPool = new ProcessPool($tcpServer);
+        $processPool = new ParallelWorkerProcessPool($tcpServer);
 
         $address = (string) $tcpServer->getAddress();
         $port    = (int) parse_url($address, PHP_URL_PORT);
@@ -474,7 +469,7 @@ final readonly class ParallelWorkerPoolOrchestrator
             $workerId = sprintf('%s-worker-%d', $runId, $workerSeq);
 
             $command = $buildWorkerCommand($workerId, $port);
-            $process = new ParallelProcess($command, $loop, max(self::WORKER_TICK_SECONDS, $jobTimeout));
+            $process = new ParallelWorkerProcess($command, $loop, max(self::WORKER_TICK_SECONDS, $jobTimeout));
 
             $traceEvent(OutputInterface::VERBOSITY_VERBOSE, sprintf('[parallel] spawned worker %s', $workerId));
             $traceEvent(OutputInterface::VERBOSITY_DEBUG, sprintf('[parallel] worker command ready %s', $workerId));
@@ -603,7 +598,7 @@ final readonly class ParallelWorkerPoolOrchestrator
                     $tryQuitWorker($workerId, 'runtime-error');
                 },
                 static function (
-                    $exitCode,
+                    int|null $exitCode,
                     string $stdErr,
                 ) use (
                     $workerId,
@@ -670,17 +665,17 @@ final readonly class ParallelWorkerPoolOrchestrator
             return $workerId;
         };
 
-        $tcpServer->on(ReactEvent::CONNECTION, function (ConnectionInterface $connection) use (&$workers, &$systemErrors, $dispatchIfPossible, $processPool, $traceEvent, $updateWorker): void {
+        $tcpServer->on('connection', function (ConnectionInterface $connection) use (&$workers, &$systemErrors, $dispatchIfPossible, $processPool, $traceEvent, $updateWorker): void {
             $decoder = new Decoder($connection, true, 512, 0, self::STATUS_FRAME_MAX_BYTES);
             $encoder = new Encoder($connection);
 
-            $decoder->on(ReactEvent::DATA, static function (array $json) use (&$workers, &$systemErrors, $dispatchIfPossible, $decoder, $encoder, $processPool, $traceEvent, $updateWorker): void {
-                $action = $json[ReactCommand::ACTION] ?? null;
-                if ($action !== Action::HELLO) {
+            $decoder->on('data', static function (array $json) use (&$workers, &$systemErrors, $dispatchIfPossible, $decoder, $encoder, $processPool, $traceEvent, $updateWorker): void {
+                $action = $json[ParallelProtocol::ACTION_KEY] ?? null;
+                if ($action !== ParallelProtocol::HELLO_ACTION) {
                     return;
                 }
 
-                $workerId = $json[ReactCommand::IDENTIFIER] ?? null;
+                $workerId = $json[ParallelProtocol::IDENTIFIER_KEY] ?? null;
                 if (! is_string($workerId) || ! isset($workers[$workerId])) {
                     $systemErrors++;
 
@@ -707,8 +702,8 @@ final readonly class ParallelWorkerPoolOrchestrator
                 $dispatchIfPossible($workerId);
             });
 
-            $decoder->on(ReactEvent::ERROR, function (Throwable $throwable) use (&$systemErrors, $traceEvent): void {
-                $this->logger->error('EasyParallel decoder error.', ['error' => $throwable->getMessage()]);
+            $decoder->on('error', function (Throwable $throwable) use (&$systemErrors, $traceEvent): void {
+                $this->logger->error('Parallel worker decoder error.', ['error' => $throwable->getMessage()]);
                 $traceEvent(
                     OutputInterface::VERBOSITY_VERBOSE,
                     sprintf('[parallel] decoder error: %s', $throwable->getMessage()),
@@ -716,8 +711,8 @@ final readonly class ParallelWorkerPoolOrchestrator
                 $systemErrors++;
             });
 
-            $encoder->on(ReactEvent::ERROR, function (Throwable $throwable) use (&$systemErrors, $traceEvent): void {
-                $this->logger->error('EasyParallel encoder error.', ['error' => $throwable->getMessage()]);
+            $encoder->on('error', function (Throwable $throwable) use (&$systemErrors, $traceEvent): void {
+                $this->logger->error('Parallel worker encoder error.', ['error' => $throwable->getMessage()]);
                 $traceEvent(
                     OutputInterface::VERBOSITY_VERBOSE,
                     sprintf('[parallel] encoder error: %s', $throwable->getMessage()),
