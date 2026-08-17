@@ -1,0 +1,7 @@
+[global]
+exclude = ["vendor/**", "node_modules/**", ".git/**", ".serena/**"]
+
+[MD013]
+code-blocks = false
+line-length = 80
+tables = false

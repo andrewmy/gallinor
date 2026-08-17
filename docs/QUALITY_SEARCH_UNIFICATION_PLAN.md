@@ -23,8 +23,8 @@ defaults, and tests), see
 ## Related plans
 
 - [README.md](README.md) (index)
-- [DOCKERIZATION_PLAN.md](DOCKERIZATION_PLAN.md) (toolchain standardisation;
-  impacts how probes run)
+- [Docker quick start](../README.md#quick-start-docker) (implemented toolchain
+  standardisation; impacts how probes run)
 - [VIDEO_SCOUT_SEARCH_PLAN.md](VIDEO_SCOUT_SEARCH_PLAN.md) (video-only
   decision-complete search policy)
 
@@ -43,7 +43,7 @@ defaults, and tests), see
 - If VMAF is below the threshold, increase bitrate using an *adaptive step*
   based on the “distance” to the target VMAF.
 - Current and planned video-specific search policy details are tracked in
-  [VIDEO_SCOUT_SEARCH_PLAN.md#search-algorithm](VIDEO_SCOUT_SEARCH_PLAN.md#search-algorithm).
+  [VIDEO_SCOUT_SEARCH_PLAN.md#search-algorithm-remaining](VIDEO_SCOUT_SEARCH_PLAN.md#search-algorithm-remaining).
 
 ## Proposed shared abstraction: bounded monotone threshold refiner
 
@@ -113,11 +113,11 @@ Use the shared refiner for the bounded fail/pass-bracket stage, while keeping
 video scout policy and termination controls in the dedicated video plan:
 
 - Algorithm and defaults:
-  [VIDEO_SCOUT_SEARCH_PLAN.md#search-algorithm](VIDEO_SCOUT_SEARCH_PLAN.md#search-algorithm)
+  [VIDEO_SCOUT_SEARCH_PLAN.md#search-algorithm-remaining](VIDEO_SCOUT_SEARCH_PLAN.md#search-algorithm-remaining)
 - Interface changes:
-  [VIDEO_SCOUT_SEARCH_PLAN.md#interface--code-changes](VIDEO_SCOUT_SEARCH_PLAN.md#interface--code-changes)
+  [VIDEO_SCOUT_SEARCH_PLAN.md#interface--code-changes-remaining](VIDEO_SCOUT_SEARCH_PLAN.md#interface--code-changes-remaining)
 - Acceptance expectations:
-  [VIDEO_SCOUT_SEARCH_PLAN.md#acceptance-criteria](VIDEO_SCOUT_SEARCH_PLAN.md#acceptance-criteria)
+  [VIDEO_SCOUT_SEARCH_PLAN.md#acceptance-criteria-remaining-scope](VIDEO_SCOUT_SEARCH_PLAN.md#acceptance-criteria-remaining-scope)
 
 ## Tests
 
@@ -128,4 +128,4 @@ Add unit tests for the shared refiner:
 - Respects max attempt budget
 
 For video-specific scenarios, keep the authoritative list in
-[VIDEO_SCOUT_SEARCH_PLAN.md#tests](VIDEO_SCOUT_SEARCH_PLAN.md#tests).
+[VIDEO_SCOUT_SEARCH_PLAN.md#tests-remaining](VIDEO_SCOUT_SEARCH_PLAN.md#tests-remaining).

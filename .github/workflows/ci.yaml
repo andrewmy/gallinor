@@ -14,11 +14,10 @@ jobs:
       - uses: actions/checkout@v6
       - uses: extractions/setup-just@v2
 
-      - name: Markdown Lint
-        uses: DavidAnson/markdownlint-cli2-action@v21
+      - uses: rvben/rumdl@v0.2.55
         with:
-          config_file: .markdownlint-cli2.jsonc
-          globs: .
+          version: 0.2.55
+          install-only: true
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -31,6 +30,7 @@ jobs:
       - run: just require-check
       - run: just lint
       - run: just stan
+      - run: just markdown
 
   test:
     runs-on: ubuntu-latest

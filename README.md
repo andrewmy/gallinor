@@ -277,9 +277,10 @@ just ci
 just smoke
 ```
 
-`just ci` runs lint, static analysis, tests, and coverage. `just smoke` runs
-environment-dependent smoke tests (real CLI + toolchain + worker IPC).
-`just markdown` lints Markdown (requires Node/npx, not included in `ci`).
+`just ci` runs lint, static analysis, tests, coverage, and Markdown linting via
+rumdl. `just smoke` runs environment-dependent smoke tests (real CLI +
+toolchain + worker IPC). Run `just markdown` for Markdown-only changes; it
+requires `rumdl` on the host.
 
 ### Docker (no local PHP needed)
 

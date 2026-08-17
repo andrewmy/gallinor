@@ -29,9 +29,9 @@ require-check:
 security-check:
     {{ _dc }} {{ _q }}composer audit{{ _q }}
 
-# Lint markdown, don't look at externally sourced files (requires Node/npx on host)
+# Lint markdown, don't look at externally sourced files
 markdown:
-    npx --yes markdownlint-cli2 --config .markdownlint-cli2.jsonc .
+    rumdl check .
 
 # Run tests
 test:
@@ -58,5 +58,4 @@ docker-smoke:
         'heif-enc --list-encoders 2>&1 | grep -q x265'
 
 # Full CI flow
-# Full CI flow (markdown linting handled separately in CI via a dedicated GitHub Action)
-ci: composer-validate lint require-check coverage-check stan security-check
+ci: composer-validate lint require-check coverage-check stan security-check markdown
